@@ -1,7 +1,7 @@
 use crate::{api::AppState, server_media_runtime};
 use lyre_core::{
-    MediaRelayError, MediaTrackKind, NoiseProvider, RegisterMediaTrackRequest, RoomId,
-    StartMediaRelayRequest, UserId,
+    MediaRelayError, MediaTrackKind, NoiseCancellationConfig, NoiseProvider,
+    RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest, UserId,
 };
 use lyre_webrtc::{ServerMediaPcmFrame, ServerMediaSessionKey};
 
@@ -114,9 +114,16 @@ fn server_media_runtime_batch_stops_on_first_error_without_processing_later_fram
 async fn app_state_processes_real_drained_server_media_pcm_batch() {
     let state = AppState::default();
     let key = key();
-    state
-        .media_relays
-        .start(key.room_id.clone(), StartMediaRelayRequest::default());
+    state.media_relays.start(
+        key.room_id.clone(),
+        StartMediaRelayRequest {
+            noise: Some(NoiseCancellationConfig {
+                provider: NoiseProvider::Rnnoise,
+                intensity: 0.5,
+                voice_activity_threshold: 0.35,
+            }),
+        },
+    );
     state
         .media_relays
         .register_track(
@@ -156,26 +163,32 @@ async fn app_state_processes_real_drained_server_media_pcm_batch() {
         .accept_answer_and_send_valid_opus(&answer, state.server_media_ice_candidates(&key))
         .await;
 
-    for _ in 0..100 {
-        let processed = state.process_server_media_pcm_frames(&key).unwrap();
-        if processed > 0 {
-            let frames = state.processed_media_frames(&key.room_id);
-            assert_eq!(frames.len(), processed);
-            assert!(frames.iter().any(|frame| {
-                frame.user_id == key.user_id
-                    && frame.track_id == "audio"
-                    && frame.sequence == 42
-                    && frame.sample_rate_hz == 48_000
-                    && frame.channels == 1
-                    && frame.samples.len() == lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE
-            }));
-            assert_eq!(state.process_server_media_pcm_frames(&key), Ok(0));
-            return;
+    let decoded_frames = loop {
+        let frames = state.drain_server_media_pcm_frames(&key);
+        if !frames.is_empty() {
+            break frames;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
+    };
+    let decoded_samples = decoded_frames[0].samples.clone();
+    let processed =
+        server_media_runtime::process_pcm_frame_batch(&state.media_runtime, &key, decoded_frames)
+            .unwrap();
 
-    panic!("decoded server media PCM frame was not processed by AppState");
+    assert!(processed > 0);
+    let frames = state.processed_media_frames(&key.room_id);
+    assert_eq!(frames.len(), processed);
+    assert!(frames.iter().any(|frame| {
+        frame.user_id == key.user_id
+            && frame.track_id == "audio"
+            && frame.sequence == 42
+            && frame.sample_rate_hz == 48_000
+            && frame.channels == 1
+            && frame.noise.provider == NoiseProvider::Rnnoise
+            && frame.samples.len() == lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE
+            && frame.samples != decoded_samples
+    }));
+    assert_eq!(state.process_server_media_pcm_frames(&key), Ok(0));
 }
 
 #[tokio::test]

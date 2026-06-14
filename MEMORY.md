@@ -128,3 +128,10 @@
 - Valid incoming server-media Opus RTP packets now produce Lyre-owned 48 kHz mono PCM frame DTOs that `lyre-web` can drain into the existing `WebMediaRuntime`.
 - Decode failures preserve the original decoder error message in internal snapshots; no public raw RTP, PCM, or decode-failure endpoint was added.
 - Packet loss concealment, jitter buffering, processed RTP/RTCP egress, browser playback, and DeepFilterNet remain future work.
+
+## 2026-06-15 RNNoise Opus Frame Alignment
+
+- Updated server-side RNNoise to process real decoded 20 ms Opus PCM frames by chunking 960-sample input into two 480-sample RNNoise frames.
+- Kept the public noise-cancelling API unchanged and split `lyre-noise-cancelling` tests out of `lib.rs` to keep Rust files below 400 LOC.
+- Verified real server-media decoded PCM can be processed through RNNoise when the media relay is configured for RNNoise.
+- DeepFilterNet, automatic server-media pumping, jitter buffering, processed RTP/RTCP egress, and browser playback remain future work.
