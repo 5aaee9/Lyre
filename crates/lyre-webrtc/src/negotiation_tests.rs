@@ -5,6 +5,7 @@ use lyre_core::{RoomId, UserId};
 use crate::{
     ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator, ServerMediaOffer,
     ServerMediaSessionKey, ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcStack,
+    SERVER_MEDIA_OPUS_FRAME_SIZE,
 };
 
 async fn offer_sdp() -> String {
@@ -203,6 +204,55 @@ async fn local_ice_candidates_are_keyed_by_session() {
 }
 
 #[tokio::test]
+async fn drain_pcm_frames_drains_existing_session_once() {
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
+    let key = ServerMediaSessionKey {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+    };
+
+    let test_offer = crate::test_support::server_media_offer_with_valid_opus_sender().await;
+    let answer = negotiator
+        .answer_offer(offer("audio-main", test_offer.offer_sdp.clone()))
+        .await
+        .unwrap();
+    for candidate in test_offer.remote_candidates().await {
+        negotiator
+            .add_remote_ice_candidate(ServerMediaIceCandidate {
+                room_id: key.room_id.clone(),
+                user_id: key.user_id.clone(),
+                candidate: candidate.candidate,
+                sdp_mid: candidate.sdp_mid,
+                sdp_mline_index: candidate.sdp_mline_index,
+                username_fragment: candidate.username_fragment,
+            })
+            .await
+            .unwrap();
+    }
+    test_offer
+        .accept_answer_and_send_valid_opus(&answer, negotiator.local_ice_candidates(&key))
+        .await;
+
+    for _ in 0..100 {
+        let frames = negotiator.drain_pcm_frames(&key);
+        if let Some(frame) = frames.first() {
+            assert_eq!(frame.track_id, "audio");
+            assert_eq!(frame.sequence_number, 42);
+            assert_eq!(frame.rtp_timestamp, 1234);
+            assert_eq!(frame.sample_rate_hz, 48_000);
+            assert_eq!(frame.channels, 1);
+            assert_eq!(frame.samples.len(), SERVER_MEDIA_OPUS_FRAME_SIZE);
+            assert!(negotiator.drain_pcm_frames(&key).is_empty());
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("negotiator did not drain decoded PCM from the existing session");
+}
+
+#[tokio::test]
 async fn close_and_close_room_remove_stored_handles() {
     let sessions = Arc::new(ServerMediaSessionRegistry::new());
     let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
@@ -221,6 +271,8 @@ async fn close_and_close_room_remove_stored_handles() {
     assert!(negotiator.local_ice_candidates(&key).is_empty());
     assert!(negotiator.remote_tracks(&key).is_empty());
     assert!(negotiator.received_rtp_packets(&key).is_empty());
+    assert!(negotiator.drain_pcm_frames(&key).is_empty());
+    assert!(negotiator.drain_decode_failures(&key).is_empty());
 
     negotiator
         .answer_offer(offer("audio-main", offer_sdp().await))
@@ -232,6 +284,8 @@ async fn close_and_close_room_remove_stored_handles() {
     assert!(negotiator.local_ice_candidates(&key).is_empty());
     assert!(negotiator.remote_tracks(&key).is_empty());
     assert!(negotiator.received_rtp_packets(&key).is_empty());
+    assert!(negotiator.drain_pcm_frames(&key).is_empty());
+    assert!(negotiator.drain_decode_failures(&key).is_empty());
 }
 
 #[tokio::test]
@@ -245,4 +299,6 @@ async fn server_media_snapshot_queries_return_empty_for_missing_session() {
 
     assert!(negotiator.remote_tracks(&missing_key).is_empty());
     assert!(negotiator.received_rtp_packets(&missing_key).is_empty());
+    assert!(negotiator.drain_pcm_frames(&missing_key).is_empty());
+    assert!(negotiator.drain_decode_failures(&missing_key).is_empty());
 }

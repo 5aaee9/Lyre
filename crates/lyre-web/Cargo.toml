@@ -22,4 +22,5 @@ tracing.workspace = true
 [dev-dependencies]
 chrono.workspace = true
 http-body-util.workspace = true
+lyre-webrtc = { path = "../lyre-webrtc", features = ["test-support"] }
 tower.workspace = true

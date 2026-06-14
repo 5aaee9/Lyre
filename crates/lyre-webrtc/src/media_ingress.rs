@@ -1,3 +1,4 @@
+use crate::{ServerMediaDecodeFailure, ServerMediaPcmFrame};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -33,6 +34,8 @@ pub(crate) struct MediaIngressRecorder {
 struct MediaIngressState {
     remote_tracks: Vec<ServerMediaRemoteTrack>,
     received_rtp_packets: Vec<ServerMediaRtpPacket>,
+    pcm_frames: Vec<ServerMediaPcmFrame>,
+    decode_failures: Vec<ServerMediaDecodeFailure>,
 }
 
 impl MediaIngressRecorder {
@@ -52,6 +55,22 @@ impl MediaIngressRecorder {
             .push(packet);
     }
 
+    pub(crate) fn record_pcm_frame(&self, frame: ServerMediaPcmFrame) {
+        self.inner
+            .lock()
+            .expect("media ingress recorder lock must not be poisoned")
+            .pcm_frames
+            .push(frame);
+    }
+
+    pub(crate) fn record_decode_failure(&self, failure: ServerMediaDecodeFailure) {
+        self.inner
+            .lock()
+            .expect("media ingress recorder lock must not be poisoned")
+            .decode_failures
+            .push(failure);
+    }
+
     pub(crate) fn remote_tracks(&self) -> Vec<ServerMediaRemoteTrack> {
         self.inner
             .lock()
@@ -66,6 +85,26 @@ impl MediaIngressRecorder {
             .expect("media ingress recorder lock must not be poisoned")
             .received_rtp_packets
             .clone()
+    }
+
+    pub(crate) fn drain_pcm_frames(&self) -> Vec<ServerMediaPcmFrame> {
+        std::mem::take(
+            &mut self
+                .inner
+                .lock()
+                .expect("media ingress recorder lock must not be poisoned")
+                .pcm_frames,
+        )
+    }
+
+    pub(crate) fn drain_decode_failures(&self) -> Vec<ServerMediaDecodeFailure> {
+        std::mem::take(
+            &mut self
+                .inner
+                .lock()
+                .expect("media ingress recorder lock must not be poisoned")
+                .decode_failures,
+        )
     }
 }
 
@@ -90,6 +129,20 @@ mod tests {
             payload_type: 111,
             payload: vec![1, 2, 3],
         });
+        recorder.record_pcm_frame(ServerMediaPcmFrame {
+            track_id: "audio-1".to_owned(),
+            sequence_number: 7,
+            rtp_timestamp: 48_000,
+            sample_rate_hz: 48_000,
+            channels: 1,
+            samples: vec![0.1, -0.1],
+        });
+        recorder.record_decode_failure(ServerMediaDecodeFailure {
+            track_id: "audio-1".to_owned(),
+            sequence_number: 8,
+            rtp_timestamp: 48_960,
+            error: "Input packet empty".to_owned(),
+        });
 
         assert_eq!(
             recorder.remote_tracks(),
@@ -110,5 +163,27 @@ mod tests {
                 payload: vec![1, 2, 3],
             }]
         );
+        assert_eq!(
+            recorder.drain_pcm_frames(),
+            vec![ServerMediaPcmFrame {
+                track_id: "audio-1".to_owned(),
+                sequence_number: 7,
+                rtp_timestamp: 48_000,
+                sample_rate_hz: 48_000,
+                channels: 1,
+                samples: vec![0.1, -0.1],
+            }]
+        );
+        assert!(recorder.drain_pcm_frames().is_empty());
+        assert_eq!(
+            recorder.drain_decode_failures(),
+            vec![ServerMediaDecodeFailure {
+                track_id: "audio-1".to_owned(),
+                sequence_number: 8,
+                rtp_timestamp: 48_960,
+                error: "Input packet empty".to_owned(),
+            }]
+        );
+        assert!(recorder.drain_decode_failures().is_empty());
     }
 }

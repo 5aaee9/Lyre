@@ -4,13 +4,18 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[features]
+test-support = []
+
 [dependencies]
 async-trait.workspace = true
 bytes.workspace = true
 dashmap.workspace = true
 lyre-core = { path = "../lyre-core" }
+opus-rs.workspace = true
 rtc.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 webrtc.workspace = true

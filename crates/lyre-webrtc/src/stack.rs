@@ -4,7 +4,8 @@ use std::{
 };
 
 use crate::{
-    media_ingress::MediaIngressRecorder, ServerMediaRemoteTrack, ServerMediaRtpPacket,
+    media_ingress::MediaIngressRecorder, ServerMediaDecodeError, ServerMediaDecodeFailure,
+    ServerMediaOpusDecoder, ServerMediaPcmFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
     ServerMediaTrackKind,
 };
 use rtc::{
@@ -15,6 +16,7 @@ use rtc::{
     rtp_transceiver::rtp_sender::{RTCRtpCodec, RTCRtpCodecParameters, RtpCodecKind},
 };
 use thiserror::Error;
+use tracing::warn;
 use webrtc::{
     media_stream::track_remote::{TrackRemote, TrackRemoteEvent},
     peer_connection::{
@@ -149,16 +151,40 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
 
         let media_ingress = self.media_ingress.clone();
         tokio::spawn(async move {
+            let mut decoder = match ServerMediaOpusDecoder::new() {
+                Ok(decoder) => decoder,
+                Err(error) => {
+                    warn!(error = %error, "failed to initialize server media Opus decoder");
+                    return;
+                }
+            };
             while let Some(event) = track.poll().await {
                 if let TrackRemoteEvent::OnRtpPacket(packet) = event {
-                    media_ingress.record_rtp_packet(ServerMediaRtpPacket {
+                    let packet = ServerMediaRtpPacket {
                         track_id: track_id.clone(),
                         sequence_number: packet.header.sequence_number,
                         timestamp: packet.header.timestamp,
                         marker: packet.header.marker,
                         payload_type: packet.header.payload_type,
                         payload: packet.payload.to_vec(),
-                    });
+                    };
+                    media_ingress.record_rtp_packet(packet.clone());
+                    match decoder.decode_packet(&packet) {
+                        Ok(frame) => media_ingress.record_pcm_frame(frame),
+                        Err(error) => {
+                            let message = match &error {
+                                ServerMediaDecodeError::InvalidDecoderConfig { message }
+                                | ServerMediaDecodeError::Decode { message } => message.clone(),
+                            };
+                            warn!(error = %error, "failed to decode server media Opus RTP packet");
+                            media_ingress.record_decode_failure(ServerMediaDecodeFailure {
+                                track_id: packet.track_id,
+                                sequence_number: packet.sequence_number,
+                                rtp_timestamp: packet.timestamp,
+                                error: message,
+                            });
+                        }
+                    }
                 }
             }
         });
@@ -246,6 +272,14 @@ impl WebRtcPeerConnectionHandle {
 
     pub fn received_rtp_packets(&self) -> Vec<ServerMediaRtpPacket> {
         self.media_ingress.received_rtp_packets()
+    }
+
+    pub fn drain_pcm_frames(&self) -> Vec<ServerMediaPcmFrame> {
+        self.media_ingress.drain_pcm_frames()
+    }
+
+    pub fn drain_decode_failures(&self) -> Vec<ServerMediaDecodeFailure> {
+        self.media_ingress.drain_decode_failures()
     }
 
     pub async fn answer_remote_offer(&self, offer_sdp: String) -> Result<String, WebRtcStackError> {

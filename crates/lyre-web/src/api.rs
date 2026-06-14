@@ -20,11 +20,7 @@ use lyre_core::{
     LeaveRoomRequest, MediaRelayError, MediaRelayRegistry, ProcessedAudioFrame, RoomId,
     RoomRegistry,
 };
-use lyre_webrtc::{
-    ServerMediaAnswer, ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator,
-    ServerMediaOffer, ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaSessionConfig,
-    ServerMediaSessionKey, ServerMediaSessionRegistry, ServerMediaSessionStatus, WebRtcStack,
-};
+use lyre_webrtc::{ServerMediaNegotiator, ServerMediaSessionRegistry, WebRtcStack};
 use serde::{Deserialize, Serialize};
 use std::{
     sync::Arc,
@@ -100,71 +96,6 @@ impl AppState {
 
     pub fn clear_processed_media_room(&self, room_id: &RoomId) {
         self.media_runtime.clear_room(room_id);
-    }
-
-    pub fn start_server_media_session(
-        &self,
-        config: ServerMediaSessionConfig,
-    ) -> ServerMediaSessionStatus {
-        self.server_media_sessions.start(config)
-    }
-
-    pub fn server_media_sessions(&self) -> Vec<ServerMediaSessionStatus> {
-        self.server_media_sessions.sessions()
-    }
-
-    pub fn active_server_media_sessions(&self) -> Vec<ServerMediaSessionStatus> {
-        self.server_media_sessions.active_sessions()
-    }
-
-    pub fn close_server_media_sessions_for_room(
-        &self,
-        room_id: &RoomId,
-    ) -> Vec<ServerMediaSessionStatus> {
-        self.server_media_negotiator.close_room(room_id);
-        self.server_media_sessions.sessions()
-    }
-
-    pub async fn answer_server_media_offer(
-        &self,
-        offer: ServerMediaOffer,
-    ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
-        self.server_media_negotiator.answer_offer(offer).await
-    }
-
-    pub async fn add_server_media_ice_candidate(
-        &self,
-        candidate: ServerMediaIceCandidate,
-    ) -> Result<(), ServerMediaNegotiationError> {
-        self.server_media_negotiator
-            .add_remote_ice_candidate(candidate)
-            .await
-    }
-
-    pub fn server_media_ice_candidates(
-        &self,
-        key: &ServerMediaSessionKey,
-    ) -> Vec<ServerMediaIceCandidate> {
-        self.server_media_negotiator.local_ice_candidates(key)
-    }
-
-    pub fn server_media_remote_tracks(
-        &self,
-        key: &ServerMediaSessionKey,
-    ) -> Vec<ServerMediaRemoteTrack> {
-        self.server_media_negotiator.remote_tracks(key)
-    }
-
-    pub fn server_media_received_rtp_packets(
-        &self,
-        key: &ServerMediaSessionKey,
-    ) -> Vec<ServerMediaRtpPacket> {
-        self.server_media_negotiator.received_rtp_packets(key)
-    }
-
-    #[cfg(test)]
-    pub fn server_media_peer_connection_count(&self) -> usize {
-        self.server_media_negotiator.stored_peer_connection_count()
     }
 
     pub fn stop_media_relay(

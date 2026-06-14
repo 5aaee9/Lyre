@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ServerMediaIceCandidateInit, ServerMediaRemoteTrack, ServerMediaRtpPacket,
-    ServerMediaSessionConfig, ServerMediaSessionKey, ServerMediaSessionRegistry,
-    ServerMediaSessionState, WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError,
+    ServerMediaDecodeFailure, ServerMediaIceCandidateInit, ServerMediaPcmFrame,
+    ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaSessionConfig, ServerMediaSessionKey,
+    ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcPeerConnectionHandle, WebRtcStack,
+    WebRtcStackError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +180,23 @@ impl ServerMediaNegotiator {
             .unwrap_or_default()
     }
 
+    pub fn drain_pcm_frames(&self, key: &ServerMediaSessionKey) -> Vec<ServerMediaPcmFrame> {
+        self.peer_connections
+            .get(key)
+            .map(|peer_connection| peer_connection.drain_pcm_frames())
+            .unwrap_or_default()
+    }
+
+    pub fn drain_decode_failures(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Vec<ServerMediaDecodeFailure> {
+        self.peer_connections
+            .get(key)
+            .map(|peer_connection| peer_connection.drain_decode_failures())
+            .unwrap_or_default()
+    }
+
     pub fn close(&self, key: &ServerMediaSessionKey) {
         self.sessions.close(key);
         self.peer_connections.remove(key);
@@ -202,5 +220,15 @@ impl ServerMediaNegotiator {
         self.peer_connections
             .get(key)
             .map(|entry| entry.value().debug_id())
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn peer_connection_for_test(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Option<WebRtcPeerConnectionHandle> {
+        self.peer_connections
+            .get(key)
+            .map(|entry| entry.value().clone())
     }
 }

@@ -25,13 +25,14 @@
 - Server media WebRTC offer/answer negotiation boundary.
 - Server media ICE candidate exchange boundary.
 - Server audio RTP ingress boundary with Opus receive negotiation, remote track snapshots, and internal RTP packet capture.
+- Decoded incoming Opus RTP into 48 kHz mono PCM frames and fed them into the existing server media runtime.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
 ## Next
 
-- Decode incoming Opus RTP into PCM frames and feed the existing server media runtime.
 - Wire RNNoise/DeepFilterNet providers to real decoded WebRTC tracks.
+- Add jitter buffering and packet loss concealment for server media ingress.
 - Implement RTP/RTCP forwarding or SFU-style packetization for processed audio.
 - Broadcast processed server audio frames to clients.
 - Add DeepFilterNet binding and processing implementation.

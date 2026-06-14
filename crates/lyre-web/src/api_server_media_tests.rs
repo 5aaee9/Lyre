@@ -247,6 +247,9 @@ async fn app_state_server_media_snapshots_are_internal_and_empty_for_missing_ses
 
     assert!(state.server_media_remote_tracks(&key).is_empty());
     assert!(state.server_media_received_rtp_packets(&key).is_empty());
+    assert!(state.drain_server_media_pcm_frames(&key).is_empty());
+    assert!(state.drain_server_media_decode_failures(&key).is_empty());
+    assert_eq!(state.process_server_media_pcm_frames(&key), Ok(0));
 }
 
 #[tokio::test]
@@ -258,6 +261,24 @@ async fn server_media_raw_rtp_packets_route_does_not_exist() {
             Request::builder()
                 .method("GET")
                 .uri("/api/rooms/DEFAULT/server-media/rtp-packets?user_id=user_01")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn server_media_pcm_frames_route_does_not_exist() {
+    let app = router(AppState::default());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/rooms/DEFAULT/server-media/pcm-frames?user_id=user_01")
                 .body(Body::empty())
                 .unwrap(),
         )

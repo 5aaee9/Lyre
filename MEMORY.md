@@ -121,3 +121,10 @@
 - Kept direct `webrtc` and `rtc` media/RTP types isolated inside `lyre-webrtc`; `lyre-web` only exposes internal AppState snapshot methods for tests and future runtime wiring.
 - Did not add a public raw RTP REST endpoint.
 - Opus decode, decoded PCM conversion, RNNoise/DeepFilterNet ingestion from real tracks, processed audio broadcast, RTP/RTCP forwarding, and browser playback remain future work.
+
+## 2026-06-15 Opus RTP to Media Runtime
+
+- Added a pure-Rust Opus decode bridge in `lyre-webrtc` using `opus-rs`.
+- Valid incoming server-media Opus RTP packets now produce Lyre-owned 48 kHz mono PCM frame DTOs that `lyre-web` can drain into the existing `WebMediaRuntime`.
+- Decode failures preserve the original decoder error message in internal snapshots; no public raw RTP, PCM, or decode-failure endpoint was added.
+- Packet loss concealment, jitter buffering, processed RTP/RTCP egress, browser playback, and DeepFilterNet remain future work.
