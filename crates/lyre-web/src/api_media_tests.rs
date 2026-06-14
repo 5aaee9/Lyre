@@ -15,6 +15,19 @@ async fn body_json(response: axum::response::Response) -> serde_json::Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
+fn get(uri: &str) -> Request<Body> {
+    Request::builder().uri(uri).body(Body::empty()).unwrap()
+}
+
+fn post_json(uri: &str, body: &'static str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap()
+}
+
 fn audio_frame(room_id: RoomId, user_id: UserId, samples: Vec<f32>) -> AudioFrame {
     AudioFrame {
         room_id,
@@ -56,18 +69,16 @@ fn start_relay_with_track(
         .unwrap();
 }
 
+fn process_samples(state: &AppState, room_id: &RoomId, user_id: &UserId, samples: Vec<f32>) {
+    state
+        .process_media_frame(audio_frame(room_id.clone(), user_id.clone(), samples))
+        .unwrap();
+}
+
 #[tokio::test]
 async fn media_topology_route_documents_current_runtime_boundary() {
     let app = router(AppState::default());
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/webrtc/topology")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = app.oneshot(get("/api/webrtc/topology")).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_json(response).await;
@@ -82,12 +93,7 @@ async fn media_topology_route_documents_current_runtime_boundary() {
 async fn media_relay_status_defaults_to_inactive() {
     let app = router(AppState::default());
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/rooms/DEFAULT/media-relay")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(get("/api/rooms/DEFAULT/media-relay"))
         .await
         .unwrap();
 
@@ -106,16 +112,10 @@ async fn media_relay_status_defaults_to_inactive() {
 async fn media_relay_register_track_requires_active_relay() {
     let app = router(AppState::default());
     let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/rooms/DEFAULT/media-relay/tracks")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"user_id":"user_01","track_id":"audio-main","kind":"audio"}"#,
-                ))
-                .unwrap(),
-        )
+        .oneshot(post_json(
+            "/api/rooms/DEFAULT/media-relay/tracks",
+            r#"{"user_id":"user_01","track_id":"audio-main","kind":"audio"}"#,
+        ))
         .await
         .unwrap();
 
@@ -131,16 +131,10 @@ async fn media_relay_start_registers_track_and_stop_clears_state() {
     let app = router(AppState::default());
     let start = app
         .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/rooms/DEFAULT/media-relay/start")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"noise":{"provider":"rnnoise","intensity":0.8,"voice_activity_threshold":0.2}}"#,
-                ))
-                .unwrap(),
-        )
+        .oneshot(post_json(
+            "/api/rooms/DEFAULT/media-relay/start",
+            r#"{"noise":{"provider":"rnnoise","intensity":0.8,"voice_activity_threshold":0.2}}"#,
+        ))
         .await
         .unwrap();
 
@@ -153,16 +147,10 @@ async fn media_relay_start_registers_track_and_stop_clears_state() {
 
     let register = app
         .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/rooms/DEFAULT/media-relay/tracks")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"user_id":"user_01","track_id":"audio-main","kind":"audio"}"#,
-                ))
-                .unwrap(),
-        )
+        .oneshot(post_json(
+            "/api/rooms/DEFAULT/media-relay/tracks",
+            r#"{"user_id":"user_01","track_id":"audio-main","kind":"audio"}"#,
+        ))
         .await
         .unwrap();
 
@@ -179,14 +167,10 @@ async fn media_relay_start_registers_track_and_stop_clears_state() {
     );
 
     let stop = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/rooms/DEFAULT/media-relay/stop")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"user_id":"user_01"}"#))
-                .unwrap(),
-        )
+        .oneshot(post_json(
+            "/api/rooms/DEFAULT/media-relay/stop",
+            r#"{"user_id":"user_01"}"#,
+        ))
         .await
         .unwrap();
 
@@ -203,13 +187,7 @@ fn app_state_process_media_frame_uses_shared_relay_state() {
     let user_id = UserId::from_external("user_01");
     start_relay_with_track(&state, room_id.clone(), user_id.clone(), NoiseProvider::Off);
 
-    state
-        .process_media_frame(audio_frame(
-            room_id.clone(),
-            user_id,
-            vec![0.25, -0.5, 0.75],
-        ))
-        .unwrap();
+    process_samples(&state, &room_id, &user_id, vec![0.25, -0.5, 0.75]);
 
     let frames = state.processed_media_frames(&room_id);
     assert_eq!(frames.len(), 1);
@@ -292,9 +270,7 @@ fn app_state_process_media_frame_runs_rnnoise_for_valid_audio() {
         NoiseProvider::Rnnoise,
     );
 
-    state
-        .process_media_frame(audio_frame(room_id.clone(), user_id, vec![120.0; 480]))
-        .unwrap();
+    process_samples(&state, &room_id, &user_id, vec![120.0; 480]);
 
     let frames = state.processed_media_frames(&room_id);
     assert_eq!(frames.len(), 1);

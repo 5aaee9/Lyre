@@ -5,6 +5,8 @@ pub mod server;
 pub mod signalling;
 
 #[cfg(test)]
+mod api_media_broadcast_tests;
+#[cfg(test)]
 mod api_media_tests;
 #[cfg(test)]
 mod api_tests;

@@ -19,6 +19,7 @@
 - Decoded-PCM server media runtime boundary with processor and sink traits.
 - RNNoise-compatible decoded PCM provider runtime in `lyre-noise-cancelling`.
 - Web server decoded-PCM media runtime wiring with internal processed-frame sink.
+- Internal room-scoped processed-audio broadcast contract for future server media forwarding.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 

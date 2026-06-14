@@ -82,3 +82,9 @@
 - Connected the web runtime to `lyre-noise-cancelling::NoiseCancellingAudioFrameProcessor`.
 - Stored processed frames in an internal in-memory sink for tests and future broadcaster integration.
 - Kept WebRTC media termination, Opus decode/encode, and client broadcast as future work.
+
+## 2026-06-15 Processed Audio Broadcast Contract
+
+- Replaced the web runtime's recording-only processed frame sink with a room-scoped processed audio broadcaster.
+- Broadcasts are internal `tokio::sync::broadcast` receivers for future WebRTC/SFU integration; no browser playback or RTP forwarding is implemented yet.
+- Stopping a media relay clears retained processed frame history for that room.

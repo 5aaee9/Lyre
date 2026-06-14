@@ -5,13 +5,17 @@ use lyre_core::{
 };
 use lyre_noise_cancelling::NoiseCancellingAudioFrameProcessor;
 use std::{fmt, sync::Arc};
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Default)]
-pub struct RecordingProcessedAudioSink {
+pub struct ProcessedAudioBroadcaster {
     frames: Arc<DashMap<RoomId, Vec<ProcessedAudioFrame>>>,
+    channels: Arc<DashMap<RoomId, broadcast::Sender<ProcessedAudioFrame>>>,
 }
 
-impl RecordingProcessedAudioSink {
+const PROCESSED_AUDIO_CHANNEL_CAPACITY: usize = 256;
+
+impl ProcessedAudioBroadcaster {
     pub fn frames_for_room(&self, room_id: &RoomId) -> Vec<ProcessedAudioFrame> {
         self.frames
             .get(room_id)
@@ -19,28 +23,41 @@ impl RecordingProcessedAudioSink {
             .unwrap_or_default()
     }
 
+    pub fn subscribe(&self, room_id: &RoomId) -> broadcast::Receiver<ProcessedAudioFrame> {
+        self.sender(room_id).subscribe()
+    }
+
     pub fn clear_room(&self, room_id: &RoomId) {
         self.frames.remove(room_id);
+        self.channels.remove(room_id);
+    }
+
+    fn sender(&self, room_id: &RoomId) -> broadcast::Sender<ProcessedAudioFrame> {
+        self.channels
+            .entry(room_id.clone())
+            .or_insert_with(|| broadcast::channel(PROCESSED_AUDIO_CHANNEL_CAPACITY).0)
+            .clone()
     }
 }
 
-impl ProcessedAudioSink for RecordingProcessedAudioSink {
+impl ProcessedAudioSink for ProcessedAudioBroadcaster {
     fn publish(&self, frame: ProcessedAudioFrame) {
         self.frames
             .entry(frame.room_id.clone())
             .or_default()
-            .push(frame);
+            .push(frame.clone());
+        let _ = self.sender(&frame.room_id).send(frame);
     }
 }
 
 pub struct WebMediaRuntime {
-    runtime: MediaRuntime<NoiseCancellingAudioFrameProcessor, RecordingProcessedAudioSink>,
-    sink: RecordingProcessedAudioSink,
+    runtime: MediaRuntime<NoiseCancellingAudioFrameProcessor, ProcessedAudioBroadcaster>,
+    sink: ProcessedAudioBroadcaster,
 }
 
 impl WebMediaRuntime {
     pub fn new(relays: Arc<MediaRelayRegistry>) -> Self {
-        let sink = RecordingProcessedAudioSink::default();
+        let sink = ProcessedAudioBroadcaster::default();
         let runtime = MediaRuntime::new(
             relays,
             NoiseCancellingAudioFrameProcessor::default(),
@@ -55,6 +72,14 @@ impl WebMediaRuntime {
 
     pub fn frames_for_room(&self, room_id: &RoomId) -> Vec<ProcessedAudioFrame> {
         self.sink.frames_for_room(room_id)
+    }
+
+    pub fn subscribe(&self, room_id: &RoomId) -> broadcast::Receiver<ProcessedAudioFrame> {
+        self.sink.subscribe(room_id)
+    }
+
+    pub fn clear_room(&self, room_id: &RoomId) {
+        self.sink.clear_room(room_id);
     }
 }
 

@@ -24,7 +24,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[derive(Debug, Clone)]
@@ -65,6 +65,17 @@ impl AppState {
 
     pub fn processed_media_frames(&self, room_id: &RoomId) -> Vec<ProcessedAudioFrame> {
         self.media_runtime.frames_for_room(room_id)
+    }
+
+    pub fn subscribe_processed_media_frames(
+        &self,
+        room_id: &RoomId,
+    ) -> broadcast::Receiver<ProcessedAudioFrame> {
+        self.media_runtime.subscribe(room_id)
+    }
+
+    pub fn clear_processed_media_room(&self, room_id: &RoomId) {
+        self.media_runtime.clear_room(room_id);
     }
 }
 
@@ -186,7 +197,9 @@ async fn stop_media_relay(
     Json(request): Json<lyre_core::StopMediaRelayRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    Ok(Json(state.media_relays.stop(room_id, request)))
+    let status = state.media_relays.stop(room_id.clone(), request);
+    state.clear_processed_media_room(&room_id);
+    Ok(Json(status))
 }
 
 async fn register_media_track(
