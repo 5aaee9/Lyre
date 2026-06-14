@@ -1,0 +1,15 @@
+[package]
+name = "lyre-core"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+dashmap.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

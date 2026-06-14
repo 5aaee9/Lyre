@@ -1,0 +1,8 @@
+[package]
+name = "lyre-noise-cancelling"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+lyre-core = { path = "../lyre-core" }
