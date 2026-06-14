@@ -52,3 +52,10 @@
 - Added a room-scoped media relay state skeleton with REST endpoints and WebRPC contract coverage.
 - Kept browser P2P signalling unchanged; this increment does not terminate WebRTC media or process audio.
 - Recorded intended noise settings in relay state so future RNNoise/DeepFilterNet processing can attach to the media relay boundary.
+
+## 2026-06-15 Mesh Audio Negotiation
+
+- Replaced the single frontend peer connection with a room mesh session keyed by remote user id.
+- Kept microphone capture user-triggered and reused one local audio stream across all peer connections.
+- Kept backend signalling unchanged; frontend-generated offer, answer, and ICE messages are now targeted with `recipient_id`.
+- Recorded that future client-side noise cancellation should use Rust compiled to WebAssembly instead of a JavaScript DSP path.

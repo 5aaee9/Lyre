@@ -15,15 +15,16 @@
 - Formal WebRPC RIDL contract and generated TypeScript client/types for frontend-consumed HTTP DTOs.
 - Media topology boundary API documenting current P2P mesh behavior, TURN relay support, and server-side noise cancellation requirements.
 - Media relay state skeleton, REST endpoints, WebRPC contract, and frontend API wrappers for future server-side audio processing.
+- Frontend multi-peer WebRTC mesh negotiation with per-user peer connections and targeted signalling.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
 ## Next
 
-- Harden real WebRTC mesh negotiation across multiple browsers.
 - Implement real WebRTC media termination/SFU-like audio pipeline and broadcast architecture.
 - Add RNNoise binding and processing implementation.
 - Add DeepFilterNet binding and processing implementation.
+- Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Add authentication and room access control.
 - Add persistent room/user/session state.
 - Add production observability and metrics.

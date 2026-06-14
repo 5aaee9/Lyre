@@ -53,6 +53,8 @@ Routes:
 
 The settings page stores nickname plus noise-cancellation provider, intensity, and voice activity threshold in local browser storage. The join flow sends those values to the API with the room join request.
 
+The room page keeps microphone access behind the `Connect audio` button. After audio starts, the frontend reuses one local audio stream and creates one browser `RTCPeerConnection` per remote room user, targeting WebRTC offer, answer, and ICE messages with `recipient_id`.
+
 ## WebRPC Contract
 
 The formal WebRPC schema lives at `proto/lyre.ridl`. The committed generated TypeScript client/types live at `frontend/src/lib/lyre.gen.ts`.
@@ -73,6 +75,8 @@ This uses `go run github.com/webrpc/webrpc/cmd/webrpc-gen@v0.36.0`; the first ru
 TURN, including the embedded TURN relay, relays encrypted WebRTC packets and cannot run server-side RNNoise or DeepFilterNet by itself. Server-side noise cancellation requires a future media relay/SFU-like path that terminates WebRTC media, decodes audio to PCM, runs `lyre-noise-cancelling`, then re-encodes and broadcasts processed audio.
 
 The media relay REST endpoints expose the initial room-scoped state skeleton for that future path. `GET /api/rooms/:room_id/media-relay` reports whether the relay is active, the intended noise config, and registered participant tracks. `POST /start` activates the room relay and records an optional noise config, `POST /tracks` registers track metadata while active, and `POST /stop` deactivates the relay and clears tracks. This skeleton does not terminate browser WebRTC media, decode audio, run RNNoise/DeepFilterNet, or broadcast processed audio yet.
+
+If client-side noise cancellation is added before server-side media relay processing, it should be implemented as Rust compiled to WebAssembly rather than a JavaScript DSP path.
 
 ## Tests
 

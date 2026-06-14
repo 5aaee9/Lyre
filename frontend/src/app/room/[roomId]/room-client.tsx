@@ -3,54 +3,41 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { getIceServers, joinRoom, leaveRoom, shareRoomUrl, type RoomSnapshot, type UserProfile } from "@/lib/api";
+import { MeshAudioSession } from "@/lib/mesh-audio";
 import {
   createRoomSocket,
-  encodeAnswer,
-  encodeIceCandidate,
-  encodeOffer,
   reducePresence,
   type PresenceState,
   type SignalMessage
 } from "@/lib/signalling";
 import { readNickname, readNoiseConfig } from "@/lib/storage";
-import { createAudioPeerConnection } from "@/lib/webrtc";
+import { openLocalAudioStream } from "@/lib/webrtc";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState("Joining");
   const socketRef = useRef<WebSocket | null>(null);
-  const peerRef = useRef<RTCPeerConnection | null>(null);
+  const audioSessionRef = useRef<MeshAudioSession | null>(null);
   const audioStartedRef = useRef(false);
   const link = useMemo(() => shareRoomUrl(roomId), [roomId]);
 
   const handleSignal = useCallback(
-    async (signal: SignalMessage, user: UserProfile) => {
-      if (!audioStartedRef.current || !peerRef.current) {
-        return;
+    async (signal: SignalMessage) => {
+      if (signal.payload.type === "offer" || signal.payload.type === "answer" || signal.payload.type === "ice-candidate") {
+        if (!audioStartedRef.current || !audioSessionRef.current) {
+          return;
+        }
+        await audioSessionRef.current.handleSignal(signal);
       }
-      if (signal.payload.type === "offer") {
-        await peerRef.current.setRemoteDescription({ type: "offer", sdp: signal.payload.sdp });
-        const answer = await peerRef.current.createAnswer();
-        await peerRef.current.setLocalDescription(answer);
-        socketRef.current?.send(
-          JSON.stringify(encodeAnswer(roomId, user.id, answer.sdp ?? "", signal.sender_id))
-        );
-        setStatus("Audio answer sent");
+      if (signal.payload.type === "user-joined" && audioStartedRef.current && audioSessionRef.current) {
+        await audioSessionRef.current.connectToUsers([signal.payload.user]);
       }
-      if (signal.payload.type === "answer") {
-        await peerRef.current.setRemoteDescription({ type: "answer", sdp: signal.payload.sdp });
-        setStatus("Audio connected");
-      }
-      if (signal.payload.type === "ice-candidate") {
-        await peerRef.current.addIceCandidate({
-          candidate: signal.payload.candidate,
-          sdpMid: signal.payload.sdp_mid,
-          sdpMLineIndex: signal.payload.sdp_m_line_index
-        });
+      if (signal.payload.type === "user-left") {
+        audioSessionRef.current?.removePeer(signal.payload.user_id);
       }
     },
-    [roomId]
+    []
   );
 
   useEffect(() => {
@@ -74,7 +61,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       socket.onopen = () => setStatus("Connected");
       socket.onmessage = (event) => {
         const signal = JSON.parse(event.data as string) as SignalMessage;
-        void handleSignal(signal, user);
+        void handleSignal(signal);
         setRoom((current) => {
           const next: PresenceState = reducePresence({ room: current ?? undefined }, signal);
           if (next.error) {
@@ -90,7 +77,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
     return () => {
       cancelled = true;
+      audioSessionRef.current?.close();
+      audioSessionRef.current = null;
+      audioStartedRef.current = false;
       socketRef.current?.close();
+      socketRef.current = null;
     };
   }, [handleSignal, roomId]);
 
@@ -98,27 +89,40 @@ export function RoomClient({ roomId }: { roomId: string }) {
     if (!currentUser) {
       return;
     }
+    if (audioStartedRef.current) {
+      return;
+    }
     try {
       audioStartedRef.current = true;
       const iceServers = await getIceServers();
-      const connection = await createAudioPeerConnection(iceServers);
-      peerRef.current = connection;
-      connection.onicecandidate = (event) => {
-        if (event.candidate) {
-          socketRef.current?.send(JSON.stringify(encodeIceCandidate(roomId, currentUser.id, event.candidate.toJSON())));
-        }
-      };
-      const offer = await connection.createOffer();
-      await connection.setLocalDescription(offer);
-      socketRef.current?.send(JSON.stringify(encodeOffer(roomId, currentUser.id, offer.sdp ?? "")));
-      setStatus("Audio offer sent");
+      const stream = await openLocalAudioStream();
+      const session = new MeshAudioSession({
+        roomId,
+        currentUserId: currentUser.id,
+        iceServers,
+        stream,
+        send: (message) => socketRef.current?.send(JSON.stringify(message)),
+        onError: setStatus
+      });
+      audioSessionRef.current = session;
+      const connected = await session.connectToUsers(room?.users ?? []);
+      if (connected) {
+        setStatus("Audio offers sent");
+      }
     } catch (error) {
       audioStartedRef.current = false;
+      audioSessionRef.current?.close();
+      audioSessionRef.current = null;
       setStatus(error instanceof Error ? error.message : "Audio connection failed");
     }
   }
 
   async function leave() {
+    audioSessionRef.current?.close();
+    audioSessionRef.current = null;
+    audioStartedRef.current = false;
+    socketRef.current?.close();
+    socketRef.current = null;
     if (currentUser) {
       await leaveRoom(roomId, currentUser.id);
     }

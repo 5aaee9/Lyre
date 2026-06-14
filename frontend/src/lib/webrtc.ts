@@ -1,7 +1,10 @@
 import type { IceServerConfig } from "./api";
 
-export async function createAudioPeerConnection(iceServers: IceServerConfig[]): Promise<RTCPeerConnection> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+export async function openLocalAudioStream(): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({ audio: true });
+}
+
+export function createPeerConnection(iceServers: IceServerConfig[], stream: MediaStream): RTCPeerConnection {
   const connection = new RTCPeerConnection({
     iceServers: iceServers.map((server) => ({
       urls: server.urls,
@@ -13,4 +16,8 @@ export async function createAudioPeerConnection(iceServers: IceServerConfig[]): 
     connection.addTrack(track, stream);
   }
   return connection;
+}
+
+export async function createAudioPeerConnection(iceServers: IceServerConfig[]): Promise<RTCPeerConnection> {
+  return createPeerConnection(iceServers, await openLocalAudioStream());
 }
