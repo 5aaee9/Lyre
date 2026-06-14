@@ -36,9 +36,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let (status, error) = match self {
             Self::BadRoomId(error) => (StatusCode::BAD_REQUEST, error.to_string()),
-            Self::MediaRelay(error @ MediaRelayError::Inactive { .. }) => {
-                (StatusCode::CONFLICT, error.to_string())
-            }
+            Self::MediaRelay(error) => (StatusCode::CONFLICT, error.to_string()),
             Self::TurnRestCredentials(error) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
             }

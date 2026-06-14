@@ -59,3 +59,10 @@
 - Kept microphone capture user-triggered and reused one local audio stream across all peer connections.
 - Kept backend signalling unchanged; frontend-generated offer, answer, and ICE messages are now targeted with `recipient_id`.
 - Recorded that future client-side noise cancellation should use Rust compiled to WebAssembly instead of a JavaScript DSP path.
+
+## 2026-06-15 Server Media Runtime Boundary
+
+- Added a decoded-PCM media runtime boundary in `lyre-core`.
+- Kept `lyre-core` independent of `lyre-noise-cancelling`; future adapters can bridge concrete processors behind the core `AudioFrameProcessor` trait.
+- Gated frame processing on active media relay state and registered audio tracks without mutating relay state.
+- Kept real WebRTC termination, Opus decode/encode, RNNoise, DeepFilterNet, and real server broadcast as future work.

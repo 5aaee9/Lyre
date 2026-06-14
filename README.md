@@ -76,6 +76,8 @@ TURN, including the embedded TURN relay, relays encrypted WebRTC packets and can
 
 The media relay REST endpoints expose the initial room-scoped state skeleton for that future path. `GET /api/rooms/:room_id/media-relay` reports whether the relay is active, the intended noise config, and registered participant tracks. `POST /start` activates the room relay and records an optional noise config, `POST /tracks` registers track metadata while active, and `POST /stop` deactivates the relay and clears tracks. This skeleton does not terminate browser WebRTC media, decode audio, run RNNoise/DeepFilterNet, or broadcast processed audio yet.
 
+`lyre-core` also defines a decoded-PCM media runtime boundary for the future server relay. It accepts already-decoded audio frames, requires an active relay and a registered audio track without mutating relay state, runs an `AudioFrameProcessor`, and publishes processed PCM to an internal `ProcessedAudioSink`. This boundary still does not terminate WebRTC, decode or encode Opus, perform real room broadcast, or run concrete RNNoise/DeepFilterNet implementations.
+
 If client-side noise cancellation is added before server-side media relay processing, it should be implemented as Rust compiled to WebAssembly rather than a JavaScript DSP path.
 
 ## Tests

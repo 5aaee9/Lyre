@@ -68,6 +68,30 @@ pub struct RegisterMediaTrackRequest {
 pub enum MediaRelayError {
     #[error("media relay is not active for room `{room_id}`")]
     Inactive { room_id: RoomId },
+    #[error("media relay participant `{user_id}` is not registered in room `{room_id}`")]
+    ParticipantNotFound { room_id: RoomId, user_id: UserId },
+    #[error("media relay track `{track_id}` is not registered for participant `{user_id}` in room `{room_id}`")]
+    TrackNotFound {
+        room_id: RoomId,
+        user_id: UserId,
+        track_id: String,
+    },
+    #[error("media relay track `{track_id}` for participant `{user_id}` in room `{room_id}` is `{kind:?}`, not audio")]
+    UnsupportedTrackKind {
+        room_id: RoomId,
+        user_id: UserId,
+        track_id: String,
+        kind: MediaTrackKind,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MediaRelayTrackLookup {
+    pub room_id: RoomId,
+    pub user_id: UserId,
+    pub track_id: String,
+    pub kind: MediaTrackKind,
+    pub noise: NoiseCancellationConfig,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -90,6 +114,10 @@ impl MediaRelayRegistry {
     pub fn status(&self, room_id: RoomId) -> MediaRelayRoomStatus {
         self.rooms.entry(room_id.clone()).or_default();
         self.snapshot(room_id)
+    }
+
+    pub fn contains_room(&self, room_id: &RoomId) -> bool {
+        self.rooms.contains_key(room_id)
     }
 
     pub fn start(&self, room_id: RoomId, request: StartMediaRelayRequest) -> MediaRelayRoomStatus {
@@ -124,6 +152,44 @@ impl MediaRelayRegistry {
             .insert(request.track_id, request.kind);
         drop(room);
         Ok(self.snapshot(room_id))
+    }
+
+    pub fn require_track(
+        &self,
+        room_id: &RoomId,
+        user_id: &UserId,
+        track_id: &str,
+    ) -> Result<MediaRelayTrackLookup, MediaRelayError> {
+        let Some(room) = self.rooms.get(room_id) else {
+            return Err(MediaRelayError::Inactive {
+                room_id: room_id.clone(),
+            });
+        };
+        if !room.active {
+            return Err(MediaRelayError::Inactive {
+                room_id: room_id.clone(),
+            });
+        }
+        let Some(participant) = room.participants.get(user_id) else {
+            return Err(MediaRelayError::ParticipantNotFound {
+                room_id: room_id.clone(),
+                user_id: user_id.clone(),
+            });
+        };
+        let Some(kind) = participant.get(track_id).map(|entry| *entry.value()) else {
+            return Err(MediaRelayError::TrackNotFound {
+                room_id: room_id.clone(),
+                user_id: user_id.clone(),
+                track_id: track_id.to_owned(),
+            });
+        };
+        Ok(MediaRelayTrackLookup {
+            room_id: room_id.clone(),
+            user_id: user_id.clone(),
+            track_id: track_id.to_owned(),
+            kind,
+            noise: room.noise.clone(),
+        })
     }
 
     fn snapshot(&self, room_id: RoomId) -> MediaRelayRoomStatus {
@@ -238,6 +304,71 @@ mod tests {
             ),
             Err(MediaRelayError::Inactive { room_id })
         );
+    }
+
+    #[test]
+    fn read_only_track_lookup_does_not_create_unknown_room() {
+        let registry = MediaRelayRegistry::new();
+        let room_id = RoomId::parse_boundary("UNKNOWN").unwrap();
+
+        assert_eq!(
+            registry.require_track(&room_id, &UserId::from_external("user_01"), "audio-main"),
+            Err(MediaRelayError::Inactive {
+                room_id: room_id.clone(),
+            })
+        );
+        assert!(!registry.contains_room(&room_id));
+    }
+
+    #[test]
+    fn read_only_track_lookup_reports_participant_track_and_kind() {
+        let registry = MediaRelayRegistry::new();
+        let room_id = RoomId::default_room();
+        let user_id = UserId::from_external("user_01");
+        registry.start(
+            room_id.clone(),
+            StartMediaRelayRequest {
+                noise: Some(NoiseCancellationConfig {
+                    provider: NoiseProvider::Rnnoise,
+                    intensity: 0.8,
+                    voice_activity_threshold: 0.2,
+                }),
+            },
+        );
+
+        assert_eq!(
+            registry.require_track(&room_id, &user_id, "audio-main"),
+            Err(MediaRelayError::ParticipantNotFound {
+                room_id: room_id.clone(),
+                user_id: user_id.clone(),
+            })
+        );
+
+        registry
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: user_id.clone(),
+                    track_id: "audio-main".to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            registry.require_track(&room_id, &user_id, "missing-track"),
+            Err(MediaRelayError::TrackNotFound {
+                room_id: room_id.clone(),
+                user_id: user_id.clone(),
+                track_id: "missing-track".to_owned(),
+            })
+        );
+
+        let track = registry
+            .require_track(&room_id, &user_id, "audio-main")
+            .unwrap();
+        assert_eq!(track.kind, MediaTrackKind::Audio);
+        assert_eq!(track.noise.provider, NoiseProvider::Rnnoise);
     }
 
     #[test]

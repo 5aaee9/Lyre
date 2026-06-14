@@ -16,6 +16,7 @@
 - Media topology boundary API documenting current P2P mesh behavior, TURN relay support, and server-side noise cancellation requirements.
 - Media relay state skeleton, REST endpoints, WebRPC contract, and frontend API wrappers for future server-side audio processing.
 - Frontend multi-peer WebRTC mesh negotiation with per-user peer connections and targeted signalling.
+- Decoded-PCM server media runtime boundary with processor and sink traits.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
