@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { joinRoom, parseNoiseProvider } from "@/lib/api";
+import { joinRoom, parseNoiseProvider, type NoiseCancellationConfig } from "@/lib/api";
 import { readNickname, readNoiseConfig, readRememberRoom, readRoomId, writeNickname, writeNoiseConfig, writeRememberRoom, writeRoomId } from "@/lib/storage";
 
 export default function Home() {
@@ -14,12 +14,11 @@ export default function Home() {
   const [remember, setRemember] = useState(() => readRememberRoom());
   const [roomId, setRoomId] = useState(() => (readRememberRoom() ? readRoomId() : "DEFAULT"));
   const [nickname, setNickname] = useState(() => readNickname());
-  const [provider, setProvider] = useState(() => readNoiseConfig().provider);
+  const [noise, setNoise] = useState<NoiseCancellationConfig>(() => readNoiseConfig());
   const [joining, setJoining] = useState(false);
 
   async function onJoin() {
     setJoining(true);
-    const noise = { provider, intensity: 0.5, voice_activity_threshold: 0.35 };
     const targetRoom = roomId.trim() || "DEFAULT";
     if (remember) {
       writeRoomId(targetRoom);
@@ -49,7 +48,15 @@ export default function Home() {
         </label>
         <label className="grid gap-2 text-sm font-medium">
           Noise cancellation
-          <Select value={provider} onChange={(event) => setProvider(parseNoiseProvider(event.target.value))}>
+          <Select
+            value={noise.provider}
+            onChange={(event) =>
+              setNoise((current) => ({
+                ...current,
+                provider: parseNoiseProvider(event.target.value)
+              }))
+            }
+          >
             <option value="off">Off</option>
             <option value="rnnoise">RNNoise</option>
             <option value="deepfilternet">DeepFilterNet</option>

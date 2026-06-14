@@ -20,6 +20,10 @@ describe("storage", () => {
     writeNoiseConfig({ provider: "rnnoise", intensity: 0.6, voice_activity_threshold: 0.2 });
 
     expect(readNickname()).toBe("Ada");
-    expect(readNoiseConfig().provider).toBe("rnnoise");
+    expect(readNoiseConfig()).toEqual({
+      provider: "rnnoise",
+      intensity: 0.6,
+      voice_activity_threshold: 0.2
+    });
   });
 });

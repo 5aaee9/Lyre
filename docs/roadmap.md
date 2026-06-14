@@ -8,6 +8,7 @@
 - WebSocket signalling contract for WebRTC offer, answer, ICE candidate, presence, snapshots, and errors.
 - Clap CLI for serving the API and printing default config.
 - Next.js frontend with room entry, shareable room route, settings, local storage, and user-triggered audio connection.
+- Frontend noise settings for provider, intensity, and voice activity threshold.
 - Static STUN/TURN ICE server configuration exposed to the browser WebRTC flow.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.

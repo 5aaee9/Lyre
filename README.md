@@ -38,6 +38,8 @@ Routes:
 - `/room/[roomId]`
 - `/settings`
 
+The settings page stores nickname plus noise-cancellation provider, intensity, and voice activity threshold in local browser storage. The join flow sends those values to the API with the room join request.
+
 ## Tests
 
 ```bash

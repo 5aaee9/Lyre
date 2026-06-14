@@ -16,12 +16,13 @@ describe("api", () => {
   });
 
   it("serializes join request body", async () => {
-    await joinRoom("DEFAULT", { nickname: "Ada" });
+    const noise = { provider: "rnnoise" as const, intensity: 0.8, voice_activity_threshold: 0.15 };
+    await joinRoom("DEFAULT", { nickname: "Ada", noise });
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/join", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ nickname: "Ada" })
+      body: JSON.stringify({ nickname: "Ada", noise })
     });
   });
 

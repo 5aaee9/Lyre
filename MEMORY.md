@@ -15,3 +15,9 @@
 - Added static STUN/TURN ICE server configuration through CLI `--ice-server`, `LYRE_ICE_SERVERS`, `lyre_web::ServeConfig`, and `/api/webrtc/ice-servers`.
 - Preserved configured ICE server order and duplicates so operators can control browser candidate priority.
 - Treated configured TURN credentials as browser-visible runtime config; long-lived privileged TURN secrets remain inappropriate for this static route.
+
+## 2026-06-14 Noise Settings Controls
+
+- Exposed the current noise parameter model in the frontend: provider, intensity, and voice activity threshold.
+- Kept provider quick-selection on the join page while preserving the stored numeric parameters from settings.
+- Real RNNoise and DeepFilterNet processing remain separate implementation work.
