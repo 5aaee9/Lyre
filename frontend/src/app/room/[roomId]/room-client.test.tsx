@@ -9,6 +9,14 @@ const setLocalDescription = vi.fn();
 const addIceCandidate = vi.fn();
 const createOffer = vi.fn(async () => ({ type: "offer", sdp: "local-offer" }));
 const createAnswer = vi.fn(async () => ({ type: "answer", sdp: "local-answer" }));
+const getUserMedia = vi.fn(async () => ({
+  getAudioTracks: () => [{ id: "track" }]
+}));
+const apiMocks = vi.hoisted(() => ({
+  getIceServers: vi.fn(async () => [
+    { urls: ["stun:stun.example:3478"], username: null, credential: null }
+  ])
+}));
 
 class MockWebSocket {
   onopen: (() => void) | null = null;
@@ -46,6 +54,7 @@ vi.mock("@/lib/api", async () => {
       },
       room: { room_id: "DEFAULT", users: [] }
     })),
+    getIceServers: apiMocks.getIceServers,
     leaveRoom: vi.fn(),
     shareRoomUrl: () => "http://localhost:3000/room/DEFAULT"
   };
@@ -61,14 +70,17 @@ describe("RoomClient", () => {
     addIceCandidate.mockClear();
     createOffer.mockClear();
     createAnswer.mockClear();
+    getUserMedia.mockClear();
+    apiMocks.getIceServers.mockClear();
+    apiMocks.getIceServers.mockResolvedValue([
+      { urls: ["stun:stun.example:3478"], username: null, credential: null }
+    ]);
     vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal("RTCPeerConnection", MockPeerConnection);
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
-        getUserMedia: vi.fn(async () => ({
-          getAudioTracks: () => [{ id: "track" }]
-        }))
+        getUserMedia
       }
     });
   });
@@ -105,6 +117,9 @@ describe("RoomClient", () => {
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Connect audio"));
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    expect(apiMocks.getIceServers.mock.invocationCallOrder[0]).toBeLessThan(
+      getUserMedia.mock.invocationCallOrder[0]
+    );
     send.mockClear();
 
     sockets[0].onmessage?.(
@@ -128,5 +143,16 @@ describe("RoomClient", () => {
         payload: { type: "answer", sdp: "local-answer" }
       })
     );
+  });
+
+  it("does not start media when ice server fetch fails", async () => {
+    apiMocks.getIceServers.mockRejectedValueOnce(new Error("ice unavailable"));
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("Connect audio"));
+
+    await waitFor(() => expect(screen.getByText("ice unavailable")).toBeInTheDocument());
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
   });
 });

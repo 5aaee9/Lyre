@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { joinRoom, leaveRoom, roomUrl, shareRoomUrl } from "./api";
+import { getIceServers, joinRoom, leaveRoom, roomUrl, shareRoomUrl } from "./api";
 
 describe("api", () => {
   beforeEach(() => {
@@ -33,5 +33,11 @@ describe("api", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ user_id: "user_a" })
     });
+  });
+
+  it("fetches ice servers from API", async () => {
+    await getIceServers();
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/webrtc/ice-servers");
   });
 });

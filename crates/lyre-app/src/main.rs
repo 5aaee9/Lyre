@@ -14,9 +14,14 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Serve(args) => {
             let (host, port) = args.effective_bind()?;
-            lyre_web::serve(ServeConfig { host, port })
-                .await
-                .context("failed to run Lyre server")?;
+            let ice_servers = args.effective_ice_servers()?;
+            lyre_web::serve(ServeConfig {
+                host,
+                port,
+                ice_servers,
+            })
+            .await
+            .context("failed to run Lyre server")?;
         }
         Commands::Config(config) => match config.command {
             ConfigSubcommand::Print => {

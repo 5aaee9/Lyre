@@ -14,7 +14,8 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use lyre_core::{
-    supported_noise_providers, JoinRoomRequest, LeaveRoomRequest, RoomId, RoomRegistry,
+    default_ice_servers, supported_noise_providers, IceServerConfig, JoinRoomRequest,
+    LeaveRoomRequest, RoomId, RoomRegistry,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -25,13 +26,21 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 pub struct AppState {
     pub registry: Arc<RoomRegistry>,
     pub peers: Arc<PeerHub>,
+    pub ice_servers: Arc<Vec<IceServerConfig>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
+        Self::new(default_ice_servers())
+    }
+}
+
+impl AppState {
+    pub fn new(ice_servers: Vec<IceServerConfig>) -> Self {
         Self {
             registry: Arc::new(RoomRegistry::new()),
             peers: Arc::new(PeerHub::new()),
+            ice_servers: Arc::new(ice_servers),
         }
     }
 }
@@ -50,6 +59,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/noise/providers", get(noise_providers))
+        .route("/api/webrtc/ice-servers", get(ice_servers))
         .route("/api/rooms/{room_id}", get(room_snapshot))
         .route("/api/rooms/{room_id}/join", post(join_room))
         .route("/api/rooms/{room_id}/leave", post(leave_room))
@@ -65,6 +75,10 @@ async fn health() -> Json<HealthResponse> {
 
 async fn noise_providers() -> Json<Vec<lyre_core::NoiseCancellationConfig>> {
     Json(supported_noise_providers())
+}
+
+async fn ice_servers(State(state): State<AppState>) -> Json<Vec<IceServerConfig>> {
+    Json((*state.ice_servers).clone())
 }
 
 async fn room_snapshot(
@@ -265,6 +279,52 @@ mod tests {
 
         let body = body_json(response).await;
         assert_eq!(body.as_array().unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn ice_server_route_returns_default_servers() {
+        let app = router(AppState::default());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/webrtc/ice-servers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = body_json(response).await;
+        assert_eq!(body[0]["urls"][0], "stun:stun.l.google.com:19302");
+    }
+
+    #[tokio::test]
+    async fn ice_server_route_preserves_configured_servers() {
+        let app = router(AppState::new(vec![
+            IceServerConfig {
+                urls: vec!["stun:one.example:3478".to_owned()],
+                username: None,
+                credential: None,
+            },
+            IceServerConfig {
+                urls: vec!["stun:one.example:3478".to_owned()],
+                username: Some("user".to_owned()),
+                credential: Some("pass".to_owned()),
+            },
+        ]));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/webrtc/ice-servers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = body_json(response).await;
+        assert_eq!(body.as_array().unwrap().len(), 2);
+        assert_eq!(body[1]["username"], "user");
     }
 
     #[tokio::test]

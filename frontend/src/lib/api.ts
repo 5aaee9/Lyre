@@ -13,6 +13,12 @@ export type NoiseCancellationConfig = {
   voice_activity_threshold: number;
 };
 
+export type IceServerConfig = {
+  urls: string[];
+  username?: string | null;
+  credential?: string | null;
+};
+
 export type UserProfile = {
   id: string;
   nickname: string;
@@ -68,6 +74,14 @@ export async function leaveRoom(roomId: string, userId: string): Promise<RoomSna
 
 export async function getNoiseProviders(): Promise<NoiseCancellationConfig[]> {
   const response = await fetch(`${apiBaseUrl()}/api/noise/providers`);
+  return response.json();
+}
+
+export async function getIceServers(): Promise<IceServerConfig[]> {
+  const response = await fetch(`${apiBaseUrl()}/api/webrtc/ice-servers`);
+  if (!response.ok) {
+    throw new Error(`failed to load ICE servers: ${response.status}`);
+  }
   return response.json();
 }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { joinRoom, leaveRoom, shareRoomUrl, type RoomSnapshot, type UserProfile } from "@/lib/api";
+import { getIceServers, joinRoom, leaveRoom, shareRoomUrl, type RoomSnapshot, type UserProfile } from "@/lib/api";
 import {
   createRoomSocket,
   encodeAnswer,
@@ -100,7 +100,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     }
     try {
       audioStartedRef.current = true;
-      const connection = await createAudioPeerConnection();
+      const iceServers = await getIceServers();
+      const connection = await createAudioPeerConnection(iceServers);
       peerRef.current = connection;
       connection.onicecandidate = (event) => {
         if (event.candidate) {

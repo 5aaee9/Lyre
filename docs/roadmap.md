@@ -8,13 +8,14 @@
 - WebSocket signalling contract for WebRTC offer, answer, ICE candidate, presence, snapshots, and errors.
 - Clap CLI for serving the API and printing default config.
 - Next.js frontend with room entry, shareable room route, settings, local storage, and user-triggered audio connection.
+- Static STUN/TURN ICE server configuration exposed to the browser WebRTC flow.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
 ## Next
 
 - Harden real WebRTC mesh negotiation across multiple browsers.
-- Add TURN/STUN configuration and deployment documentation.
+- Add dynamic short-lived TURN credential generation.
 - Implement server-side audio pipeline and broadcast architecture.
 - Add RNNoise binding and processing implementation.
 - Add DeepFilterNet binding and processing implementation.

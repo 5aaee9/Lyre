@@ -6,8 +6,13 @@ Lyre is a Rust and Next.js VOIP room application. This MVP provides room state, 
 
 ```bash
 cargo run -p lyre-app -- serve --host 0.0.0.0 --port 8080
+cargo run -p lyre-app -- serve --ice-server 'stun:stun.l.google.com:19302'
+cargo run -p lyre-app -- serve --ice-server 'turn:turn.example:3478|user|pass'
 cargo run -p lyre-app -- config print
 ```
+
+`LYRE_ICE_SERVERS` accepts a semicolon-separated list using `url[,url...][|username|credential]`.
+Configured TURN usernames and credentials are returned to browsers by `/api/webrtc/ice-servers`; use scoped, rotated, low-lifetime TURN credentials rather than privileged long-lived secrets.
 
 API routes:
 
@@ -16,6 +21,7 @@ API routes:
 - `POST /api/rooms/:room_id/join`
 - `POST /api/rooms/:room_id/leave`
 - `GET /api/noise/providers`
+- `GET /api/webrtc/ice-servers`
 - `GET /api/rooms/:room_id/ws?user_id=...`
 
 ## Frontend

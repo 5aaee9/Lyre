@@ -9,3 +9,9 @@
 - Modelled noise cancellation providers `off`, `rnnoise`, and `deepfilternet` with a passthrough processor until native integrations are added.
 - Used an in-memory `DashMap` room registry for the first milestone.
 - Represented the WebRPC boundary as typed JSON modules and REST/WebSocket contracts for now; generated IDL remains future work.
+
+## 2026-06-14 ICE Server Configuration
+
+- Added static STUN/TURN ICE server configuration through CLI `--ice-server`, `LYRE_ICE_SERVERS`, `lyre_web::ServeConfig`, and `/api/webrtc/ice-servers`.
+- Preserved configured ICE server order and duplicates so operators can control browser candidate priority.
+- Treated configured TURN credentials as browser-visible runtime config; long-lived privileged TURN secrets remain inappropriate for this static route.
