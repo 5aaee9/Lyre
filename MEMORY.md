@@ -66,3 +66,12 @@
 - Kept `lyre-core` independent of `lyre-noise-cancelling`; future adapters can bridge concrete processors behind the core `AudioFrameProcessor` trait.
 - Gated frame processing on active media relay state and registered audio tracks without mutating relay state.
 - Kept real WebRTC termination, Opus decode/encode, RNNoise, DeepFilterNet, and real server broadcast as future work.
+
+## 2026-06-15 Noise Provider Runtime
+
+- Added a fallible provider runtime in `lyre-noise-cancelling`.
+- Implemented RNNoise-compatible 48 kHz mono 480-sample processing with `nnnoiseless`.
+- Kept RNNoise VAD as metadata only; `intensity` and `voice_activity_threshold` are not applied to alter output yet.
+- Kept DeepFilterNet explicit as unsupported until a real libDF/model integration is added.
+- Added a `lyre-core::AudioFrameProcessor` adapter with structured warning logs at the current infallible trait boundary.
+- Left client-side noise cancellation as future Rust WASM work.

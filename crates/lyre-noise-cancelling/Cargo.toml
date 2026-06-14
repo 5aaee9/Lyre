@@ -6,3 +6,6 @@ version.workspace = true
 
 [dependencies]
 lyre-core = { path = "../lyre-core" }
+nnnoiseless.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

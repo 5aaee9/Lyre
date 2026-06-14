@@ -17,13 +17,14 @@
 - Media relay state skeleton, REST endpoints, WebRPC contract, and frontend API wrappers for future server-side audio processing.
 - Frontend multi-peer WebRTC mesh negotiation with per-user peer connections and targeted signalling.
 - Decoded-PCM server media runtime boundary with processor and sink traits.
+- RNNoise-compatible decoded PCM provider runtime in `lyre-noise-cancelling`.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
 ## Next
 
 - Implement real WebRTC media termination/SFU-like audio pipeline and broadcast architecture.
-- Add RNNoise binding and processing implementation.
+- Wire the RNNoise provider runtime into real server media termination and broadcast.
 - Add DeepFilterNet binding and processing implementation.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Add authentication and room access control.
