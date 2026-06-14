@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ServerMediaSessionConfig, ServerMediaSessionKey, ServerMediaSessionRegistry,
-    ServerMediaSessionState, WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError,
+    ServerMediaIceCandidateInit, ServerMediaSessionConfig, ServerMediaSessionKey,
+    ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcPeerConnectionHandle, WebRtcStack,
+    WebRtcStackError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,6 +26,45 @@ pub struct ServerMediaAnswer {
     pub audio_track_id: String,
     pub sdp: String,
     pub state: ServerMediaSessionState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerMediaIceCandidate {
+    pub room_id: RoomId,
+    pub user_id: UserId,
+    pub candidate: String,
+    pub sdp_mid: Option<String>,
+    pub sdp_mline_index: Option<u16>,
+    pub username_fragment: Option<String>,
+}
+
+impl ServerMediaIceCandidate {
+    fn key(&self) -> ServerMediaSessionKey {
+        ServerMediaSessionKey {
+            room_id: self.room_id.clone(),
+            user_id: self.user_id.clone(),
+        }
+    }
+
+    fn init(&self) -> ServerMediaIceCandidateInit {
+        ServerMediaIceCandidateInit {
+            candidate: self.candidate.clone(),
+            sdp_mid: self.sdp_mid.clone(),
+            sdp_mline_index: self.sdp_mline_index,
+            username_fragment: self.username_fragment.clone(),
+        }
+    }
+
+    fn from_init(key: &ServerMediaSessionKey, candidate: ServerMediaIceCandidateInit) -> Self {
+        Self {
+            room_id: key.room_id.clone(),
+            user_id: key.user_id.clone(),
+            candidate: candidate.candidate,
+            sdp_mid: candidate.sdp_mid,
+            sdp_mline_index: candidate.sdp_mline_index,
+            username_fragment: candidate.username_fragment,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -92,6 +132,39 @@ impl ServerMediaNegotiator {
         })
     }
 
+    pub async fn add_remote_ice_candidate(
+        &self,
+        candidate: ServerMediaIceCandidate,
+    ) -> Result<(), ServerMediaNegotiationError> {
+        let key = candidate.key();
+        let peer_connection = self
+            .peer_connections
+            .get(&key)
+            .ok_or(ServerMediaNegotiationError::SessionMissing)?
+            .clone();
+        peer_connection
+            .add_remote_ice_candidate(candidate.init())
+            .await
+            .map_err(|source| ServerMediaNegotiationError::WebRtc { source })?;
+        Ok(())
+    }
+
+    pub fn local_ice_candidates(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Vec<ServerMediaIceCandidate> {
+        self.peer_connections
+            .get(key)
+            .map(|peer_connection| {
+                peer_connection
+                    .local_ice_candidates()
+                    .into_iter()
+                    .map(|candidate| ServerMediaIceCandidate::from_init(key, candidate))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn close(&self, key: &ServerMediaSessionKey) {
         self.sessions.close(key);
         self.peer_connections.remove(key);
@@ -108,140 +181,12 @@ impl ServerMediaNegotiator {
     }
 
     #[cfg(test)]
-    fn stored_peer_connection_debug_id(&self, key: &ServerMediaSessionKey) -> Option<usize> {
+    pub(crate) fn stored_peer_connection_debug_id(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Option<usize> {
         self.peer_connections
             .get(key)
             .map(|entry| entry.value().debug_id())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn offer_sdp() -> String {
-        let offerer = WebRtcStack::new().create_peer_connection().await.unwrap();
-        offerer.create_local_offer_for_test().await.unwrap()
-    }
-
-    fn offer(track: &str, sdp: String) -> ServerMediaOffer {
-        ServerMediaOffer {
-            room_id: RoomId::default_room(),
-            user_id: UserId::from_external("user_01"),
-            audio_track_id: track.to_owned(),
-            sdp,
-        }
-    }
-
-    #[tokio::test]
-    async fn answer_offer_marks_session_negotiating_and_stores_handle() {
-        let sessions = Arc::new(ServerMediaSessionRegistry::new());
-        let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
-
-        let answer = negotiator
-            .answer_offer(offer("audio-main", offer_sdp().await))
-            .await
-            .unwrap();
-
-        assert!(answer.sdp.starts_with("v=0"));
-        assert_eq!(answer.state, ServerMediaSessionState::Negotiating);
-        assert_eq!(
-            sessions.active_sessions()[0].state,
-            ServerMediaSessionState::Negotiating
-        );
-        assert_eq!(negotiator.stored_peer_connection_count(), 1);
-    }
-
-    #[tokio::test]
-    async fn failed_offer_does_not_create_session_or_handle() {
-        let sessions = Arc::new(ServerMediaSessionRegistry::new());
-        let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
-
-        let result = negotiator
-            .answer_offer(offer("audio-main", "not sdp".to_owned()))
-            .await;
-
-        assert!(result.is_err());
-        assert!(sessions.sessions().is_empty());
-        assert_eq!(negotiator.stored_peer_connection_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn repeated_successful_offer_replaces_track_and_handle() {
-        let sessions = Arc::new(ServerMediaSessionRegistry::new());
-        let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
-        let key = ServerMediaSessionKey {
-            room_id: RoomId::default_room(),
-            user_id: UserId::from_external("user_01"),
-        };
-
-        negotiator
-            .answer_offer(offer("audio-main", offer_sdp().await))
-            .await
-            .unwrap();
-        let first_handle = negotiator.stored_peer_connection_debug_id(&key).unwrap();
-        negotiator
-            .answer_offer(offer("audio-retry", offer_sdp().await))
-            .await
-            .unwrap();
-        let second_handle = negotiator.stored_peer_connection_debug_id(&key).unwrap();
-
-        assert_eq!(sessions.sessions().len(), 1);
-        assert_eq!(sessions.sessions()[0].audio_track_id, "audio-retry");
-        assert_eq!(negotiator.stored_peer_connection_count(), 1);
-        assert_ne!(first_handle, second_handle);
-    }
-
-    #[tokio::test]
-    async fn failed_renegotiation_preserves_existing_session_and_handle() {
-        let sessions = Arc::new(ServerMediaSessionRegistry::new());
-        let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
-        let key = ServerMediaSessionKey {
-            room_id: RoomId::default_room(),
-            user_id: UserId::from_external("user_01"),
-        };
-        negotiator
-            .answer_offer(offer("audio-main", offer_sdp().await))
-            .await
-            .unwrap();
-        let status_before = sessions.sessions();
-        let handle_before = negotiator.stored_peer_connection_debug_id(&key).unwrap();
-
-        let result = negotiator
-            .answer_offer(offer("audio-retry", "not sdp".to_owned()))
-            .await;
-
-        assert!(result.is_err());
-        assert_eq!(sessions.sessions(), status_before);
-        assert_eq!(
-            negotiator.stored_peer_connection_debug_id(&key),
-            Some(handle_before)
-        );
-        assert_eq!(negotiator.stored_peer_connection_count(), 1);
-    }
-
-    #[tokio::test]
-    async fn close_and_close_room_remove_stored_handles() {
-        let sessions = Arc::new(ServerMediaSessionRegistry::new());
-        let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
-        negotiator
-            .answer_offer(offer("audio-main", offer_sdp().await))
-            .await
-            .unwrap();
-
-        negotiator.close(&ServerMediaSessionKey {
-            room_id: RoomId::default_room(),
-            user_id: UserId::from_external("user_01"),
-        });
-
-        assert_eq!(negotiator.stored_peer_connection_count(), 0);
-
-        negotiator
-            .answer_offer(offer("audio-main", offer_sdp().await))
-            .await
-            .unwrap();
-        negotiator.close_room(&RoomId::default_room());
-
-        assert_eq!(negotiator.stored_peer_connection_count(), 0);
     }
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  addServerMediaIceCandidate,
   answerServerMediaOffer,
   generatedMediaTopologyModeToRest,
   generatedMediaRelayModeToRest,
@@ -9,11 +10,13 @@ import {
   getIceServers,
   getMediaRelay,
   getMediaTopology,
+  getServerMediaIceCandidates,
   joinRoom,
   leaveRoom,
   mediaRelayUrl,
   registerMediaTrack,
   roomUrl,
+  serverMediaCandidatesUrl,
   serverMediaOfferUrl,
   shareRoomUrl,
   startMediaRelay,
@@ -22,7 +25,8 @@ import {
   type MediaRelayRoomStatus,
   type MediaTopology,
   type NoiseProvider,
-  type ServerMediaAnswer
+  type ServerMediaAnswer,
+  type ServerMediaIceCandidate
 } from "./api";
 import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
 import {
@@ -33,7 +37,8 @@ import {
   ServerMediaSessionState,
   type JoinRoomResponse as WebrpcJoinRoomResponse,
   type MediaRelayRoomStatus as WebrpcMediaRelayRoomStatus,
-  type ServerMediaAnswer as WebrpcServerMediaAnswer
+  type ServerMediaAnswer as WebrpcServerMediaAnswer,
+  type ServerMediaIceCandidate as WebrpcServerMediaIceCandidate
 } from "./lyre.gen";
 
 const providerFromGenerated: NoiseProvider = generatedNoiseProviderToRest(WebrpcNoiseProvider.OFF);
@@ -116,6 +121,26 @@ const generatedServerMediaAnswerContract: WebrpcServerMediaAnswer = {
 };
 void generatedServerMediaAnswerContract;
 
+const serverMediaCandidateFromRestShape: ServerMediaIceCandidate = {
+  room_id: "DEFAULT",
+  user_id: "user_a",
+  candidate: "candidate:1",
+  sdp_mid: "0",
+  sdp_mline_index: 0,
+  username_fragment: null
+};
+void serverMediaCandidateFromRestShape;
+
+const generatedServerMediaCandidateContract: WebrpcServerMediaIceCandidate = {
+  roomID: "DEFAULT",
+  userID: "user_a",
+  candidate: "candidate:1",
+  sdpMid: "0",
+  sdpMLineIndex: 0,
+  usernameFragment: undefined
+};
+void generatedServerMediaCandidateContract;
+
 describe("api", () => {
   beforeEach(() => {
     window.__LYRE_CONFIG__ = {
@@ -137,6 +162,12 @@ describe("api", () => {
   it("builds encoded server media offer urls", () => {
     expect(serverMediaOfferUrl("Team A")).toBe(
       "https://api.example.test/api/rooms/Team%20A/server-media/offer"
+    );
+  });
+
+  it("builds encoded server media candidate urls", () => {
+    expect(serverMediaCandidatesUrl("Team A")).toBe(
+      "https://api.example.test/api/rooms/Team%20A/server-media/candidates"
     );
   });
 
@@ -238,5 +269,35 @@ describe("api", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ user_id: "user_a", audio_track_id: "audio-main", sdp: "v=0" })
     });
+  });
+
+  it("serializes server media ICE candidate request body", async () => {
+    await addServerMediaIceCandidate("DEFAULT", {
+      user_id: "user_a",
+      candidate: "candidate:1",
+      sdp_mid: "0",
+      sdp_mline_index: 0,
+      username_fragment: null
+    });
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/server-media/candidates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        user_id: "user_a",
+        candidate: "candidate:1",
+        sdp_mid: "0",
+        sdp_mline_index: 0,
+        username_fragment: null
+      })
+    });
+  });
+
+  it("fetches server media ICE candidates with encoded user id", async () => {
+    await getServerMediaIceCandidates("DEFAULT", "user a");
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.example.test/api/rooms/DEFAULT/server-media/candidates?user_id=user+a"
+    );
   });
 });

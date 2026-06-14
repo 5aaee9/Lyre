@@ -2,11 +2,17 @@ pub mod negotiation;
 pub mod session;
 pub mod stack;
 
+#[cfg(test)]
+mod negotiation_tests;
+
 pub use negotiation::{
-    ServerMediaAnswer, ServerMediaNegotiationError, ServerMediaNegotiator, ServerMediaOffer,
+    ServerMediaAnswer, ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator,
+    ServerMediaOffer,
 };
 pub use session::{
     ServerMediaSessionConfig, ServerMediaSessionKey, ServerMediaSessionRegistry,
     ServerMediaSessionState, ServerMediaSessionStatus,
 };
-pub use stack::{WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError};
+pub use stack::{
+    ServerMediaIceCandidateInit, WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError,
+};

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod api_server_media;
 pub mod error;
 pub mod media_egress;
 pub mod media_runtime;

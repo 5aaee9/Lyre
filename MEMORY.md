@@ -107,3 +107,9 @@
 - Added a server media offer/answer control-plane path that creates real WebRTC answers inside `lyre-webrtc`.
 - Kept negotiation atomic: failed offers do not create sessions or replace stored peer handles.
 - Stored peer connection handles only to keep negotiated sessions alive for later media work; RTP/RTCP, Opus, RNNoise ingestion, and browser playback remain future work.
+
+## 2026-06-15 Server Media ICE Candidate Exchange
+
+- Added server media ICE candidate add/query REST boundaries for negotiated server peer connections.
+- Kept candidate conversion and direct `webrtc` ICE types isolated inside `lyre-webrtc`.
+- Server media ICE exchange is still control-plane only; RTP/RTCP, Opus, RNNoise ingestion, and browser playback remain future work.

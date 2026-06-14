@@ -23,6 +23,7 @@
 - Internal processed-audio egress fanout contract for future server media forwarding.
 - Dependency-isolated Rust WebRTC server session boundary in `lyre-webrtc`.
 - Server media WebRTC offer/answer negotiation boundary.
+- Server media ICE candidate exchange boundary.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 

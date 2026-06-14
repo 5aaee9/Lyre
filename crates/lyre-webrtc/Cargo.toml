@@ -5,6 +5,7 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 dashmap.workspace = true
 lyre-core = { path = "../lyre-core" }
 serde.workspace = true

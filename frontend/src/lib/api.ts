@@ -9,6 +9,7 @@ import type {
   NoiseCancellationConfig as WebrpcNoiseCancellationConfig,
   RoomSnapshot as WebrpcRoomSnapshot,
   ServerMediaAnswer as WebrpcServerMediaAnswer,
+  ServerMediaIceCandidate as WebrpcServerMediaIceCandidate,
   UserProfile as WebrpcUserProfile
 } from "./lyre.gen";
 import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
@@ -145,6 +146,17 @@ export type ServerMediaAnswer = Omit<
   state: ServerMediaSessionState;
 };
 
+export type ServerMediaIceCandidate = Omit<
+  WebrpcServerMediaIceCandidate,
+  "roomID" | "userID" | "sdpMid" | "sdpMLineIndex" | "usernameFragment"
+> & {
+  room_id: string;
+  user_id: string;
+  sdp_mid?: string | null;
+  sdp_mline_index?: number | null;
+  username_fragment?: string | null;
+};
+
 export type UserProfile = Omit<WebrpcUserProfile, "joinedAt" | "noise"> & {
   joined_at: string;
   noise: NoiseCancellationConfig;
@@ -178,6 +190,10 @@ export function mediaRelayUrl(roomId: string): string {
 
 export function serverMediaOfferUrl(roomId: string): string {
   return `${roomUrl(roomId)}/server-media/offer`;
+}
+
+export function serverMediaCandidatesUrl(roomId: string): string {
+  return `${roomUrl(roomId)}/server-media/candidates`;
 }
 
 export async function getRoom(roomId: string): Promise<RoomSnapshot> {
@@ -254,6 +270,27 @@ export async function answerServerMediaOffer(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId, audio_track_id: audioTrackId, sdp })
   });
+  return response.json();
+}
+
+export async function addServerMediaIceCandidate(
+  roomId: string,
+  candidate: Omit<ServerMediaIceCandidate, "room_id">
+): Promise<ServerMediaIceCandidate> {
+  const response = await fetch(serverMediaCandidatesUrl(roomId), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(candidate)
+  });
+  return response.json();
+}
+
+export async function getServerMediaIceCandidates(
+  roomId: string,
+  userId: string
+): Promise<ServerMediaIceCandidate[]> {
+  const query = new URLSearchParams({ user_id: userId });
+  const response = await fetch(`${serverMediaCandidatesUrl(roomId)}?${query.toString()}`);
   return response.json();
 }
 

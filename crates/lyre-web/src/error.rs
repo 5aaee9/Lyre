@@ -51,6 +51,9 @@ impl IntoResponse for ApiError {
                 let status = match &error {
                     ServerMediaNegotiationError::WebRtc {
                         source: lyre_webrtc::WebRtcStackError::CreateAnswer { .. },
+                    }
+                    | ServerMediaNegotiationError::WebRtc {
+                        source: lyre_webrtc::WebRtcStackError::AddIceCandidate { .. },
                     } => StatusCode::BAD_REQUEST,
                     ServerMediaNegotiationError::WebRtc { .. }
                     | ServerMediaNegotiationError::SessionMissing => {

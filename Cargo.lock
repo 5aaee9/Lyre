@@ -1512,6 +1512,7 @@ dependencies = [
 name = "lyre-webrtc"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "dashmap",
  "lyre-core",
  "serde",

@@ -21,8 +21,9 @@ use lyre_core::{
     RoomRegistry,
 };
 use lyre_webrtc::{
-    ServerMediaAnswer, ServerMediaNegotiationError, ServerMediaNegotiator, ServerMediaOffer,
-    ServerMediaSessionConfig, ServerMediaSessionRegistry, ServerMediaSessionStatus, WebRtcStack,
+    ServerMediaAnswer, ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator,
+    ServerMediaOffer, ServerMediaSessionConfig, ServerMediaSessionKey, ServerMediaSessionRegistry,
+    ServerMediaSessionStatus, WebRtcStack,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -131,6 +132,22 @@ impl AppState {
         self.server_media_negotiator.answer_offer(offer).await
     }
 
+    pub async fn add_server_media_ice_candidate(
+        &self,
+        candidate: ServerMediaIceCandidate,
+    ) -> Result<(), ServerMediaNegotiationError> {
+        self.server_media_negotiator
+            .add_remote_ice_candidate(candidate)
+            .await
+    }
+
+    pub fn server_media_ice_candidates(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Vec<ServerMediaIceCandidate> {
+        self.server_media_negotiator.local_ice_candidates(key)
+    }
+
     #[cfg(test)]
     pub fn server_media_peer_connection_count(&self) -> usize {
         self.server_media_negotiator.stored_peer_connection_count()
@@ -158,13 +175,6 @@ struct WsQuery {
     user_id: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct ServerMediaOfferRequest {
-    user_id: lyre_core::UserId,
-    audio_track_id: String,
-    sdp: String,
-}
-
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -187,10 +197,7 @@ pub fn router(state: AppState) -> Router {
             "/api/rooms/{room_id}/media-relay/tracks",
             post(register_media_track),
         )
-        .route(
-            "/api/rooms/{room_id}/server-media/offer",
-            post(answer_server_media_offer),
-        )
+        .merge(crate::api_server_media::router())
         .route("/api/rooms/{room_id}/ws", get(room_ws))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -287,23 +294,6 @@ async fn register_media_track(
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
     Ok(Json(state.media_relays.register_track(room_id, request)?))
-}
-
-async fn answer_server_media_offer(
-    State(state): State<AppState>,
-    Path(room_id): Path<String>,
-    Json(request): Json<ServerMediaOfferRequest>,
-) -> Result<impl IntoResponse, ApiError> {
-    let room_id = RoomId::parse_boundary(room_id)?;
-    let answer = state
-        .answer_server_media_offer(ServerMediaOffer {
-            room_id,
-            user_id: request.user_id,
-            audio_track_id: request.audio_track_id,
-            sdp: request.sdp,
-        })
-        .await?;
-    Ok(Json(answer))
 }
 
 async fn room_ws(
