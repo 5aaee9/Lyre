@@ -29,6 +29,7 @@ impl AppState {
         &self,
         room_id: &RoomId,
     ) -> Vec<ServerMediaSessionStatus> {
+        self.server_media_runtime_pump.stop_room(room_id);
         self.server_media_negotiator.close_room(room_id);
         self.server_media_sessions.sessions()
     }
@@ -37,7 +38,12 @@ impl AppState {
         &self,
         offer: ServerMediaOffer,
     ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
-        self.server_media_negotiator.answer_offer(offer).await
+        let answer = self.server_media_negotiator.answer_offer(offer).await?;
+        self.server_media_runtime_pump.start(ServerMediaSessionKey {
+            room_id: answer.room_id.clone(),
+            user_id: answer.user_id.clone(),
+        });
+        Ok(answer)
     }
 
     pub async fn add_server_media_ice_candidate(
@@ -106,6 +112,11 @@ impl AppState {
     #[cfg(test)]
     pub fn server_media_peer_connection_count(&self) -> usize {
         self.server_media_negotiator.stored_peer_connection_count()
+    }
+
+    #[cfg(test)]
+    pub fn server_media_runtime_pump_count(&self) -> usize {
+        self.server_media_runtime_pump.task_count()
     }
 
     #[cfg(test)]

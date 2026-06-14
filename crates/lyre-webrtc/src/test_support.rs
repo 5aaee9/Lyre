@@ -86,10 +86,19 @@ pub struct ServerMediaTestOffer {
 
 impl ServerMediaTestOffer {
     pub async fn accept_answer_and_send_valid_opus(
-        mut self,
+        self,
         answer: &ServerMediaAnswer,
         server_candidates: Vec<ServerMediaIceCandidate>,
     ) {
+        let connected = self.accept_answer(answer, server_candidates).await;
+        connected.send_valid_opus_packets(100).await;
+    }
+
+    pub async fn accept_answer(
+        mut self,
+        answer: &ServerMediaAnswer,
+        server_candidates: Vec<ServerMediaIceCandidate>,
+    ) -> ServerMediaConnectedOffer {
         let answer =
             webrtc::peer_connection::RTCSessionDescription::answer(answer.sdp.clone()).unwrap();
         self.offerer.set_remote_description(answer).await.unwrap();
@@ -110,10 +119,9 @@ impl ServerMediaTestOffer {
         }
 
         let _ = wait_for_connected(&mut self.connected_rx).await;
-        let payload = encoded_opus_payload();
-        for _ in 0..100 {
-            let _ = self.track.write_rtp(test_rtp_packet(payload.clone())).await;
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        ServerMediaConnectedOffer {
+            _offerer: self.offerer,
+            track: self.track,
         }
     }
 
@@ -123,6 +131,21 @@ impl ServerMediaTestOffer {
             .into_iter()
             .map(to_server_candidate)
             .collect()
+    }
+}
+
+pub struct ServerMediaConnectedOffer {
+    _offerer: Arc<dyn PeerConnection>,
+    track: Arc<TrackLocalStaticRTP>,
+}
+
+impl ServerMediaConnectedOffer {
+    pub async fn send_valid_opus_packets(&self, count: usize) {
+        let payload = encoded_opus_payload();
+        for _ in 0..count {
+            let _ = self.track.write_rtp(test_rtp_packet(payload.clone())).await;
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
     }
 }
 

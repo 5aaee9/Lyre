@@ -287,3 +287,57 @@ async fn server_media_pcm_frames_route_does_not_exist() {
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn server_media_runtime_pump_route_does_not_exist() {
+    let app = router(AppState::default());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/rooms/DEFAULT/server-media/pump?user_id=user_01")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn server_media_decode_failures_route_does_not_exist() {
+    let app = router(AppState::default());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/rooms/DEFAULT/server-media/decode-failures?user_id=user_01")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn server_media_debug_route_does_not_exist() {
+    let app = router(AppState::default());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/rooms/DEFAULT/server-media/debug?user_id=user_01")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}

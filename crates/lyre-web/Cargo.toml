@@ -16,6 +16,7 @@ lyre-webrtc = { path = "../lyre-webrtc" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 

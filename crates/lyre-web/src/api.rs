@@ -2,6 +2,7 @@ use crate::{
     error::ApiError,
     media_egress::{ProcessedAudioEgressFanout, ProcessedAudioEgressFrame},
     media_runtime::WebMediaRuntime,
+    server_media_runtime_pump::ServerMediaRuntimePump,
     signalling::{route_signal_message, PeerHub, SignalMessage, SignalPayload},
 };
 use axum::{
@@ -37,6 +38,7 @@ pub struct AppState {
     pub media_egress: Arc<ProcessedAudioEgressFanout>,
     pub server_media_sessions: Arc<ServerMediaSessionRegistry>,
     pub server_media_negotiator: Arc<ServerMediaNegotiator>,
+    pub server_media_runtime_pump: Arc<ServerMediaRuntimePump>,
     pub peers: Arc<PeerHub>,
     pub ice_servers: Arc<Vec<IceServerConfig>>,
     pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
@@ -59,12 +61,18 @@ impl AppState {
             WebRtcStack::new(),
             Arc::clone(&server_media_sessions),
         ));
+        let media_runtime = Arc::new(WebMediaRuntime::new(Arc::clone(&media_relays)));
+        let server_media_runtime_pump = Arc::new(ServerMediaRuntimePump::new(
+            Arc::clone(&media_runtime),
+            Arc::clone(&server_media_negotiator),
+        ));
         Self {
             registry: Arc::new(RoomRegistry::new()),
-            media_runtime: Arc::new(WebMediaRuntime::new(Arc::clone(&media_relays))),
+            media_runtime,
             media_egress: Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&media_relays))),
             server_media_sessions,
             server_media_negotiator,
+            server_media_runtime_pump,
             media_relays,
             peers: Arc::new(PeerHub::new()),
             ice_servers: Arc::new(ice_servers),

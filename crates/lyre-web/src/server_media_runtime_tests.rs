@@ -138,7 +138,8 @@ async fn app_state_processes_real_drained_server_media_pcm_batch() {
 
     let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
     let answer = state
-        .answer_server_media_offer(lyre_webrtc::ServerMediaOffer {
+        .server_media_negotiator
+        .answer_offer(lyre_webrtc::ServerMediaOffer {
             room_id: key.room_id.clone(),
             user_id: key.user_id.clone(),
             audio_track_id: "audio-main".to_owned(),
@@ -148,7 +149,8 @@ async fn app_state_processes_real_drained_server_media_pcm_batch() {
         .unwrap();
     for candidate in offer.remote_candidates().await {
         state
-            .add_server_media_ice_candidate(lyre_webrtc::ServerMediaIceCandidate {
+            .server_media_negotiator
+            .add_remote_ice_candidate(lyre_webrtc::ServerMediaIceCandidate {
                 room_id: key.room_id.clone(),
                 user_id: key.user_id.clone(),
                 candidate: candidate.candidate,
@@ -198,7 +200,8 @@ async fn app_state_discards_real_drained_server_media_pcm_batch_on_error() {
 
     let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
     let answer = state
-        .answer_server_media_offer(lyre_webrtc::ServerMediaOffer {
+        .server_media_negotiator
+        .answer_offer(lyre_webrtc::ServerMediaOffer {
             room_id: key.room_id.clone(),
             user_id: key.user_id.clone(),
             audio_track_id: "audio-main".to_owned(),
@@ -208,7 +211,8 @@ async fn app_state_discards_real_drained_server_media_pcm_batch_on_error() {
         .unwrap();
     for candidate in offer.remote_candidates().await {
         state
-            .add_server_media_ice_candidate(lyre_webrtc::ServerMediaIceCandidate {
+            .server_media_negotiator
+            .add_remote_ice_candidate(lyre_webrtc::ServerMediaIceCandidate {
                 room_id: key.room_id.clone(),
                 user_id: key.user_id.clone(),
                 candidate: candidate.candidate,

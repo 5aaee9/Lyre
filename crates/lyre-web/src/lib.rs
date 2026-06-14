@@ -6,6 +6,7 @@ pub mod media_egress;
 pub mod media_runtime;
 pub mod server;
 pub mod server_media_runtime;
+pub mod server_media_runtime_pump;
 pub mod signalling;
 
 #[cfg(test)]
@@ -20,6 +21,8 @@ mod api_tests;
 mod api_webrtc_session_tests;
 #[cfg(test)]
 mod media_egress_tests;
+#[cfg(test)]
+mod server_media_runtime_pump_tests;
 #[cfg(test)]
 mod server_media_runtime_tests;
 #[cfg(test)]

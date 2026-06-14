@@ -135,3 +135,10 @@
 - Kept the public noise-cancelling API unchanged and split `lyre-noise-cancelling` tests out of `lib.rs` to keep Rust files below 400 LOC.
 - Verified real server-media decoded PCM can be processed through RNNoise when the media relay is configured for RNNoise.
 - DeepFilterNet, automatic server-media pumping, jitter buffering, processed RTP/RTCP egress, and browser playback remain future work.
+
+## 2026-06-15 Server Media Runtime Pump
+
+- Added an internal `lyre-web` runtime pump that starts after successful server-media negotiation and automatically drains decoded PCM into `WebMediaRuntime`.
+- Pump tasks are keyed by room/user server-media session, replaced on renegotiation, and cancelled when server-media sessions or media relays are stopped for a room.
+- The pump keeps polling through inactive relay or missing track errors so relay/track registration can arrive after negotiation.
+- No public pump, raw RTP, decoded PCM, decode-failure, or debug endpoint was added; RTP/RTCP egress and browser playback remain future work.
