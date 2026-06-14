@@ -20,6 +20,7 @@ use lyre_core::{
     LeaveRoomRequest, MediaRelayError, MediaRelayRegistry, ProcessedAudioFrame, RoomId,
     RoomRegistry,
 };
+use lyre_webrtc::{ServerMediaSessionConfig, ServerMediaSessionRegistry, ServerMediaSessionStatus};
 use serde::{Deserialize, Serialize};
 use std::{
     sync::Arc,
@@ -34,6 +35,7 @@ pub struct AppState {
     pub media_relays: Arc<MediaRelayRegistry>,
     pub media_runtime: Arc<WebMediaRuntime>,
     pub media_egress: Arc<ProcessedAudioEgressFanout>,
+    pub server_media_sessions: Arc<ServerMediaSessionRegistry>,
     pub peers: Arc<PeerHub>,
     pub ice_servers: Arc<Vec<IceServerConfig>>,
     pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
@@ -55,6 +57,7 @@ impl AppState {
             registry: Arc::new(RoomRegistry::new()),
             media_runtime: Arc::new(WebMediaRuntime::new(Arc::clone(&media_relays))),
             media_egress: Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&media_relays))),
+            server_media_sessions: Arc::new(ServerMediaSessionRegistry::new()),
             media_relays,
             peers: Arc::new(PeerHub::new()),
             ice_servers: Arc::new(ice_servers),
@@ -86,6 +89,39 @@ impl AppState {
 
     pub fn clear_processed_media_room(&self, room_id: &RoomId) {
         self.media_runtime.clear_room(room_id);
+    }
+
+    pub fn start_server_media_session(
+        &self,
+        config: ServerMediaSessionConfig,
+    ) -> ServerMediaSessionStatus {
+        self.server_media_sessions.start(config)
+    }
+
+    pub fn server_media_sessions(&self) -> Vec<ServerMediaSessionStatus> {
+        self.server_media_sessions.sessions()
+    }
+
+    pub fn active_server_media_sessions(&self) -> Vec<ServerMediaSessionStatus> {
+        self.server_media_sessions.active_sessions()
+    }
+
+    pub fn close_server_media_sessions_for_room(
+        &self,
+        room_id: &RoomId,
+    ) -> Vec<ServerMediaSessionStatus> {
+        self.server_media_sessions.close_room(room_id)
+    }
+
+    pub fn stop_media_relay(
+        &self,
+        room_id: RoomId,
+        request: lyre_core::StopMediaRelayRequest,
+    ) -> lyre_core::MediaRelayRoomStatus {
+        let status = self.media_relays.stop(room_id.clone(), request);
+        self.clear_processed_media_room(&room_id);
+        self.close_server_media_sessions_for_room(&room_id);
+        status
     }
 }
 
@@ -207,9 +243,7 @@ async fn stop_media_relay(
     Json(request): Json<lyre_core::StopMediaRelayRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    let status = state.media_relays.stop(room_id.clone(), request);
-    state.clear_processed_media_room(&room_id);
-    Ok(Json(status))
+    Ok(Json(state.stop_media_relay(room_id, request)))
 }
 
 async fn register_media_track(

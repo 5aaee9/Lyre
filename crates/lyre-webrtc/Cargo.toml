@@ -1,0 +1,14 @@
+[package]
+name = "lyre-webrtc"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+dashmap.workspace = true
+lyre-core = { path = "../lyre-core" }
+thiserror.workspace = true
+webrtc.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

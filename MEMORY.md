@@ -95,3 +95,9 @@
 - Egress fanout validates the source track against current relay state and returns relay errors for stale or non-audio source frames.
 - Split `lyre-core` media tests out of `media.rs` while adding the read-only active participant snapshot needed by fanout.
 - Kept real WebRTC media termination, RTP/Opus packetization, and browser delivery as future work.
+
+## 2026-06-15 WebRTC Session Boundary
+
+- Added `lyre-webrtc` to isolate the direct `webrtc` crate dependency behind Lyre-owned server media session types.
+- Chose `webrtc = "0.20.0-alpha.1"` over `str0m` for this boundary because its high-level PeerConnection model better matches the existing browser-style signalling path.
+- Server media sessions are control-plane state only; real browser-to-server negotiation, RTP/RTCP, Opus decode/encode, RNNoise ingestion, and playback remain future work.

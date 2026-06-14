@@ -12,6 +12,8 @@ mod api_media_tests;
 #[cfg(test)]
 mod api_tests;
 #[cfg(test)]
+mod api_webrtc_session_tests;
+#[cfg(test)]
 mod media_egress_tests;
 #[cfg(test)]
 mod signalling_tests;

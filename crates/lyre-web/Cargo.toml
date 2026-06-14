@@ -12,6 +12,7 @@ futures-util.workspace = true
 lyre-core = { path = "../lyre-core" }
 lyre-noise-cancelling = { path = "../lyre-noise-cancelling" }
 lyre-turn = { path = "../lyre-turn" }
+lyre-webrtc = { path = "../lyre-webrtc" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
