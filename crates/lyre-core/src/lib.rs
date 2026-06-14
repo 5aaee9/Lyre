@@ -8,4 +8,6 @@ pub use noise::{supported_noise_providers, NoiseCancellationConfig, NoiseProvide
 pub use room::{
     JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, RoomRegistry, RoomSnapshot, UserProfile,
 };
-pub use webrtc::{default_ice_servers, IceServerConfig};
+pub use webrtc::{
+    current_media_topology, default_ice_servers, IceServerConfig, MediaTopology, MediaTopologyMode,
+};

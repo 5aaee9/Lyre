@@ -2,10 +2,12 @@ import type {
   IceServerConfig as WebrpcIceServerConfig,
   JoinRoomInput as WebrpcJoinRoomInput,
   JoinRoomResponse as WebrpcJoinRoomResponse,
+  MediaTopology as WebrpcMediaTopology,
   NoiseCancellationConfig as WebrpcNoiseCancellationConfig,
   RoomSnapshot as WebrpcRoomSnapshot,
   UserProfile as WebrpcUserProfile
 } from "./lyre.gen";
+import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
 import { NoiseProvider as WebrpcNoiseProvider } from "./lyre.gen";
 import { runtimeConfig } from "./runtime-config";
 
@@ -29,6 +31,17 @@ export function generatedNoiseProviderToRest(provider: WebrpcNoiseProvider): Noi
   }
 }
 
+export type MediaTopologyMode = "p2p_mesh" | "media_relay";
+
+export function generatedMediaTopologyModeToRest(mode: WebrpcMediaTopologyMode): MediaTopologyMode {
+  switch (mode) {
+    case WebrpcMediaTopologyMode.MEDIA_RELAY:
+      return "media_relay";
+    case WebrpcMediaTopologyMode.P2P_MESH:
+      return "p2p_mesh";
+  }
+}
+
 export type NoiseCancellationConfig = Omit<WebrpcNoiseCancellationConfig, "provider" | "voiceActivityThreshold"> & {
   provider: NoiseProvider;
   voice_activity_threshold: WebrpcNoiseCancellationConfig["voiceActivityThreshold"];
@@ -37,6 +50,21 @@ export type NoiseCancellationConfig = Omit<WebrpcNoiseCancellationConfig, "provi
 export type IceServerConfig = Omit<WebrpcIceServerConfig, "username" | "credential"> & {
   username?: WebrpcIceServerConfig["username"] | null;
   credential?: WebrpcIceServerConfig["credential"] | null;
+};
+
+export type MediaTopology = Omit<
+  WebrpcMediaTopology,
+  | "mode"
+  | "turnRelaySupported"
+  | "serverSideAudioProcessing"
+  | "serverSideNoiseCancelling"
+  | "serverNoiseCancellingRequires"
+> & {
+  mode: MediaTopologyMode;
+  turn_relay_supported: WebrpcMediaTopology["turnRelaySupported"];
+  server_side_audio_processing: WebrpcMediaTopology["serverSideAudioProcessing"];
+  server_side_noise_cancelling: WebrpcMediaTopology["serverSideNoiseCancelling"];
+  server_noise_cancelling_requires: MediaTopologyMode;
 };
 
 export type UserProfile = Omit<WebrpcUserProfile, "joinedAt" | "noise"> & {
@@ -99,6 +127,11 @@ export async function getIceServers(): Promise<IceServerConfig[]> {
   if (!response.ok) {
     throw new Error(`failed to load ICE servers: ${response.status}`);
   }
+  return response.json();
+}
+
+export async function getMediaTopology(): Promise<MediaTopology> {
+  const response = await fetch(`${apiBaseUrl()}/api/webrtc/topology`);
   return response.json();
 }
 

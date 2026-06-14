@@ -60,6 +60,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/api/noise/providers", get(noise_providers))
         .route("/api/webrtc/ice-servers", get(ice_servers))
+        .route("/api/webrtc/topology", get(media_topology))
         .route("/api/rooms/{room_id}", get(room_snapshot))
         .route("/api/rooms/{room_id}/join", post(join_room))
         .route("/api/rooms/{room_id}/leave", post(leave_room))
@@ -79,6 +80,10 @@ async fn noise_providers() -> Json<Vec<lyre_core::NoiseCancellationConfig>> {
 
 async fn ice_servers(State(state): State<AppState>) -> Json<Vec<IceServerConfig>> {
     Json((*state.ice_servers).clone())
+}
+
+async fn media_topology() -> Json<lyre_core::MediaTopology> {
+    Json(lyre_core::current_media_topology())
 }
 
 async fn room_snapshot(
@@ -325,6 +330,28 @@ mod tests {
         let body = body_json(response).await;
         assert_eq!(body.as_array().unwrap().len(), 2);
         assert_eq!(body[1]["username"], "user");
+    }
+
+    #[tokio::test]
+    async fn media_topology_route_documents_current_runtime_boundary() {
+        let app = router(AppState::default());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/webrtc/topology")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response).await;
+        assert_eq!(body["mode"], "p2p_mesh");
+        assert_eq!(body["turn_relay_supported"], true);
+        assert_eq!(body["server_side_audio_processing"], false);
+        assert_eq!(body["server_side_noise_cancelling"], false);
+        assert_eq!(body["server_noise_cancelling_requires"], "media_relay");
     }
 
     #[tokio::test]

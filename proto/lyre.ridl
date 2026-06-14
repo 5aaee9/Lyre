@@ -19,6 +19,17 @@ struct IceServerConfig
   - username?: string
   - credential?: string
 
+enum MediaTopologyMode: uint32
+  - P2P_MESH = 0
+  - MEDIA_RELAY = 1
+
+struct MediaTopology
+  - mode: MediaTopologyMode
+  - turnRelaySupported: bool
+  - serverSideAudioProcessing: bool
+  - serverSideNoiseCancelling: bool
+  - serverNoiseCancellingRequires: MediaTopologyMode
+
 struct JoinRoomInput
   - nickname?: string
   - noise?: NoiseCancellationConfig
@@ -48,3 +59,5 @@ service Lyre
   - GetNoiseProviders() => (providers: []NoiseCancellationConfig)
   # Documents GET /api/webrtc/ice-servers; REST fetch remains the runtime transport in this increment.
   - GetIceServers() => (iceServers: []IceServerConfig)
+  # Documents GET /api/webrtc/topology; REST fetch remains the runtime transport in this increment.
+  - GetMediaTopology() => (topology: MediaTopology)

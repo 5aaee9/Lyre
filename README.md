@@ -22,6 +22,7 @@ API routes:
 - `POST /api/rooms/:room_id/leave`
 - `GET /api/noise/providers`
 - `GET /api/webrtc/ice-servers`
+- `GET /api/webrtc/topology`
 - `GET /api/rooms/:room_id/ws?user_id=...`
 
 ## Frontend
@@ -52,6 +53,12 @@ npm run generate:webrpc
 ```
 
 This uses `go run github.com/webrpc/webrpc/cmd/webrpc-gen@v0.36.0`; the first run needs network access for Go module download. The current runtime still uses the Axum REST routes, with WebRPC acting as the checked-in contract and generated TypeScript type source.
+
+## Media Topology
+
+`GET /api/webrtc/topology` reports the active media topology. The current topology is peer-to-peer mesh WebRTC with TURN relay support for NAT traversal.
+
+TURN, including a future `turn-rs` integration, relays encrypted WebRTC packets and cannot run server-side RNNoise or DeepFilterNet by itself. Server-side noise cancellation requires a future media relay/SFU-like path that terminates WebRTC media, decodes audio to PCM, runs `lyre-noise-cancelling`, then re-encodes and broadcasts processed audio.
 
 ## Tests
 

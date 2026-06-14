@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  generatedMediaTopologyModeToRest,
   generatedNoiseProviderToRest,
   getIceServers,
+  getMediaTopology,
   joinRoom,
   leaveRoom,
   roomUrl,
   shareRoomUrl,
   type JoinRoomResponse,
+  type MediaTopology,
   type NoiseProvider
 } from "./api";
+import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
 import { NoiseProvider as WebrpcNoiseProvider, type JoinRoomResponse as WebrpcJoinRoomResponse } from "./lyre.gen";
 
 const providerFromGenerated: NoiseProvider = generatedNoiseProviderToRest(WebrpcNoiseProvider.OFF);
@@ -42,6 +46,15 @@ const generatedJoinRoomResponseContract: WebrpcJoinRoomResponse = {
 };
 void generatedJoinRoomResponseContract;
 
+const mediaTopologyFromGeneratedDerivedShape: MediaTopology = {
+  mode: "p2p_mesh",
+  turn_relay_supported: true,
+  server_side_audio_processing: false,
+  server_side_noise_cancelling: false,
+  server_noise_cancelling_requires: "media_relay"
+};
+void mediaTopologyFromGeneratedDerivedShape;
+
 describe("api", () => {
   beforeEach(() => {
     window.__LYRE_CONFIG__ = {
@@ -73,6 +86,11 @@ describe("api", () => {
     expect(generatedNoiseProviderToRest(WebrpcNoiseProvider.DEEPFILTERNET)).toBe("deepfilternet");
   });
 
+  it("maps generated topology mode values to REST topology strings", () => {
+    expect(generatedMediaTopologyModeToRest(WebrpcMediaTopologyMode.P2P_MESH)).toBe("p2p_mesh");
+    expect(generatedMediaTopologyModeToRest(WebrpcMediaTopologyMode.MEDIA_RELAY)).toBe("media_relay");
+  });
+
   it("serializes leave request body", async () => {
     await leaveRoom("DEFAULT", "user_a");
 
@@ -87,5 +105,11 @@ describe("api", () => {
     await getIceServers();
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/webrtc/ice-servers");
+  });
+
+  it("fetches media topology from API", async () => {
+    await getMediaTopology();
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/webrtc/topology");
   });
 });

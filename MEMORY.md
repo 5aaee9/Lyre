@@ -27,3 +27,9 @@
 - Added `proto/lyre.ridl` as the formal API contract for frontend-consumed room, noise, and ICE server HTTP DTOs.
 - Committed `frontend/src/lib/lyre.gen.ts` so normal frontend typecheck/build does not require WebRPC generator installation.
 - Kept runtime calls on the existing Axum REST endpoints for this increment; generated WebRPC server/runtime integration remains future work.
+
+## 2026-06-14 Media Topology Boundary
+
+- Made the current media topology explicit: browser P2P mesh with TURN relay support, no server-side audio processing.
+- Recorded `turn-rs` as a future TURN relay candidate, not a server-side noise cancellation mechanism.
+- Server-side RNNoise/DeepFilterNet requires a future media relay that terminates WebRTC media and processes decoded PCM before broadcast.
