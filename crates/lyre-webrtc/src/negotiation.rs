@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ServerMediaDecodeFailure, ServerMediaIceCandidateInit, ServerMediaPcmFrame,
-    ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaSessionConfig, ServerMediaSessionKey,
+    ServerMediaDecodeFailure, ServerMediaEgressError, ServerMediaIceCandidateInit,
+    ServerMediaPcmFrame, ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack,
+    ServerMediaRtpPacket, ServerMediaSessionConfig, ServerMediaSessionKey,
     ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcPeerConnectionHandle, WebRtcStack,
     WebRtcStackError,
 };
@@ -195,6 +196,22 @@ impl ServerMediaNegotiator {
             .get(key)
             .map(|peer_connection| peer_connection.drain_decode_failures())
             .unwrap_or_default()
+    }
+
+    pub async fn send_processed_audio_frame(
+        &self,
+        key: &ServerMediaSessionKey,
+        frame: ServerMediaProcessedAudioFrame,
+    ) -> Result<usize, ServerMediaEgressError> {
+        let peer_connection = self
+            .peer_connections
+            .get(key)
+            .ok_or_else(|| ServerMediaEgressError::PeerMissing {
+                room_id: key.room_id.clone(),
+                user_id: key.user_id.clone(),
+            })?
+            .clone();
+        peer_connection.send_processed_audio_frame(frame).await
     }
 
     pub fn close(&self, key: &ServerMediaSessionKey) {

@@ -4,6 +4,7 @@ pub mod api_server_media_state;
 pub mod error;
 pub mod media_egress;
 pub mod media_runtime;
+pub mod processed_audio_webrtc_egress_pump;
 pub mod server;
 pub mod server_media_runtime;
 pub mod server_media_runtime_pump;
@@ -21,6 +22,8 @@ mod api_tests;
 mod api_webrtc_session_tests;
 #[cfg(test)]
 mod media_egress_tests;
+#[cfg(test)]
+mod processed_audio_webrtc_egress_pump_tests;
 #[cfg(test)]
 mod server_media_runtime_pump_tests;
 #[cfg(test)]

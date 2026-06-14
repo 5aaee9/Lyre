@@ -341,3 +341,28 @@ async fn server_media_debug_route_does_not_exist() {
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn server_media_egress_routes_do_not_exist() {
+    let app = router(AppState::default());
+
+    for uri in [
+        "/api/rooms/DEFAULT/server-media/egress?user_id=user_01",
+        "/api/rooms/DEFAULT/server-media/egress-packets?user_id=user_01",
+        "/api/rooms/DEFAULT/server-media/encode-failures?user_id=user_01",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(uri)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+}

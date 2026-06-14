@@ -2,6 +2,7 @@ use crate::{
     error::ApiError,
     media_egress::{ProcessedAudioEgressFanout, ProcessedAudioEgressFrame},
     media_runtime::WebMediaRuntime,
+    processed_audio_webrtc_egress_pump::ProcessedAudioWebRtcEgressPump,
     server_media_runtime_pump::ServerMediaRuntimePump,
     signalling::{route_signal_message, PeerHub, SignalMessage, SignalPayload},
 };
@@ -36,6 +37,7 @@ pub struct AppState {
     pub media_relays: Arc<MediaRelayRegistry>,
     pub media_runtime: Arc<WebMediaRuntime>,
     pub media_egress: Arc<ProcessedAudioEgressFanout>,
+    pub processed_audio_webrtc_egress_pump: Arc<ProcessedAudioWebRtcEgressPump>,
     pub server_media_sessions: Arc<ServerMediaSessionRegistry>,
     pub server_media_negotiator: Arc<ServerMediaNegotiator>,
     pub server_media_runtime_pump: Arc<ServerMediaRuntimePump>,
@@ -66,10 +68,17 @@ impl AppState {
             Arc::clone(&media_runtime),
             Arc::clone(&server_media_negotiator),
         ));
+        let media_egress = Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&media_relays)));
+        let processed_audio_webrtc_egress_pump = Arc::new(ProcessedAudioWebRtcEgressPump::new(
+            Arc::clone(&media_runtime),
+            Arc::clone(&media_egress),
+            Arc::clone(&server_media_negotiator),
+        ));
         Self {
             registry: Arc::new(RoomRegistry::new()),
             media_runtime,
-            media_egress: Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&media_relays))),
+            media_egress,
+            processed_audio_webrtc_egress_pump,
             server_media_sessions,
             server_media_negotiator,
             server_media_runtime_pump,
@@ -111,9 +120,20 @@ impl AppState {
         room_id: RoomId,
         request: lyre_core::StopMediaRelayRequest,
     ) -> lyre_core::MediaRelayRoomStatus {
+        self.processed_audio_webrtc_egress_pump.stop(&room_id);
         let status = self.media_relays.stop(room_id.clone(), request);
         self.clear_processed_media_room(&room_id);
         self.close_server_media_sessions_for_room(&room_id);
+        status
+    }
+
+    pub fn start_media_relay(
+        &self,
+        room_id: RoomId,
+        request: lyre_core::StartMediaRelayRequest,
+    ) -> lyre_core::MediaRelayRoomStatus {
+        let status = self.media_relays.start(room_id.clone(), request);
+        self.processed_audio_webrtc_egress_pump.start(room_id);
         status
     }
 }
@@ -228,7 +248,7 @@ async fn start_media_relay(
     Json(request): Json<lyre_core::StartMediaRelayRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    Ok(Json(state.media_relays.start(room_id, request)))
+    Ok(Json(state.start_media_relay(room_id, request)))
 }
 
 async fn stop_media_relay(

@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::{
-    media_ingress::MediaIngressRecorder, ServerMediaDecodeError, ServerMediaDecodeFailure,
-    ServerMediaOpusDecoder, ServerMediaPcmFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
-    ServerMediaTrackKind,
+    egress::ServerMediaEgress, media_ingress::MediaIngressRecorder, ServerMediaDecodeError,
+    ServerMediaDecodeFailure, ServerMediaEgressError, ServerMediaEgressRtpPacket,
+    ServerMediaOpusDecoder, ServerMediaPcmFrame, ServerMediaProcessedAudioFrame,
+    ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaTrackKind,
 };
 use rtc::{
     peer_connection::configuration::{
@@ -18,12 +19,12 @@ use rtc::{
 use thiserror::Error;
 use tracing::warn;
 use webrtc::{
+    media_stream::track_local::TrackLocal,
     media_stream::track_remote::{TrackRemote, TrackRemoteEvent},
     peer_connection::{
         PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCIceCandidateInit,
         RTCIceGatheringState, RTCPeerConnectionIceEvent, RTCSessionDescription, Registry,
     },
-    rtp_transceiver::{RTCRtpTransceiverDirection, RTCRtpTransceiverInit},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -39,6 +40,10 @@ impl WebRtcStack {
     ) -> Result<WebRtcPeerConnectionHandle, WebRtcStackError> {
         let local_ice_candidates = Arc::new(Mutex::new(Vec::new()));
         let media_ingress = MediaIngressRecorder::default();
+        let media_egress =
+            ServerMediaEgress::new().map_err(|source| WebRtcStackError::CreatePeerConnection {
+                source: Box::new(source),
+            })?;
         let handler = Arc::new(PeerConnectionHandler {
             local_ice_candidates: Arc::clone(&local_ice_candidates),
             media_ingress: media_ingress.clone(),
@@ -77,13 +82,7 @@ impl WebRtcStack {
                 source: Box::new(source),
             })?;
         peer_connection
-            .add_transceiver_from_kind(
-                RtpCodecKind::Audio,
-                Some(RTCRtpTransceiverInit {
-                    direction: RTCRtpTransceiverDirection::Recvonly,
-                    ..Default::default()
-                }),
-            )
+            .add_track(media_egress.track() as Arc<dyn TrackLocal>)
             .await
             .map_err(|source| WebRtcStackError::CreatePeerConnection {
                 source: Box::new(source),
@@ -93,6 +92,7 @@ impl WebRtcStack {
             _peer_connection: Arc::from(peer_connection),
             local_ice_candidates,
             media_ingress,
+            media_egress,
         })
     }
 }
@@ -236,6 +236,7 @@ pub struct WebRtcPeerConnectionHandle {
     _peer_connection: Arc<dyn PeerConnection>,
     local_ice_candidates: Arc<Mutex<Vec<ServerMediaIceCandidateInit>>>,
     media_ingress: MediaIngressRecorder,
+    media_egress: ServerMediaEgress,
 }
 
 impl std::fmt::Debug for WebRtcPeerConnectionHandle {
@@ -280,6 +281,18 @@ impl WebRtcPeerConnectionHandle {
 
     pub fn drain_decode_failures(&self) -> Vec<ServerMediaDecodeFailure> {
         self.media_ingress.drain_decode_failures()
+    }
+
+    pub async fn send_processed_audio_frame(
+        &self,
+        frame: ServerMediaProcessedAudioFrame,
+    ) -> Result<usize, ServerMediaEgressError> {
+        self.media_egress.send_processed_audio_frame(frame).await
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn sent_egress_rtp_packets_for_test(&self) -> Vec<ServerMediaEgressRtpPacket> {
+        self.media_egress.sent_packets_for_test()
     }
 
     pub async fn answer_remote_offer(&self, offer_sdp: String) -> Result<String, WebRtcStackError> {

@@ -3,9 +3,9 @@ use std::sync::Arc;
 use lyre_core::{RoomId, UserId};
 
 use crate::{
-    ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator, ServerMediaOffer,
-    ServerMediaSessionKey, ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcStack,
-    SERVER_MEDIA_OPUS_FRAME_SIZE,
+    ServerMediaEgressError, ServerMediaIceCandidate, ServerMediaNegotiationError,
+    ServerMediaNegotiator, ServerMediaOffer, ServerMediaProcessedAudioFrame, ServerMediaSessionKey,
+    ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcStack, SERVER_MEDIA_OPUS_FRAME_SIZE,
 };
 
 async fn offer_sdp() -> String {
@@ -286,6 +286,65 @@ async fn close_and_close_room_remove_stored_handles() {
     assert!(negotiator.received_rtp_packets(&key).is_empty());
     assert!(negotiator.drain_pcm_frames(&key).is_empty());
     assert!(negotiator.drain_decode_failures(&key).is_empty());
+}
+
+#[tokio::test]
+async fn send_processed_audio_frame_routes_to_existing_peer() {
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
+    let key = ServerMediaSessionKey {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+    };
+
+    negotiator
+        .answer_offer(offer("audio-main", offer_sdp().await))
+        .await
+        .unwrap();
+
+    let sent = negotiator
+        .send_processed_audio_frame(
+            &key,
+            ServerMediaProcessedAudioFrame {
+                sequence: 7,
+                sample_rate_hz: 48_000,
+                channels: 1,
+                samples: vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE],
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(sent, 1);
+}
+
+#[tokio::test]
+async fn send_processed_audio_frame_missing_peer_returns_context() {
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
+    let key = ServerMediaSessionKey {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("missing"),
+    };
+
+    let error = negotiator
+        .send_processed_audio_frame(
+            &key,
+            ServerMediaProcessedAudioFrame {
+                sequence: 7,
+                sample_rate_hz: 48_000,
+                channels: 1,
+                samples: vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE],
+            },
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        ServerMediaEgressError::PeerMissing { room_id, user_id }
+            if room_id == key.room_id && user_id == key.user_id
+    ));
 }
 
 #[tokio::test]

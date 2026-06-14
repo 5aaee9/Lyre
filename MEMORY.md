@@ -142,3 +142,10 @@
 - Pump tasks are keyed by room/user server-media session, replaced on renegotiation, and cancelled when server-media sessions or media relays are stopped for a room.
 - The pump keeps polling through inactive relay or missing track errors so relay/track registration can arrive after negotiation.
 - No public pump, raw RTP, decoded PCM, decode-failure, or debug endpoint was added; RTP/RTCP egress and browser playback remain future work.
+
+## 2026-06-15 Processed Audio WebRTC Egress
+
+- Added an internal server-to-client Opus RTP egress path for processed audio frames on negotiated server-media peer connections.
+- `lyre-webrtc` now owns a local Opus audio track per server-media peer and keeps direct WebRTC/RTP types behind Lyre-owned processed-frame and egress-packet DTOs.
+- `lyre-web` starts a room egress pump with media relay activation, fans processed frames out to audio-capable recipients, and sends them through recipient server-media peer handles.
+- No public egress pump, RTP packet, decoded PCM, encode-failure, or debug endpoint was added; frontend server-media mode, browser playback verification, jitter/PLC, and DeepFilterNet remain future work.

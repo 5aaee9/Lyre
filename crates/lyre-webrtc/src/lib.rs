@@ -1,3 +1,4 @@
+pub mod egress;
 pub mod media_ingress;
 pub mod negotiation;
 pub mod opus_decode;
@@ -9,10 +10,15 @@ pub mod test_support;
 #[cfg(test)]
 mod negotiation_tests;
 #[cfg(test)]
+mod stack_egress_tests;
+#[cfg(test)]
 mod stack_media_tests;
 #[cfg(test)]
 mod stack_tests;
 
+pub use egress::{
+    ServerMediaEgressError, ServerMediaEgressRtpPacket, ServerMediaProcessedAudioFrame,
+};
 pub use media_ingress::{ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaTrackKind};
 pub use negotiation::{
     ServerMediaAnswer, ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator,
