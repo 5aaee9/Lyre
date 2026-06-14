@@ -40,6 +40,19 @@ Routes:
 
 The settings page stores nickname plus noise-cancellation provider, intensity, and voice activity threshold in local browser storage. The join flow sends those values to the API with the room join request.
 
+## WebRPC Contract
+
+The formal WebRPC schema lives at `proto/lyre.ridl`. The committed generated TypeScript client/types live at `frontend/src/lib/lyre.gen.ts`.
+
+To regenerate the client:
+
+```bash
+cd frontend
+npm run generate:webrpc
+```
+
+This uses `go run github.com/webrpc/webrpc/cmd/webrpc-gen@v0.36.0`; the first run needs network access for Go module download. The current runtime still uses the Axum REST routes, with WebRPC acting as the checked-in contract and generated TypeScript type source.
+
 ## Tests
 
 ```bash
@@ -63,4 +76,4 @@ The `lyre-api` image serves REST/WebSocket on port `8080`. The `lyre-web` image 
 
 ## MVP Scope
 
-This milestone uses peer-to-peer WebRTC signalling only. Server-side audio decode, RNNoise inference, DeepFilterNet inference, TURN/STUN configuration, authentication, persistence, horizontal scaling, and generated WebRPC IDL are follow-up work.
+This milestone uses peer-to-peer WebRTC signalling only. Server-side audio decode, RNNoise inference, DeepFilterNet inference, dynamic TURN credentials, authentication, persistence, horizontal scaling, and generated WebRPC Rust server integration are follow-up work.

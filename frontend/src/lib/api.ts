@@ -1,3 +1,14 @@
+import type {
+  IceServerConfig as WebrpcIceServerConfig,
+  JoinRoomInput as WebrpcJoinRoomInput,
+  JoinRoomResponse as WebrpcJoinRoomResponse,
+  NoiseCancellationConfig as WebrpcNoiseCancellationConfig,
+  RoomSnapshot as WebrpcRoomSnapshot,
+  UserProfile as WebrpcUserProfile
+} from "./lyre.gen";
+import { NoiseProvider as WebrpcNoiseProvider } from "./lyre.gen";
+import { runtimeConfig } from "./runtime-config";
+
 export type NoiseProvider = "off" | "rnnoise" | "deepfilternet";
 
 export function parseNoiseProvider(value: string): NoiseProvider {
@@ -7,37 +18,43 @@ export function parseNoiseProvider(value: string): NoiseProvider {
   return "off";
 }
 
-export type NoiseCancellationConfig = {
+export function generatedNoiseProviderToRest(provider: WebrpcNoiseProvider): NoiseProvider {
+  switch (provider) {
+    case WebrpcNoiseProvider.RNNOISE:
+      return "rnnoise";
+    case WebrpcNoiseProvider.DEEPFILTERNET:
+      return "deepfilternet";
+    case WebrpcNoiseProvider.OFF:
+      return "off";
+  }
+}
+
+export type NoiseCancellationConfig = Omit<WebrpcNoiseCancellationConfig, "provider" | "voiceActivityThreshold"> & {
   provider: NoiseProvider;
-  intensity: number;
-  voice_activity_threshold: number;
+  voice_activity_threshold: WebrpcNoiseCancellationConfig["voiceActivityThreshold"];
 };
 
-export type IceServerConfig = {
-  urls: string[];
-  username?: string | null;
-  credential?: string | null;
+export type IceServerConfig = Omit<WebrpcIceServerConfig, "username" | "credential"> & {
+  username?: WebrpcIceServerConfig["username"] | null;
+  credential?: WebrpcIceServerConfig["credential"] | null;
 };
 
-export type UserProfile = {
-  id: string;
-  nickname: string;
+export type UserProfile = Omit<WebrpcUserProfile, "joinedAt" | "noise"> & {
   joined_at: string;
   noise: NoiseCancellationConfig;
 };
 
-export type RoomSnapshot = {
+export type RoomSnapshot = Omit<WebrpcRoomSnapshot, "roomID" | "users"> & {
   room_id: string;
   users: UserProfile[];
 };
 
-export type JoinRoomResponse = {
+export type JoinRoomResponse = Omit<WebrpcJoinRoomResponse, "user" | "room"> & {
   user: UserProfile;
   room: RoomSnapshot;
 };
 
-export type JoinRoomInput = {
-  nickname?: string;
+export type JoinRoomInput = Omit<WebrpcJoinRoomInput, "noise"> & {
   noise?: NoiseCancellationConfig;
 };
 
@@ -92,4 +109,3 @@ export function appBaseUrl(): string {
 export function shareRoomUrl(roomId: string): string {
   return `${appBaseUrl()}/room/${encodeURIComponent(roomId)}`;
 }
-import { runtimeConfig } from "./runtime-config";

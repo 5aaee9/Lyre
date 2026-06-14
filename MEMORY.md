@@ -21,3 +21,9 @@
 - Exposed the current noise parameter model in the frontend: provider, intensity, and voice activity threshold.
 - Kept provider quick-selection on the join page while preserving the stored numeric parameters from settings.
 - Real RNNoise and DeepFilterNet processing remain separate implementation work.
+
+## 2026-06-14 WebRPC Contract
+
+- Added `proto/lyre.ridl` as the formal API contract for frontend-consumed room, noise, and ICE server HTTP DTOs.
+- Committed `frontend/src/lib/lyre.gen.ts` so normal frontend typecheck/build does not require WebRPC generator installation.
+- Kept runtime calls on the existing Axum REST endpoints for this increment; generated WebRPC server/runtime integration remains future work.

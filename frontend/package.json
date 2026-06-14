@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "generate:webrpc": "go run -ldflags=\"-s -w -X github.com/webrpc/webrpc.VERSION=v0.36.0\" github.com/webrpc/webrpc/cmd/webrpc-gen@v0.36.0 -schema=../proto/lyre.ridl -target=typescript -client -out=./src/lib/lyre.gen.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest"

@@ -10,6 +10,7 @@
 - Next.js frontend with room entry, shareable room route, settings, local storage, and user-triggered audio connection.
 - Frontend noise settings for provider, intensity, and voice activity threshold.
 - Static STUN/TURN ICE server configuration exposed to the browser WebRTC flow.
+- Formal WebRPC RIDL contract and generated TypeScript client/types for frontend-consumed HTTP DTOs.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
@@ -23,4 +24,4 @@
 - Add authentication and room access control.
 - Add persistent room/user/session state.
 - Add production observability and metrics.
-- Generate a formal WebRPC IDL and client bindings.
+- Integrate a generated WebRPC Rust server/runtime path.

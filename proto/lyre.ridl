@@ -1,0 +1,50 @@
+webrpc = v1
+
+name = lyre
+version = v0.1.0
+basepath = /rpc
+
+enum NoiseProvider: uint32
+  - OFF = 0
+  - RNNOISE = 1
+  - DEEPFILTERNET = 2
+
+struct NoiseCancellationConfig
+  - provider: NoiseProvider
+  - intensity: float32
+  - voiceActivityThreshold: float32
+
+struct IceServerConfig
+  - urls: []string
+  - username?: string
+  - credential?: string
+
+struct JoinRoomInput
+  - nickname?: string
+  - noise?: NoiseCancellationConfig
+
+struct UserProfile
+  - id: string
+  - nickname: string
+  - joinedAt: timestamp
+  - noise: NoiseCancellationConfig
+
+struct RoomSnapshot
+  - roomID: string
+  - users: []UserProfile
+
+struct JoinRoomResponse
+  - user: UserProfile
+  - room: RoomSnapshot
+
+service Lyre
+  # Documents GET /api/rooms/{room_id}; REST fetch remains the runtime transport in this increment.
+  - GetRoom(roomID: string) => (room: RoomSnapshot)
+  # Documents POST /api/rooms/{room_id}/join; REST fetch remains the runtime transport in this increment.
+  - JoinRoom(roomID: string, nickname?: string, noise?: NoiseCancellationConfig) => (user: UserProfile, room: RoomSnapshot)
+  # Documents POST /api/rooms/{room_id}/leave; REST fetch remains the runtime transport in this increment.
+  - LeaveRoom(roomID: string, userID: string) => (room: RoomSnapshot)
+  # Documents GET /api/noise/providers; REST fetch remains the runtime transport in this increment.
+  - GetNoiseProviders() => (providers: []NoiseCancellationConfig)
+  # Documents GET /api/webrtc/ice-servers; REST fetch remains the runtime transport in this increment.
+  - GetIceServers() => (iceServers: []IceServerConfig)
