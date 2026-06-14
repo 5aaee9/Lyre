@@ -15,7 +15,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use lyre_core::{
     default_ice_servers, supported_noise_providers, IceServerConfig, JoinRoomRequest,
-    LeaveRoomRequest, RoomId, RoomRegistry,
+    LeaveRoomRequest, MediaRelayRegistry, RoomId, RoomRegistry,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -28,6 +28,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub registry: Arc<RoomRegistry>,
+    pub media_relays: Arc<MediaRelayRegistry>,
     pub peers: Arc<PeerHub>,
     pub ice_servers: Arc<Vec<IceServerConfig>>,
     pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
@@ -46,6 +47,7 @@ impl AppState {
     ) -> Self {
         Self {
             registry: Arc::new(RoomRegistry::new()),
+            media_relays: Arc::new(MediaRelayRegistry::new()),
             peers: Arc::new(PeerHub::new()),
             ice_servers: Arc::new(ice_servers),
             turn_rest_credentials,
@@ -72,6 +74,19 @@ pub fn router(state: AppState) -> Router {
         .route("/api/rooms/{room_id}", get(room_snapshot))
         .route("/api/rooms/{room_id}/join", post(join_room))
         .route("/api/rooms/{room_id}/leave", post(leave_room))
+        .route("/api/rooms/{room_id}/media-relay", get(media_relay_status))
+        .route(
+            "/api/rooms/{room_id}/media-relay/start",
+            post(start_media_relay),
+        )
+        .route(
+            "/api/rooms/{room_id}/media-relay/stop",
+            post(stop_media_relay),
+        )
+        .route(
+            "/api/rooms/{room_id}/media-relay/tracks",
+            post(register_media_track),
+        )
         .route("/api/rooms/{room_id}/ws", get(room_ws))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -133,6 +148,41 @@ async fn leave_room(
     let snapshot = state.registry.leave(&room_id, &request.user_id);
     state.peers.user_left(&room_id, &request.user_id);
     Ok(Json(snapshot))
+}
+
+async fn media_relay_status(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    Ok(Json(state.media_relays.status(room_id)))
+}
+
+async fn start_media_relay(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+    Json(request): Json<lyre_core::StartMediaRelayRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    Ok(Json(state.media_relays.start(room_id, request)))
+}
+
+async fn stop_media_relay(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+    Json(request): Json<lyre_core::StopMediaRelayRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    Ok(Json(state.media_relays.stop(room_id, request)))
+}
+
+async fn register_media_track(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+    Json(request): Json<lyre_core::RegisterMediaTrackRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    Ok(Json(state.media_relays.register_track(room_id, request)?))
 }
 
 async fn room_ws(
@@ -408,12 +458,146 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn media_relay_status_defaults_to_inactive() {
+        let app = router(AppState::default());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/rooms/DEFAULT/media-relay")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response).await;
+        assert_eq!(body["room_id"], "DEFAULT");
+        assert_eq!(body["status"], "inactive");
+        assert_eq!(body["mode"], "p2p_mesh");
+        assert_eq!(body["server_side_audio_processing"], false);
+        assert_eq!(body["server_side_noise_cancelling"], false);
+        assert_eq!(body["noise"]["provider"], "off");
+        assert!(body["participants"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn media_relay_register_track_requires_active_relay() {
+        let app = router(AppState::default());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rooms/DEFAULT/media-relay/tracks")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"user_id":"user_01","track_id":"audio-main","kind":"audio"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            body_json(response).await["error"],
+            "media relay is not active for room `DEFAULT`"
+        );
+    }
+
+    #[tokio::test]
+    async fn media_relay_start_registers_track_and_stop_clears_state() {
+        let app = router(AppState::default());
+        let start = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rooms/DEFAULT/media-relay/start")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"noise":{"provider":"rnnoise","intensity":0.8,"voice_activity_threshold":0.2}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(start.status(), StatusCode::OK);
+        let start_body = body_json(start).await;
+        assert_eq!(start_body["status"], "active");
+        assert_eq!(start_body["mode"], "media_relay");
+        assert_eq!(start_body["noise"]["provider"], "rnnoise");
+        assert_eq!(start_body["server_side_audio_processing"], false);
+
+        let register = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rooms/DEFAULT/media-relay/tracks")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"user_id":"user_01","track_id":"audio-main","kind":"audio"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(register.status(), StatusCode::OK);
+        let register_body = body_json(register).await;
+        assert_eq!(register_body["participants"][0]["user_id"], "user_01");
+        assert_eq!(
+            register_body["participants"][0]["tracks"][0]["track_id"],
+            "audio-main"
+        );
+        assert_eq!(
+            register_body["participants"][0]["tracks"][0]["kind"],
+            "audio"
+        );
+
+        let stop = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rooms/DEFAULT/media-relay/stop")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"user_id":"user_01"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(stop.status(), StatusCode::OK);
+        let stop_body = body_json(stop).await;
+        assert_eq!(stop_body["status"], "inactive");
+        assert!(stop_body["participants"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn route_rejects_blank_room_id() {
         let app = router(AppState::default());
         let response = app
             .oneshot(
                 Request::builder()
                     .uri("/api/rooms/%20%20")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn media_relay_route_rejects_blank_room_id() {
+        let app = router(AppState::default());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/rooms/%20%20/media-relay")
                     .body(Body::empty())
                     .unwrap(),
             )

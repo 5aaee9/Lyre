@@ -1,9 +1,15 @@
 pub mod ids;
+pub mod media;
 pub mod noise;
 pub mod room;
 pub mod webrtc;
 
 pub use ids::{RoomId, RoomIdError, UserId, DEFAULT_ROOM_ID};
+pub use media::{
+    MediaRelayError, MediaRelayMode, MediaRelayParticipant, MediaRelayRegistry,
+    MediaRelayRoomStatus, MediaRelayStatus, MediaRelayTrack, MediaTrackKind,
+    RegisterMediaTrackRequest, StartMediaRelayRequest, StopMediaRelayRequest,
+};
 pub use noise::{supported_noise_providers, NoiseCancellationConfig, NoiseProvider};
 pub use room::{
     JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, RoomRegistry, RoomSnapshot, UserProfile,

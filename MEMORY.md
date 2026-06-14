@@ -46,3 +46,9 @@
 - Kept the GPL `turn-rs` crate out of the dependency graph; `lyre-turn` isolates the `turn-server` API.
 - Embedded TURN advertises a local-only `turn:127.0.0.1:3478` URL by default and requires explicit IP socket configuration for public deployments.
 - Confirmed TURN relay remains separate from server-side noise cancellation; media processing still needs a future WebRTC media relay.
+
+## 2026-06-15 Media Relay Skeleton
+
+- Added a room-scoped media relay state skeleton with REST endpoints and WebRPC contract coverage.
+- Kept browser P2P signalling unchanged; this increment does not terminate WebRTC media or process audio.
+- Recorded intended noise settings in relay state so future RNNoise/DeepFilterNet processing can attach to the media relay boundary.

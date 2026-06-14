@@ -1,19 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   generatedMediaTopologyModeToRest,
+  generatedMediaRelayModeToRest,
+  generatedMediaRelayStatusToRest,
+  generatedMediaTrackKindToRest,
   generatedNoiseProviderToRest,
   getIceServers,
+  getMediaRelay,
   getMediaTopology,
   joinRoom,
   leaveRoom,
+  mediaRelayUrl,
+  registerMediaTrack,
   roomUrl,
   shareRoomUrl,
+  startMediaRelay,
+  stopMediaRelay,
   type JoinRoomResponse,
+  type MediaRelayRoomStatus,
   type MediaTopology,
   type NoiseProvider
 } from "./api";
 import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
-import { NoiseProvider as WebrpcNoiseProvider, type JoinRoomResponse as WebrpcJoinRoomResponse } from "./lyre.gen";
+import {
+  MediaRelayMode as WebrpcMediaRelayMode,
+  MediaRelayStatus as WebrpcMediaRelayStatus,
+  MediaTrackKind as WebrpcMediaTrackKind,
+  NoiseProvider as WebrpcNoiseProvider,
+  type JoinRoomResponse as WebrpcJoinRoomResponse,
+  type MediaRelayRoomStatus as WebrpcMediaRelayRoomStatus
+} from "./lyre.gen";
 
 const providerFromGenerated: NoiseProvider = generatedNoiseProviderToRest(WebrpcNoiseProvider.OFF);
 void providerFromGenerated;
@@ -55,6 +71,28 @@ const mediaTopologyFromGeneratedDerivedShape: MediaTopology = {
 };
 void mediaTopologyFromGeneratedDerivedShape;
 
+const mediaRelayFromGeneratedDerivedShape: MediaRelayRoomStatus = {
+  room_id: "DEFAULT",
+  status: "inactive",
+  mode: "p2p_mesh",
+  server_side_audio_processing: false,
+  server_side_noise_cancelling: false,
+  noise: { provider: "off", intensity: 0.5, voice_activity_threshold: 0.35 },
+  participants: [{ user_id: "user_a", tracks: [{ track_id: "audio-main", kind: "audio" }] }]
+};
+void mediaRelayFromGeneratedDerivedShape;
+
+const generatedMediaRelayContract: WebrpcMediaRelayRoomStatus = {
+  roomID: "DEFAULT",
+  status: WebrpcMediaRelayStatus.INACTIVE,
+  mode: WebrpcMediaRelayMode.P2P_MESH,
+  serverSideAudioProcessing: false,
+  serverSideNoiseCancelling: false,
+  noise: { provider: WebrpcNoiseProvider.OFF, intensity: 0.5, voiceActivityThreshold: 0.35 },
+  participants: [{ userID: "user_a", tracks: [{ trackID: "audio-main", kind: WebrpcMediaTrackKind.AUDIO }] }]
+};
+void generatedMediaRelayContract;
+
 describe("api", () => {
   beforeEach(() => {
     window.__LYRE_CONFIG__ = {
@@ -67,6 +105,10 @@ describe("api", () => {
   it("builds encoded room and share urls", () => {
     expect(roomUrl("Team A")).toBe("https://api.example.test/api/rooms/Team%20A");
     expect(shareRoomUrl("Team A")).toBe("https://app.example.test/room/Team%20A");
+  });
+
+  it("builds encoded media relay urls", () => {
+    expect(mediaRelayUrl("Team A")).toBe("https://api.example.test/api/rooms/Team%20A/media-relay");
   });
 
   it("serializes join request body", async () => {
@@ -91,6 +133,15 @@ describe("api", () => {
     expect(generatedMediaTopologyModeToRest(WebrpcMediaTopologyMode.MEDIA_RELAY)).toBe("media_relay");
   });
 
+  it("maps generated media relay values to REST strings", () => {
+    expect(generatedMediaRelayStatusToRest(WebrpcMediaRelayStatus.INACTIVE)).toBe("inactive");
+    expect(generatedMediaRelayStatusToRest(WebrpcMediaRelayStatus.ACTIVE)).toBe("active");
+    expect(generatedMediaRelayModeToRest(WebrpcMediaRelayMode.P2P_MESH)).toBe("p2p_mesh");
+    expect(generatedMediaRelayModeToRest(WebrpcMediaRelayMode.MEDIA_RELAY)).toBe("media_relay");
+    expect(generatedMediaTrackKindToRest(WebrpcMediaTrackKind.AUDIO)).toBe("audio");
+    expect(generatedMediaTrackKindToRest(WebrpcMediaTrackKind.VIDEO)).toBe("video");
+  });
+
   it("serializes leave request body", async () => {
     await leaveRoom("DEFAULT", "user_a");
 
@@ -111,5 +162,42 @@ describe("api", () => {
     await getMediaTopology();
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/webrtc/topology");
+  });
+
+  it("fetches media relay status from API", async () => {
+    await getMediaRelay("DEFAULT");
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay");
+  });
+
+  it("serializes media relay start request body", async () => {
+    const noise = { provider: "rnnoise" as const, intensity: 0.8, voice_activity_threshold: 0.2 };
+    await startMediaRelay("DEFAULT", noise);
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ noise })
+    });
+  });
+
+  it("serializes media relay stop request body", async () => {
+    await stopMediaRelay("DEFAULT", "user_a");
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/stop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ user_id: "user_a" })
+    });
+  });
+
+  it("serializes media relay track registration request body", async () => {
+    await registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio");
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/tracks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ user_id: "user_a", track_id: "audio-main", kind: "audio" })
+    });
   });
 });

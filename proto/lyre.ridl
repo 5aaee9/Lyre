@@ -23,6 +23,18 @@ enum MediaTopologyMode: uint32
   - P2P_MESH = 0
   - MEDIA_RELAY = 1
 
+enum MediaRelayStatus: uint32
+  - INACTIVE = 0
+  - ACTIVE = 1
+
+enum MediaRelayMode: uint32
+  - P2P_MESH = 0
+  - MEDIA_RELAY = 1
+
+enum MediaTrackKind: uint32
+  - AUDIO = 0
+  - VIDEO = 1
+
 struct MediaTopology
   - mode: MediaTopologyMode
   - turnRelaySupported: bool
@@ -30,9 +42,37 @@ struct MediaTopology
   - serverSideNoiseCancelling: bool
   - serverNoiseCancellingRequires: MediaTopologyMode
 
+struct MediaRelayTrack
+  - trackID: string
+  - kind: MediaTrackKind
+
+struct MediaRelayParticipant
+  - userID: string
+  - tracks: []MediaRelayTrack
+
+struct MediaRelayRoomStatus
+  - roomID: string
+  - status: MediaRelayStatus
+  - mode: MediaRelayMode
+  - serverSideAudioProcessing: bool
+  - serverSideNoiseCancelling: bool
+  - noise: NoiseCancellationConfig
+  - participants: []MediaRelayParticipant
+
 struct JoinRoomInput
   - nickname?: string
   - noise?: NoiseCancellationConfig
+
+struct StartMediaRelayInput
+  - noise?: NoiseCancellationConfig
+
+struct StopMediaRelayInput
+  - userID: string
+
+struct RegisterMediaTrackInput
+  - userID: string
+  - trackID: string
+  - kind: MediaTrackKind
 
 struct UserProfile
   - id: string
@@ -61,3 +101,11 @@ service Lyre
   - GetIceServers() => (iceServers: []IceServerConfig)
   # Documents GET /api/webrtc/topology; REST fetch remains the runtime transport in this increment.
   - GetMediaTopology() => (topology: MediaTopology)
+  # Documents GET /api/rooms/{room_id}/media-relay; REST fetch remains the runtime transport in this increment.
+  - GetMediaRelay(roomID: string) => (mediaRelay: MediaRelayRoomStatus)
+  # Documents POST /api/rooms/{room_id}/media-relay/start; REST fetch remains the runtime transport in this increment.
+  - StartMediaRelay(roomID: string, noise?: NoiseCancellationConfig) => (mediaRelay: MediaRelayRoomStatus)
+  # Documents POST /api/rooms/{room_id}/media-relay/stop; REST fetch remains the runtime transport in this increment.
+  - StopMediaRelay(roomID: string, userID: string) => (mediaRelay: MediaRelayRoomStatus)
+  # Documents POST /api/rooms/{room_id}/media-relay/tracks; REST fetch remains the runtime transport in this increment.
+  - RegisterMediaTrack(roomID: string, userID: string, trackID: string, kind: MediaTrackKind) => (mediaRelay: MediaRelayRoomStatus)

@@ -21,6 +21,8 @@ crates/lyre-noise-cancelling - 噪声消除, 先支持 RNNoise / DeepFilterNet, 
 crates/lyre-turn - optional embedded UDP TURN relay adapter around the MIT `turn-server` crate
 frontend/ - Next.js + React 前端，使用 Tailwind CSS 和本地 shadcn-style UI primitives。前端运行时使用 `APP_BASE_URL` 表示自身公开 URL，`APP_API_URL` 表示 Rust API URL。
 
+`lyre-core::media` owns the media relay state skeleton and DTOs. It is a control-plane/API boundary only until a real WebRTC media termination and audio processing runtime is added.
+
 ### Docker Images
 打包为两个镜像：
 - `lyre-api` - Rust Axum REST/WebSocket API，默认监听 8080。

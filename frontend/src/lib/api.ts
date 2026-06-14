@@ -3,11 +3,17 @@ import type {
   JoinRoomInput as WebrpcJoinRoomInput,
   JoinRoomResponse as WebrpcJoinRoomResponse,
   MediaTopology as WebrpcMediaTopology,
+  MediaRelayParticipant as WebrpcMediaRelayParticipant,
+  MediaRelayRoomStatus as WebrpcMediaRelayRoomStatus,
+  MediaRelayTrack as WebrpcMediaRelayTrack,
   NoiseCancellationConfig as WebrpcNoiseCancellationConfig,
   RoomSnapshot as WebrpcRoomSnapshot,
   UserProfile as WebrpcUserProfile
 } from "./lyre.gen";
 import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
+import { MediaRelayMode as WebrpcMediaRelayMode } from "./lyre.gen";
+import { MediaRelayStatus as WebrpcMediaRelayStatus } from "./lyre.gen";
+import { MediaTrackKind as WebrpcMediaTrackKind } from "./lyre.gen";
 import { NoiseProvider as WebrpcNoiseProvider } from "./lyre.gen";
 import { runtimeConfig } from "./runtime-config";
 
@@ -42,6 +48,37 @@ export function generatedMediaTopologyModeToRest(mode: WebrpcMediaTopologyMode):
   }
 }
 
+export type MediaRelayStatus = "inactive" | "active";
+export type MediaRelayMode = "p2p_mesh" | "media_relay";
+export type MediaTrackKind = "audio" | "video";
+
+export function generatedMediaRelayStatusToRest(status: WebrpcMediaRelayStatus): MediaRelayStatus {
+  switch (status) {
+    case WebrpcMediaRelayStatus.ACTIVE:
+      return "active";
+    case WebrpcMediaRelayStatus.INACTIVE:
+      return "inactive";
+  }
+}
+
+export function generatedMediaRelayModeToRest(mode: WebrpcMediaRelayMode): MediaRelayMode {
+  switch (mode) {
+    case WebrpcMediaRelayMode.MEDIA_RELAY:
+      return "media_relay";
+    case WebrpcMediaRelayMode.P2P_MESH:
+      return "p2p_mesh";
+  }
+}
+
+export function generatedMediaTrackKindToRest(kind: WebrpcMediaTrackKind): MediaTrackKind {
+  switch (kind) {
+    case WebrpcMediaTrackKind.AUDIO:
+      return "audio";
+    case WebrpcMediaTrackKind.VIDEO:
+      return "video";
+  }
+}
+
 export type NoiseCancellationConfig = Omit<WebrpcNoiseCancellationConfig, "provider" | "voiceActivityThreshold"> & {
   provider: NoiseProvider;
   voice_activity_threshold: WebrpcNoiseCancellationConfig["voiceActivityThreshold"];
@@ -65,6 +102,35 @@ export type MediaTopology = Omit<
   server_side_audio_processing: WebrpcMediaTopology["serverSideAudioProcessing"];
   server_side_noise_cancelling: WebrpcMediaTopology["serverSideNoiseCancelling"];
   server_noise_cancelling_requires: MediaTopologyMode;
+};
+
+export type MediaRelayTrack = Omit<WebrpcMediaRelayTrack, "trackID" | "kind"> & {
+  track_id: string;
+  kind: MediaTrackKind;
+};
+
+export type MediaRelayParticipant = Omit<WebrpcMediaRelayParticipant, "userID" | "tracks"> & {
+  user_id: string;
+  tracks: MediaRelayTrack[];
+};
+
+export type MediaRelayRoomStatus = Omit<
+  WebrpcMediaRelayRoomStatus,
+  | "roomID"
+  | "status"
+  | "mode"
+  | "serverSideAudioProcessing"
+  | "serverSideNoiseCancelling"
+  | "noise"
+  | "participants"
+> & {
+  room_id: string;
+  status: MediaRelayStatus;
+  mode: MediaRelayMode;
+  server_side_audio_processing: WebrpcMediaRelayRoomStatus["serverSideAudioProcessing"];
+  server_side_noise_cancelling: WebrpcMediaRelayRoomStatus["serverSideNoiseCancelling"];
+  noise: NoiseCancellationConfig;
+  participants: MediaRelayParticipant[];
 };
 
 export type UserProfile = Omit<WebrpcUserProfile, "joinedAt" | "noise"> & {
@@ -94,6 +160,10 @@ export function roomUrl(roomId: string): string {
   return `${apiBaseUrl()}/api/rooms/${encodeURIComponent(roomId)}`;
 }
 
+export function mediaRelayUrl(roomId: string): string {
+  return `${roomUrl(roomId)}/media-relay`;
+}
+
 export async function getRoom(roomId: string): Promise<RoomSnapshot> {
   const response = await fetch(roomUrl(roomId));
   return response.json();
@@ -113,6 +183,46 @@ export async function leaveRoom(roomId: string, userId: string): Promise<RoomSna
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId })
+  });
+  return response.json();
+}
+
+export async function getMediaRelay(roomId: string): Promise<MediaRelayRoomStatus> {
+  const response = await fetch(mediaRelayUrl(roomId));
+  return response.json();
+}
+
+export async function startMediaRelay(
+  roomId: string,
+  noise?: NoiseCancellationConfig
+): Promise<MediaRelayRoomStatus> {
+  const response = await fetch(`${mediaRelayUrl(roomId)}/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ noise })
+  });
+  return response.json();
+}
+
+export async function stopMediaRelay(roomId: string, userId: string): Promise<MediaRelayRoomStatus> {
+  const response = await fetch(`${mediaRelayUrl(roomId)}/stop`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user_id: userId })
+  });
+  return response.json();
+}
+
+export async function registerMediaTrack(
+  roomId: string,
+  userId: string,
+  trackId: string,
+  kind: MediaTrackKind
+): Promise<MediaRelayRoomStatus> {
+  const response = await fetch(`${mediaRelayUrl(roomId)}/tracks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user_id: userId, track_id: trackId, kind })
   });
   return response.json();
 }

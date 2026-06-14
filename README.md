@@ -31,6 +31,10 @@ API routes:
 - `GET /api/noise/providers`
 - `GET /api/webrtc/ice-servers`
 - `GET /api/webrtc/topology`
+- `GET /api/rooms/:room_id/media-relay`
+- `POST /api/rooms/:room_id/media-relay/start`
+- `POST /api/rooms/:room_id/media-relay/stop`
+- `POST /api/rooms/:room_id/media-relay/tracks`
 - `GET /api/rooms/:room_id/ws?user_id=...`
 
 ## Frontend
@@ -67,6 +71,8 @@ This uses `go run github.com/webrpc/webrpc/cmd/webrpc-gen@v0.36.0`; the first ru
 `GET /api/webrtc/topology` reports the active media topology. The current topology is peer-to-peer mesh WebRTC with TURN relay support for NAT traversal.
 
 TURN, including the embedded TURN relay, relays encrypted WebRTC packets and cannot run server-side RNNoise or DeepFilterNet by itself. Server-side noise cancellation requires a future media relay/SFU-like path that terminates WebRTC media, decodes audio to PCM, runs `lyre-noise-cancelling`, then re-encodes and broadcasts processed audio.
+
+The media relay REST endpoints expose the initial room-scoped state skeleton for that future path. `GET /api/rooms/:room_id/media-relay` reports whether the relay is active, the intended noise config, and registered participant tracks. `POST /start` activates the room relay and records an optional noise config, `POST /tracks` registers track metadata while active, and `POST /stop` deactivates the relay and clears tracks. This skeleton does not terminate browser WebRTC media, decode audio, run RNNoise/DeepFilterNet, or broadcast processed audio yet.
 
 ## Tests
 
