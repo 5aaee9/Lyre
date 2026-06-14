@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use lyre_core::{RoomId, UserId};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ServerMediaSessionKey {
@@ -7,14 +8,15 @@ pub struct ServerMediaSessionKey {
     pub user_id: UserId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerMediaSessionConfig {
     pub room_id: RoomId,
     pub user_id: UserId,
     pub audio_track_id: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ServerMediaSessionState {
     New,
     Negotiating,
@@ -22,7 +24,7 @@ pub enum ServerMediaSessionState {
     Closed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerMediaSessionStatus {
     pub room_id: RoomId,
     pub user_id: UserId,
@@ -83,6 +85,16 @@ impl ServerMediaSessionRegistry {
     pub fn close(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {
         let mut session = self.sessions.get_mut(key)?;
         session.state = ServerMediaSessionState::Closed;
+        Some(status_from_session(key, &session))
+    }
+
+    pub fn set_state(
+        &self,
+        key: &ServerMediaSessionKey,
+        state: ServerMediaSessionState,
+    ) -> Option<ServerMediaSessionStatus> {
+        let mut session = self.sessions.get_mut(key)?;
+        session.state = state;
         Some(status_from_session(key, &session))
     }
 
@@ -198,6 +210,42 @@ mod tests {
                 room_id: RoomId::default_room(),
                 user_id: UserId::from_external("missing"),
             }),
+            None
+        );
+    }
+
+    #[test]
+    fn set_state_updates_existing_session() {
+        let registry = ServerMediaSessionRegistry::new();
+        let key = ServerMediaSessionKey {
+            room_id: RoomId::default_room(),
+            user_id: UserId::from_external("user_01"),
+        };
+        registry.start(config("DEFAULT", "user_01", "audio-main"));
+
+        let status = registry
+            .set_state(&key, ServerMediaSessionState::Negotiating)
+            .unwrap();
+
+        assert_eq!(status.state, ServerMediaSessionState::Negotiating);
+        assert_eq!(
+            registry.active_sessions()[0].state,
+            ServerMediaSessionState::Negotiating
+        );
+    }
+
+    #[test]
+    fn set_state_missing_session_returns_none() {
+        let registry = ServerMediaSessionRegistry::new();
+
+        assert_eq!(
+            registry.set_state(
+                &ServerMediaSessionKey {
+                    room_id: RoomId::default_room(),
+                    user_id: UserId::from_external("missing"),
+                },
+                ServerMediaSessionState::Negotiating,
+            ),
             None
         );
     }

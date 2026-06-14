@@ -20,7 +20,10 @@ use lyre_core::{
     LeaveRoomRequest, MediaRelayError, MediaRelayRegistry, ProcessedAudioFrame, RoomId,
     RoomRegistry,
 };
-use lyre_webrtc::{ServerMediaSessionConfig, ServerMediaSessionRegistry, ServerMediaSessionStatus};
+use lyre_webrtc::{
+    ServerMediaAnswer, ServerMediaNegotiationError, ServerMediaNegotiator, ServerMediaOffer,
+    ServerMediaSessionConfig, ServerMediaSessionRegistry, ServerMediaSessionStatus, WebRtcStack,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     sync::Arc,
@@ -36,6 +39,7 @@ pub struct AppState {
     pub media_runtime: Arc<WebMediaRuntime>,
     pub media_egress: Arc<ProcessedAudioEgressFanout>,
     pub server_media_sessions: Arc<ServerMediaSessionRegistry>,
+    pub server_media_negotiator: Arc<ServerMediaNegotiator>,
     pub peers: Arc<PeerHub>,
     pub ice_servers: Arc<Vec<IceServerConfig>>,
     pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
@@ -53,11 +57,17 @@ impl AppState {
         turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
     ) -> Self {
         let media_relays = Arc::new(MediaRelayRegistry::new());
+        let server_media_sessions = Arc::new(ServerMediaSessionRegistry::new());
+        let server_media_negotiator = Arc::new(ServerMediaNegotiator::new(
+            WebRtcStack::new(),
+            Arc::clone(&server_media_sessions),
+        ));
         Self {
             registry: Arc::new(RoomRegistry::new()),
             media_runtime: Arc::new(WebMediaRuntime::new(Arc::clone(&media_relays))),
             media_egress: Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&media_relays))),
-            server_media_sessions: Arc::new(ServerMediaSessionRegistry::new()),
+            server_media_sessions,
+            server_media_negotiator,
             media_relays,
             peers: Arc::new(PeerHub::new()),
             ice_servers: Arc::new(ice_servers),
@@ -110,7 +120,20 @@ impl AppState {
         &self,
         room_id: &RoomId,
     ) -> Vec<ServerMediaSessionStatus> {
-        self.server_media_sessions.close_room(room_id)
+        self.server_media_negotiator.close_room(room_id);
+        self.server_media_sessions.sessions()
+    }
+
+    pub async fn answer_server_media_offer(
+        &self,
+        offer: ServerMediaOffer,
+    ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
+        self.server_media_negotiator.answer_offer(offer).await
+    }
+
+    #[cfg(test)]
+    pub fn server_media_peer_connection_count(&self) -> usize {
+        self.server_media_negotiator.stored_peer_connection_count()
     }
 
     pub fn stop_media_relay(
@@ -135,6 +158,13 @@ struct WsQuery {
     user_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ServerMediaOfferRequest {
+    user_id: lyre_core::UserId,
+    audio_track_id: String,
+    sdp: String,
+}
+
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -156,6 +186,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/rooms/{room_id}/media-relay/tracks",
             post(register_media_track),
+        )
+        .route(
+            "/api/rooms/{room_id}/server-media/offer",
+            post(answer_server_media_offer),
         )
         .route("/api/rooms/{room_id}/ws", get(room_ws))
         .layer(CorsLayer::permissive())
@@ -253,6 +287,23 @@ async fn register_media_track(
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
     Ok(Json(state.media_relays.register_track(room_id, request)?))
+}
+
+async fn answer_server_media_offer(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+    Json(request): Json<ServerMediaOfferRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    let answer = state
+        .answer_server_media_offer(ServerMediaOffer {
+            room_id,
+            user_id: request.user_id,
+            audio_track_id: request.audio_track_id,
+            sdp: request.sdp,
+        })
+        .await?;
+    Ok(Json(answer))
 }
 
 async fn room_ws(

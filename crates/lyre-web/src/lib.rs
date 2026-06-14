@@ -10,6 +10,8 @@ mod api_media_broadcast_tests;
 #[cfg(test)]
 mod api_media_tests;
 #[cfg(test)]
+mod api_server_media_tests;
+#[cfg(test)]
 mod api_tests;
 #[cfg(test)]
 mod api_webrtc_session_tests;

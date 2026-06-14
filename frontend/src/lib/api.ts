@@ -8,6 +8,7 @@ import type {
   MediaRelayTrack as WebrpcMediaRelayTrack,
   NoiseCancellationConfig as WebrpcNoiseCancellationConfig,
   RoomSnapshot as WebrpcRoomSnapshot,
+  ServerMediaAnswer as WebrpcServerMediaAnswer,
   UserProfile as WebrpcUserProfile
 } from "./lyre.gen";
 import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
@@ -51,6 +52,7 @@ export function generatedMediaTopologyModeToRest(mode: WebrpcMediaTopologyMode):
 export type MediaRelayStatus = "inactive" | "active";
 export type MediaRelayMode = "p2p_mesh" | "media_relay";
 export type MediaTrackKind = "audio" | "video";
+export type ServerMediaSessionState = "new" | "negotiating" | "connected" | "closed";
 
 export function generatedMediaRelayStatusToRest(status: WebrpcMediaRelayStatus): MediaRelayStatus {
   switch (status) {
@@ -133,6 +135,16 @@ export type MediaRelayRoomStatus = Omit<
   participants: MediaRelayParticipant[];
 };
 
+export type ServerMediaAnswer = Omit<
+  WebrpcServerMediaAnswer,
+  "roomID" | "userID" | "audioTrackID" | "state"
+> & {
+  room_id: string;
+  user_id: string;
+  audio_track_id: string;
+  state: ServerMediaSessionState;
+};
+
 export type UserProfile = Omit<WebrpcUserProfile, "joinedAt" | "noise"> & {
   joined_at: string;
   noise: NoiseCancellationConfig;
@@ -162,6 +174,10 @@ export function roomUrl(roomId: string): string {
 
 export function mediaRelayUrl(roomId: string): string {
   return `${roomUrl(roomId)}/media-relay`;
+}
+
+export function serverMediaOfferUrl(roomId: string): string {
+  return `${roomUrl(roomId)}/server-media/offer`;
 }
 
 export async function getRoom(roomId: string): Promise<RoomSnapshot> {
@@ -223,6 +239,20 @@ export async function registerMediaTrack(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId, track_id: trackId, kind })
+  });
+  return response.json();
+}
+
+export async function answerServerMediaOffer(
+  roomId: string,
+  userId: string,
+  audioTrackId: string,
+  sdp: string
+): Promise<ServerMediaAnswer> {
+  const response = await fetch(serverMediaOfferUrl(roomId), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user_id: userId, audio_track_id: audioTrackId, sdp })
   });
   return response.json();
 }

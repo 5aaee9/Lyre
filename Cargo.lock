@@ -1514,6 +1514,7 @@ version = "0.1.0"
 dependencies = [
  "dashmap",
  "lyre-core",
+ "serde",
  "thiserror 2.0.18",
  "tokio",
  "webrtc",

@@ -101,3 +101,9 @@
 - Added `lyre-webrtc` to isolate the direct `webrtc` crate dependency behind Lyre-owned server media session types.
 - Chose `webrtc = "0.20.0-alpha.1"` over `str0m` for this boundary because its high-level PeerConnection model better matches the existing browser-style signalling path.
 - Server media sessions are control-plane state only; real browser-to-server negotiation, RTP/RTCP, Opus decode/encode, RNNoise ingestion, and playback remain future work.
+
+## 2026-06-15 Server Media Negotiation Boundary
+
+- Added a server media offer/answer control-plane path that creates real WebRTC answers inside `lyre-webrtc`.
+- Kept negotiation atomic: failed offers do not create sessions or replace stored peer handles.
+- Stored peer connection handles only to keep negotiated sessions alive for later media work; RTP/RTCP, Opus, RNNoise ingestion, and browser playback remain future work.

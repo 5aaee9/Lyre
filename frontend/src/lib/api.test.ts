@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  answerServerMediaOffer,
   generatedMediaTopologyModeToRest,
   generatedMediaRelayModeToRest,
   generatedMediaRelayStatusToRest,
@@ -13,13 +14,15 @@ import {
   mediaRelayUrl,
   registerMediaTrack,
   roomUrl,
+  serverMediaOfferUrl,
   shareRoomUrl,
   startMediaRelay,
   stopMediaRelay,
   type JoinRoomResponse,
   type MediaRelayRoomStatus,
   type MediaTopology,
-  type NoiseProvider
+  type NoiseProvider,
+  type ServerMediaAnswer
 } from "./api";
 import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
 import {
@@ -27,8 +30,10 @@ import {
   MediaRelayStatus as WebrpcMediaRelayStatus,
   MediaTrackKind as WebrpcMediaTrackKind,
   NoiseProvider as WebrpcNoiseProvider,
+  ServerMediaSessionState,
   type JoinRoomResponse as WebrpcJoinRoomResponse,
-  type MediaRelayRoomStatus as WebrpcMediaRelayRoomStatus
+  type MediaRelayRoomStatus as WebrpcMediaRelayRoomStatus,
+  type ServerMediaAnswer as WebrpcServerMediaAnswer
 } from "./lyre.gen";
 
 const providerFromGenerated: NoiseProvider = generatedNoiseProviderToRest(WebrpcNoiseProvider.OFF);
@@ -93,6 +98,24 @@ const generatedMediaRelayContract: WebrpcMediaRelayRoomStatus = {
 };
 void generatedMediaRelayContract;
 
+const serverMediaAnswerFromRestShape: ServerMediaAnswer = {
+  room_id: "DEFAULT",
+  user_id: "user_a",
+  audio_track_id: "audio-main",
+  sdp: "v=0",
+  state: "negotiating"
+};
+void serverMediaAnswerFromRestShape;
+
+const generatedServerMediaAnswerContract: WebrpcServerMediaAnswer = {
+  roomID: "DEFAULT",
+  userID: "user_a",
+  audioTrackID: "audio-main",
+  sdp: "v=0",
+  state: ServerMediaSessionState.NEGOTIATING
+};
+void generatedServerMediaAnswerContract;
+
 describe("api", () => {
   beforeEach(() => {
     window.__LYRE_CONFIG__ = {
@@ -109,6 +132,12 @@ describe("api", () => {
 
   it("builds encoded media relay urls", () => {
     expect(mediaRelayUrl("Team A")).toBe("https://api.example.test/api/rooms/Team%20A/media-relay");
+  });
+
+  it("builds encoded server media offer urls", () => {
+    expect(serverMediaOfferUrl("Team A")).toBe(
+      "https://api.example.test/api/rooms/Team%20A/server-media/offer"
+    );
   });
 
   it("serializes join request body", async () => {
@@ -198,6 +227,16 @@ describe("api", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ user_id: "user_a", track_id: "audio-main", kind: "audio" })
+    });
+  });
+
+  it("serializes server media offer request body", async () => {
+    await answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0");
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/server-media/offer", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ user_id: "user_a", audio_track_id: "audio-main", sdp: "v=0" })
     });
   });
 });
