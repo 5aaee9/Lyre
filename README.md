@@ -80,6 +80,8 @@ The media relay REST endpoints expose the initial room-scoped state skeleton for
 
 `lyre-noise-cancelling` can now run RNNoise-compatible processing for decoded 48 kHz mono PCM frames of 480 samples using `nnnoiseless`. RNNoise returns voice activity detection metadata, but Lyre's `intensity` and `voice_activity_threshold` settings do not alter or suppress output yet. DeepFilterNet remains a planned runtime backend and direct factory creation reports it as unsupported until real model loading/inference is added. This still does not terminate browser WebRTC media, decode/encode Opus, or broadcast processed audio.
 
+`lyre-web::AppState` now owns an internal decoded-PCM media runtime wired to the media relay registry and RNNoise-capable processor. Processed frames are stored in an internal in-memory sink for tests and future broadcaster integration. This is not browser WebRTC media termination or client broadcast yet.
+
 If client-side noise cancellation is added before server-side media relay processing, it should be implemented as Rust compiled to WebAssembly rather than a JavaScript DSP path.
 
 ## Tests

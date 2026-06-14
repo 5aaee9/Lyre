@@ -75,3 +75,10 @@
 - Kept DeepFilterNet explicit as unsupported until a real libDF/model integration is added.
 - Added a `lyre-core::AudioFrameProcessor` adapter with structured warning logs at the current infallible trait boundary.
 - Left client-side noise cancellation as future Rust WASM work.
+
+## 2026-06-15 Web Media Runtime Wiring
+
+- Wired `lyre-web::AppState` to own a decoded-PCM `MediaRuntime` using the shared media relay registry.
+- Connected the web runtime to `lyre-noise-cancelling::NoiseCancellingAudioFrameProcessor`.
+- Stored processed frames in an internal in-memory sink for tests and future broadcaster integration.
+- Kept WebRTC media termination, Opus decode/encode, and client broadcast as future work.

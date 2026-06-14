@@ -1,8 +1,13 @@
 pub mod api;
 pub mod error;
+pub mod media_runtime;
 pub mod server;
 pub mod signalling;
 
+#[cfg(test)]
+mod api_media_tests;
+#[cfg(test)]
+mod api_tests;
 #[cfg(test)]
 mod signalling_tests;
 

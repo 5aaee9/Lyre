@@ -847,6 +847,7 @@ dependencies = [
  "futures-util",
  "http-body-util",
  "lyre-core",
+ "lyre-noise-cancelling",
  "lyre-turn",
  "serde",
  "serde_json",
