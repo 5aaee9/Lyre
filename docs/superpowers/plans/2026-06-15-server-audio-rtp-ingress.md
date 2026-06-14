@@ -916,7 +916,7 @@ git diff -- Cargo.toml Cargo.lock crates/lyre-webrtc/Cargo.toml crates/lyre-webr
 
 Expected: only intended files changed.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Commit with Lore protocol:
 
