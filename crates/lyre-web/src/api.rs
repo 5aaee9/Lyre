@@ -1,5 +1,6 @@
 use crate::{
     error::ApiError,
+    media_egress::{ProcessedAudioEgressFanout, ProcessedAudioEgressFrame},
     media_runtime::WebMediaRuntime,
     signalling::{route_signal_message, PeerHub, SignalMessage, SignalPayload},
 };
@@ -32,6 +33,7 @@ pub struct AppState {
     pub registry: Arc<RoomRegistry>,
     pub media_relays: Arc<MediaRelayRegistry>,
     pub media_runtime: Arc<WebMediaRuntime>,
+    pub media_egress: Arc<ProcessedAudioEgressFanout>,
     pub peers: Arc<PeerHub>,
     pub ice_servers: Arc<Vec<IceServerConfig>>,
     pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
@@ -52,6 +54,7 @@ impl AppState {
         Self {
             registry: Arc::new(RoomRegistry::new()),
             media_runtime: Arc::new(WebMediaRuntime::new(Arc::clone(&media_relays))),
+            media_egress: Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&media_relays))),
             media_relays,
             peers: Arc::new(PeerHub::new()),
             ice_servers: Arc::new(ice_servers),
@@ -65,6 +68,13 @@ impl AppState {
 
     pub fn processed_media_frames(&self, room_id: &RoomId) -> Vec<ProcessedAudioFrame> {
         self.media_runtime.frames_for_room(room_id)
+    }
+
+    pub fn processed_audio_egress_frames(
+        &self,
+        frame: &ProcessedAudioFrame,
+    ) -> Result<Vec<ProcessedAudioEgressFrame>, MediaRelayError> {
+        self.media_egress.fanout(frame)
     }
 
     pub fn subscribe_processed_media_frames(

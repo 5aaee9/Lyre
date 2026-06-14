@@ -5,6 +5,9 @@ pub mod noise;
 pub mod room;
 pub mod webrtc;
 
+#[cfg(test)]
+mod media_tests;
+
 pub use ids::{RoomId, RoomIdError, UserId, DEFAULT_ROOM_ID};
 pub use media::{
     MediaRelayError, MediaRelayMode, MediaRelayParticipant, MediaRelayRegistry,

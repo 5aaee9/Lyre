@@ -88,3 +88,10 @@
 - Replaced the web runtime's recording-only processed frame sink with a room-scoped processed audio broadcaster.
 - Broadcasts are internal `tokio::sync::broadcast` receivers for future WebRTC/SFU integration; no browser playback or RTP forwarding is implemented yet.
 - Stopping a media relay clears retained processed frame history for that room.
+
+## 2026-06-15 Processed Audio Egress Fanout
+
+- Added an internal processed-audio egress fanout contract that maps processed source frames to other audio-capable relay participants.
+- Egress fanout validates the source track against current relay state and returns relay errors for stale or non-audio source frames.
+- Split `lyre-core` media tests out of `media.rs` while adding the read-only active participant snapshot needed by fanout.
+- Kept real WebRTC media termination, RTP/Opus packetization, and browser delivery as future work.
