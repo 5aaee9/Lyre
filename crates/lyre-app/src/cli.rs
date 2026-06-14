@@ -17,7 +17,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    Serve(ServeArgs),
+    Serve(Box<ServeArgs>),
     Config(ConfigCommand),
 }
 
@@ -35,6 +35,28 @@ pub struct ServeArgs {
     pub turn_rest_ttl_seconds: u64,
     #[arg(long, default_value = "lyre", env = "LYRE_TURN_REST_IDENTITY")]
     pub turn_rest_identity: String,
+    #[arg(long, default_value_t = false, env = "LYRE_EMBEDDED_TURN")]
+    pub embedded_turn: bool,
+    #[arg(
+        long,
+        default_value = "0.0.0.0:3478",
+        env = "LYRE_EMBEDDED_TURN_LISTEN"
+    )]
+    pub embedded_turn_listen: String,
+    #[arg(
+        long,
+        default_value = "127.0.0.1:3478",
+        env = "LYRE_EMBEDDED_TURN_EXTERNAL"
+    )]
+    pub embedded_turn_external: String,
+    #[arg(long, default_value = "lyre.local", env = "LYRE_EMBEDDED_TURN_REALM")]
+    pub embedded_turn_realm: String,
+    #[arg(
+        long,
+        default_value = "49152..65535",
+        env = "LYRE_EMBEDDED_TURN_PORT_RANGE"
+    )]
+    pub embedded_turn_port_range: String,
 }
 
 impl ServeArgs {
@@ -56,6 +78,19 @@ impl ServeArgs {
         if let Ok(raw) = env::var("LYRE_ICE_SERVERS") {
             let entries = raw.split(';').map(str::to_owned).collect::<Vec<_>>();
             return parse_ice_server_entries(&entries);
+        }
+        if self.embedded_turn {
+            let external = self
+                .embedded_turn_external
+                .parse::<std::net::SocketAddr>()
+                .map_err(|_| IceServerConfigError::InvalidEmbeddedTurnExternal {
+                    value: self.embedded_turn_external.clone(),
+                })?;
+            return Ok(vec![IceServerConfig {
+                urls: vec![format!("turn:{external}")],
+                username: None,
+                credential: None,
+            }]);
         }
         Ok(default_ice_servers())
     }
@@ -80,6 +115,42 @@ impl ServeArgs {
             secret: secret.clone(),
             ttl_seconds: self.turn_rest_ttl_seconds,
             identity: self.turn_rest_identity.trim().to_owned(),
+        }))
+    }
+
+    pub fn effective_embedded_turn_config(
+        &self,
+    ) -> Result<Option<lyre_turn::EmbeddedTurnConfig>, TurnRestConfigError> {
+        if !self.embedded_turn {
+            return Ok(None);
+        }
+        let Some(turn_rest) = self.effective_turn_rest_credentials()? else {
+            return Err(TurnRestConfigError::EmbeddedTurn(
+                lyre_turn::EmbeddedTurnConfigError::MissingTurnRestSecret,
+            ));
+        };
+        let listen = self.embedded_turn_listen.parse().map_err(|_| {
+            TurnRestConfigError::InvalidEmbeddedTurnListen {
+                value: self.embedded_turn_listen.clone(),
+            }
+        })?;
+        let external = self.embedded_turn_external.parse().map_err(|_| {
+            TurnRestConfigError::InvalidEmbeddedTurnExternal {
+                value: self.embedded_turn_external.clone(),
+            }
+        })?;
+        if self.embedded_turn_realm.trim().is_empty() {
+            return Err(TurnRestConfigError::EmbeddedTurn(
+                lyre_turn::EmbeddedTurnConfigError::BlankRealm,
+            ));
+        }
+        let port_range = self.embedded_turn_port_range.parse()?;
+        Ok(Some(lyre_turn::EmbeddedTurnConfig {
+            listen,
+            external,
+            realm: self.embedded_turn_realm.trim().to_owned(),
+            port_range,
+            static_auth_secret: turn_rest.secret,
         }))
     }
 }
@@ -121,6 +192,8 @@ pub enum IceServerConfigError {
     TooManyFields { value: String },
     #[error("ICE server configuration must contain at least one server")]
     Empty,
+    #[error("embedded TURN external address must be an IP socket address, got `{value}`")]
+    InvalidEmbeddedTurnExternal { value: String },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -129,6 +202,12 @@ pub enum TurnRestConfigError {
     BlankSecret,
     #[error("TURN REST identity must not be blank")]
     BlankIdentity,
+    #[error(transparent)]
+    EmbeddedTurn(#[from] lyre_turn::EmbeddedTurnConfigError),
+    #[error("embedded TURN listen address must be a valid socket address, got `{value}`")]
+    InvalidEmbeddedTurnListen { value: String },
+    #[error("embedded TURN external address must be an IP socket address, got `{value}`")]
+    InvalidEmbeddedTurnExternal { value: String },
 }
 
 fn parse_ice_server_entries(
@@ -215,17 +294,25 @@ mod tests {
             turn_rest_secret: None,
             turn_rest_ttl_seconds: 3600,
             turn_rest_identity: "lyre".to_owned(),
+            embedded_turn: false,
+            embedded_turn_listen: "0.0.0.0:3478".to_owned(),
+            embedded_turn_external: "127.0.0.1:3478".to_owned(),
+            embedded_turn_realm: "lyre.local".to_owned(),
+            embedded_turn_port_range: "49152..65535".to_owned(),
         }
     }
 
     #[test]
     fn parses_default_serve_args() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("LYRE_EMBEDDED_TURN");
         let cli = Cli::try_parse_from(["lyre", "serve"]).unwrap();
         match cli.command {
             Commands::Serve(args) => {
                 assert_eq!(args.host, "0.0.0.0");
                 assert_eq!(args.port, 8080);
                 assert!(args.ice_servers.is_empty());
+                assert!(!args.embedded_turn);
             }
             Commands::Config(_) => panic!("expected serve"),
         }
@@ -233,6 +320,8 @@ mod tests {
 
     #[test]
     fn parses_custom_serve_args() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("LYRE_EMBEDDED_TURN");
         let cli = Cli::try_parse_from(["lyre", "serve", "--host", "127.0.0.1", "--port", "9000"])
             .unwrap();
         match cli.command {
@@ -246,6 +335,7 @@ mod tests {
 
     #[test]
     fn serve_args_honor_api_bind_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let args = default_serve_args();
         std::env::set_var("LYRE_API_BIND", "127.0.0.1:9001");
 
@@ -275,6 +365,7 @@ mod tests {
 
     #[test]
     fn malformed_api_bind_env_is_error_with_explicit_host_port() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let mut args = default_serve_args();
         args.host = "127.0.0.1".to_owned();
         args.port = 9000;
@@ -303,10 +394,28 @@ mod tests {
 
     #[test]
     fn ice_servers_default_when_unconfigured() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("LYRE_ICE_SERVERS");
         let args = default_serve_args();
 
         assert_eq!(args.effective_ice_servers().unwrap(), default_ice_servers());
+    }
+
+    #[test]
+    fn embedded_turn_auto_generates_ice_server_when_unconfigured() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("LYRE_ICE_SERVERS");
+        let mut args = default_serve_args();
+        args.embedded_turn = true;
+
+        assert_eq!(
+            args.effective_ice_servers().unwrap(),
+            vec![IceServerConfig {
+                urls: vec!["turn:127.0.0.1:3478".to_owned()],
+                username: None,
+                credential: None,
+            }]
+        );
     }
 
     #[test]
@@ -329,6 +438,7 @@ mod tests {
 
     #[test]
     fn env_ice_servers_are_semicolon_separated() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var(
             "LYRE_ICE_SERVERS",
             "stun:a.example:3478;turn:turn.example:3478||pass",
@@ -345,6 +455,7 @@ mod tests {
 
     #[test]
     fn cli_ice_servers_take_precedence_over_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("LYRE_ICE_SERVERS", "stun:env.example:3478");
         let mut args = default_serve_args();
         args.ice_servers = vec!["stun:cli.example:3478".to_owned()];
@@ -352,6 +463,30 @@ mod tests {
         let servers = args.effective_ice_servers().unwrap();
 
         assert_eq!(servers[0].urls, ["stun:cli.example:3478"]);
+        std::env::remove_var("LYRE_ICE_SERVERS");
+    }
+
+    #[test]
+    fn explicit_cli_ice_servers_take_precedence_over_embedded_turn() {
+        let mut args = default_serve_args();
+        args.embedded_turn = true;
+        args.ice_servers = vec!["stun:cli.example:3478".to_owned()];
+
+        let servers = args.effective_ice_servers().unwrap();
+
+        assert_eq!(servers[0].urls, ["stun:cli.example:3478"]);
+    }
+
+    #[test]
+    fn env_ice_servers_take_precedence_over_embedded_turn() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("LYRE_ICE_SERVERS", "stun:env.example:3478");
+        let mut args = default_serve_args();
+        args.embedded_turn = true;
+
+        let servers = args.effective_ice_servers().unwrap();
+
+        assert_eq!(servers[0].urls, ["stun:env.example:3478"]);
         std::env::remove_var("LYRE_ICE_SERVERS");
     }
 
@@ -424,6 +559,165 @@ mod tests {
             Commands::Config(_) => panic!("expected serve"),
         }
         std::env::remove_var("LYRE_TURN_REST_SECRET");
+    }
+
+    #[test]
+    fn parses_default_embedded_turn_config() {
+        let cli = Cli::try_parse_from([
+            "lyre",
+            "serve",
+            "--embedded-turn",
+            "--turn-rest-secret",
+            "secret",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                let config = args.effective_embedded_turn_config().unwrap().unwrap();
+                assert_eq!(config.listen.to_string(), "0.0.0.0:3478");
+                assert_eq!(config.external.to_string(), "127.0.0.1:3478");
+                assert_eq!(config.realm, "lyre.local");
+                assert_eq!(
+                    config.port_range,
+                    lyre_turn::EmbeddedTurnPortRange {
+                        start: 49152,
+                        end: 65535,
+                    }
+                );
+                assert_eq!(config.static_auth_secret, "secret");
+            }
+            Commands::Config(_) => panic!("expected serve"),
+        }
+    }
+
+    #[test]
+    fn rejects_embedded_turn_without_turn_rest_secret() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("LYRE_TURN_REST_SECRET");
+        let cli = Cli::try_parse_from(["lyre", "serve", "--embedded-turn"]).unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                assert_eq!(
+                    args.effective_embedded_turn_config(),
+                    Err(TurnRestConfigError::EmbeddedTurn(
+                        lyre_turn::EmbeddedTurnConfigError::MissingTurnRestSecret
+                    ))
+                );
+            }
+            Commands::Config(_) => panic!("expected serve"),
+        }
+    }
+
+    #[test]
+    fn parses_custom_embedded_turn_config() {
+        let cli = Cli::try_parse_from([
+            "lyre",
+            "serve",
+            "--embedded-turn",
+            "--turn-rest-secret",
+            "secret",
+            "--embedded-turn-listen",
+            "0.0.0.0:3479",
+            "--embedded-turn-external",
+            "203.0.113.10:3479",
+            "--embedded-turn-realm",
+            "turn.example",
+            "--embedded-turn-port-range",
+            "50000..50100",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                let config = args.effective_embedded_turn_config().unwrap().unwrap();
+                assert_eq!(config.listen.to_string(), "0.0.0.0:3479");
+                assert_eq!(config.external.to_string(), "203.0.113.10:3479");
+                assert_eq!(config.realm, "turn.example");
+                assert_eq!(
+                    config.port_range,
+                    lyre_turn::EmbeddedTurnPortRange {
+                        start: 50000,
+                        end: 50100,
+                    }
+                );
+            }
+            Commands::Config(_) => panic!("expected serve"),
+        }
+    }
+
+    #[test]
+    fn embedded_turn_env_enables_default_config() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("LYRE_EMBEDDED_TURN", "true");
+        std::env::set_var("LYRE_TURN_REST_SECRET", "secret");
+        let cli = Cli::try_parse_from(["lyre", "serve"]).unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                let config = args.effective_embedded_turn_config().unwrap().unwrap();
+                assert_eq!(config.external.to_string(), "127.0.0.1:3478");
+            }
+            Commands::Config(_) => panic!("expected serve"),
+        }
+        std::env::remove_var("LYRE_EMBEDDED_TURN");
+        std::env::remove_var("LYRE_TURN_REST_SECRET");
+    }
+
+    #[test]
+    fn rejects_embedded_turn_hostname_external() {
+        let cli = Cli::try_parse_from([
+            "lyre",
+            "serve",
+            "--embedded-turn",
+            "--turn-rest-secret",
+            "secret",
+            "--embedded-turn-external",
+            "turn.example.com:3478",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                assert_eq!(
+                    args.effective_embedded_turn_config(),
+                    Err(TurnRestConfigError::InvalidEmbeddedTurnExternal {
+                        value: "turn.example.com:3478".to_owned()
+                    })
+                );
+                assert_eq!(
+                    args.effective_ice_servers(),
+                    Err(IceServerConfigError::InvalidEmbeddedTurnExternal {
+                        value: "turn.example.com:3478".to_owned()
+                    })
+                );
+            }
+            Commands::Config(_) => panic!("expected serve"),
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_embedded_turn_port_ranges() {
+        for value in [
+            "49152-65535",
+            "49152..",
+            "49151..65535",
+            "60000..59999",
+            "49152..70000",
+        ] {
+            let cli = Cli::try_parse_from([
+                "lyre",
+                "serve",
+                "--embedded-turn",
+                "--turn-rest-secret",
+                "secret",
+                "--embedded-turn-port-range",
+                value,
+            ])
+            .unwrap();
+            match cli.command {
+                Commands::Serve(args) => {
+                    assert!(args.effective_embedded_turn_config().is_err());
+                }
+                Commands::Config(_) => panic!("expected serve"),
+            }
+        }
     }
 
     #[test]

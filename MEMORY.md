@@ -39,3 +39,10 @@
 - Added short-lived TURN REST credential generation for configured TURN/TURNS ICE servers.
 - Kept STUN-only servers and default static ICE behavior unchanged when no shared secret is configured.
 - Did not add `turn-rs` runtime yet; this prepares credentials for any TURN server that supports the shared-secret REST credential pattern.
+
+## 2026-06-15 Embedded TURN Service
+
+- Added an opt-in embedded UDP TURN relay using the MIT `turn-server` crate from the `turn-rs` project.
+- Kept the GPL `turn-rs` crate out of the dependency graph; `lyre-turn` isolates the `turn-server` API.
+- Embedded TURN advertises a local-only `turn:127.0.0.1:3478` URL by default and requires explicit IP socket configuration for public deployments.
+- Confirmed TURN relay remains separate from server-side noise cancellation; media processing still needs a future WebRTC media relay.

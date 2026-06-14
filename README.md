@@ -9,6 +9,7 @@ cargo run -p lyre-app -- serve --host 0.0.0.0 --port 8080
 cargo run -p lyre-app -- serve --ice-server 'stun:stun.l.google.com:19302'
 cargo run -p lyre-app -- serve --ice-server 'turn:turn.example:3478|user|pass'
 cargo run -p lyre-app -- serve --ice-server 'turn:turn.example:3478' --turn-rest-secret 'shared-secret'
+cargo run -p lyre-app -- serve --embedded-turn --turn-rest-secret 'shared-secret'
 cargo run -p lyre-app -- config print
 ```
 
@@ -16,6 +17,10 @@ cargo run -p lyre-app -- config print
 Configured TURN usernames and credentials are returned to browsers by `/api/webrtc/ice-servers`; use scoped, rotated, low-lifetime TURN credentials rather than privileged long-lived secrets.
 
 TURN REST credentials can be generated for configured `turn:` and `turns:` ICE servers with `--turn-rest-secret` or `LYRE_TURN_REST_SECRET`. Optional settings are `--turn-rest-ttl-seconds` / `LYRE_TURN_REST_TTL_SECONDS` and `--turn-rest-identity` / `LYRE_TURN_REST_IDENTITY`. The shared secret is never returned to browsers; the endpoint returns only short-lived usernames and HMAC-SHA1 credentials using the existing ICE server response shape, so `proto/lyre.ridl` does not need a separate schema change for this behavior.
+
+An embedded UDP TURN relay can be enabled with `--embedded-turn` or `LYRE_EMBEDDED_TURN=true`. It requires `--turn-rest-secret` / `LYRE_TURN_REST_SECRET`, listens on `--embedded-turn-listen` / `LYRE_EMBEDDED_TURN_LISTEN` (`0.0.0.0:3478` by default), and advertises `--embedded-turn-external` / `LYRE_EMBEDDED_TURN_EXTERNAL` (`127.0.0.1:3478` by default). `--embedded-turn-external` must be an IP socket address, not a hostname. Optional settings are `--embedded-turn-realm` / `LYRE_EMBEDDED_TURN_REALM` and `--embedded-turn-port-range` / `LYRE_EMBEDDED_TURN_PORT_RANGE` using inclusive `<start>..<end>` syntax within `49152..65535`.
+
+When embedded TURN is enabled and no `--ice-server` / `LYRE_ICE_SERVERS` is configured, Lyre advertises `turn:<embedded-turn-external>` through `/api/webrtc/ice-servers`. Explicit ICE server configuration disables this auto-injection. The embedded TURN runtime uses the MIT `turn-server` crate from the `turn-rs` project; that relay validates the HMAC credential but does not enforce the timestamp embedded in TURN REST usernames, so keep TURN credential TTL short.
 
 API routes:
 
@@ -61,7 +66,7 @@ This uses `go run github.com/webrpc/webrpc/cmd/webrpc-gen@v0.36.0`; the first ru
 
 `GET /api/webrtc/topology` reports the active media topology. The current topology is peer-to-peer mesh WebRTC with TURN relay support for NAT traversal.
 
-TURN, including a future `turn-rs` integration, relays encrypted WebRTC packets and cannot run server-side RNNoise or DeepFilterNet by itself. Server-side noise cancellation requires a future media relay/SFU-like path that terminates WebRTC media, decodes audio to PCM, runs `lyre-noise-cancelling`, then re-encodes and broadcasts processed audio.
+TURN, including the embedded TURN relay, relays encrypted WebRTC packets and cannot run server-side RNNoise or DeepFilterNet by itself. Server-side noise cancellation requires a future media relay/SFU-like path that terminates WebRTC media, decodes audio to PCM, runs `lyre-noise-cancelling`, then re-encodes and broadcasts processed audio.
 
 ## Tests
 
@@ -86,4 +91,4 @@ The `lyre-api` image serves REST/WebSocket on port `8080`. The `lyre-web` image 
 
 ## MVP Scope
 
-This milestone uses peer-to-peer WebRTC signalling only. Server-side audio decode, RNNoise inference, DeepFilterNet inference, embedded TURN service runtime, authentication, persistence, horizontal scaling, and generated WebRPC Rust server integration are follow-up work.
+This milestone uses peer-to-peer WebRTC signalling with optional TURN relay. Server-side audio decode, RNNoise inference, DeepFilterNet inference, authentication, persistence, horizontal scaling, and generated WebRPC Rust server integration are follow-up work.

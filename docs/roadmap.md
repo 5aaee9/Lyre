@@ -11,6 +11,7 @@
 - Frontend noise settings for provider, intensity, and voice activity threshold.
 - Static STUN/TURN ICE server configuration exposed to the browser WebRTC flow.
 - Short-lived TURN REST credential generation for configured TURN/TURNS ICE servers.
+- Opt-in embedded UDP TURN relay using the MIT `turn-server` crate from the `turn-rs` project.
 - Formal WebRPC RIDL contract and generated TypeScript client/types for frontend-consumed HTTP DTOs.
 - Media topology boundary API documenting current P2P mesh behavior, TURN relay support, and server-side noise cancellation requirements.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
@@ -19,7 +20,6 @@
 ## Next
 
 - Harden real WebRTC mesh negotiation across multiple browsers.
-- Add embedded `turn-rs` TURN service evaluation.
 - Implement media relay/SFU-like server-side audio pipeline and broadcast architecture.
 - Add RNNoise binding and processing implementation.
 - Add DeepFilterNet binding and processing implementation.

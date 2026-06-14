@@ -3,6 +3,7 @@ members = [
     "crates/lyre-app",
     "crates/lyre-core",
     "crates/lyre-noise-cancelling",
+    "crates/lyre-turn",
     "crates/lyre-web",
 ]
 resolver = "2"
@@ -31,4 +32,5 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+turn-server = { version = "4.1.2", default-features = false, features = ["udp"] }
 ulid = "1"

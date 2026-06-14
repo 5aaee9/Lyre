@@ -18,6 +18,7 @@ crates/lyre-core - 软件核心
 crates/lyre-app - 软件 cli，使用 clap 实现
 crates/lyre-web - Web 接口，使用 WebRPC 和 RESTFul API 和前端进行交互
 crates/lyre-noise-cancelling - 噪声消除, 先支持 RNNoise / DeepFilterNet, 在服务端处理完才广播给各个客户端
+crates/lyre-turn - optional embedded UDP TURN relay adapter around the MIT `turn-server` crate
 frontend/ - Next.js + React 前端，使用 Tailwind CSS 和本地 shadcn-style UI primitives。前端运行时使用 `APP_BASE_URL` 表示自身公开 URL，`APP_API_URL` 表示 Rust API URL。
 
 ### Docker Images
@@ -33,6 +34,7 @@ frontend/ - Next.js + React 前端，使用 Tailwind CSS 和本地 shadcn-style 
 - **Web framework**: axum + tower
 - **Concurrent maps**: `dashmap` for hot-path instance-owned maps such as live connection statistics and DNS reverse-map snooping
 - **TURN REST credentials**: `hmac`, `sha1`, and `base64` generate short-lived shared-secret TURN credentials for configured TURN/TURNS ICE servers. These are third-party dependencies, not new workspace crates.
+- **Embedded TURN relay**: `turn-server` is the MIT service crate from the `turn-rs` project used by `crates/lyre-turn` for optional UDP TURN relay. The GPL `turn-rs` crate is intentionally not used.
 
 ## Memory Files
 ### docs/roadmap.md

@@ -1,0 +1,11 @@
+[package]
+name = "lyre-turn"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+turn-server.workspace = true
