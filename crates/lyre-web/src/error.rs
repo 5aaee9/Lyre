@@ -1,10 +1,11 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use lyre_core::RoomIdError;
+use lyre_core::{RoomIdError, TurnRestCredentialsError};
 use serde::Serialize;
 
 #[derive(Debug)]
 pub enum ApiError {
     BadRoomId(RoomIdError),
+    TurnRestCredentials(TurnRestCredentialsError),
 }
 
 #[derive(Debug, Serialize)]
@@ -18,10 +19,19 @@ impl From<RoomIdError> for ApiError {
     }
 }
 
+impl From<TurnRestCredentialsError> for ApiError {
+    fn from(error: TurnRestCredentialsError) -> Self {
+        Self::TurnRestCredentials(error)
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let (status, error) = match self {
             Self::BadRoomId(error) => (StatusCode::BAD_REQUEST, error.to_string()),
+            Self::TurnRestCredentials(error) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+            }
         };
         (status, Json(ErrorBody { error })).into_response()
     }

@@ -19,6 +19,7 @@ async fn main() -> Result<()> {
                 host,
                 port,
                 ice_servers,
+                turn_rest_credentials: args.effective_turn_rest_credentials()?,
             })
             .await
             .context("failed to run Lyre server")?;

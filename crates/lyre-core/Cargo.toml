@@ -5,9 +5,12 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
+base64.workspace = true
 chrono.workspace = true
 dashmap.workspace = true
+hmac.workspace = true
 serde.workspace = true
+sha1.workspace = true
 thiserror.workspace = true
 ulid.workspace = true
 

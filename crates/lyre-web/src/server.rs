@@ -1,6 +1,6 @@
 use crate::{api::AppState, router};
 use anyhow::{Context, Result};
-use lyre_core::IceServerConfig;
+use lyre_core::{IceServerConfig, TurnRestCredentialsConfig};
 use std::{net::SocketAddr, str::FromStr};
 use tokio::net::TcpListener;
 
@@ -9,6 +9,7 @@ pub struct ServeConfig {
     pub host: String,
     pub port: u16,
     pub ice_servers: Vec<IceServerConfig>,
+    pub turn_rest_credentials: Option<TurnRestCredentialsConfig>,
 }
 
 impl ServeConfig {
@@ -24,7 +25,13 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
         .await
         .with_context(|| format!("failed to bind Lyre API listener at {addr}"))?;
     tracing::info!(%addr, "Lyre API listening");
-    axum::serve(listener, router(AppState::new(config.ice_servers)))
-        .await
-        .context("Lyre API server failed")
+    axum::serve(
+        listener,
+        router(AppState::new(
+            config.ice_servers,
+            config.turn_rest_credentials,
+        )),
+    )
+    .await
+    .context("Lyre API server failed")
 }

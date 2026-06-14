@@ -9,5 +9,7 @@ pub use room::{
     JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, RoomRegistry, RoomSnapshot, UserProfile,
 };
 pub use webrtc::{
-    current_media_topology, default_ice_servers, IceServerConfig, MediaTopology, MediaTopologyMode,
+    current_media_topology, default_ice_servers, generate_turn_rest_credentials,
+    ice_servers_with_turn_rest_credentials, IceServerConfig, MediaTopology, MediaTopologyMode,
+    TurnRestCredentials, TurnRestCredentialsConfig, TurnRestCredentialsError,
 };

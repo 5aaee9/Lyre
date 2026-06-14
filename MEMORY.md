@@ -33,3 +33,9 @@
 - Made the current media topology explicit: browser P2P mesh with TURN relay support, no server-side audio processing.
 - Recorded `turn-rs` as a future TURN relay candidate, not a server-side noise cancellation mechanism.
 - Server-side RNNoise/DeepFilterNet requires a future media relay that terminates WebRTC media and processes decoded PCM before broadcast.
+
+## 2026-06-14 TURN REST Credentials
+
+- Added short-lived TURN REST credential generation for configured TURN/TURNS ICE servers.
+- Kept STUN-only servers and default static ICE behavior unchanged when no shared secret is configured.
+- Did not add `turn-rs` runtime yet; this prepares credentials for any TURN server that supports the shared-secret REST credential pattern.

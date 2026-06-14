@@ -32,6 +32,7 @@ frontend/ - Next.js + React 前端，使用 Tailwind CSS 和本地 shadcn-style 
 - **Async runtime**: tokio (multi-threaded)
 - **Web framework**: axum + tower
 - **Concurrent maps**: `dashmap` for hot-path instance-owned maps such as live connection statistics and DNS reverse-map snooping
+- **TURN REST credentials**: `hmac`, `sha1`, and `base64` generate short-lived shared-secret TURN credentials for configured TURN/TURNS ICE servers. These are third-party dependencies, not new workspace crates.
 
 ## Memory Files
 ### docs/roadmap.md

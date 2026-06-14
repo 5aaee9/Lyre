@@ -18,7 +18,10 @@ use lyre_core::{
     LeaveRoomRequest, RoomId, RoomRegistry,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::mpsc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
@@ -27,20 +30,25 @@ pub struct AppState {
     pub registry: Arc<RoomRegistry>,
     pub peers: Arc<PeerHub>,
     pub ice_servers: Arc<Vec<IceServerConfig>>,
+    pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
-        Self::new(default_ice_servers())
+        Self::new(default_ice_servers(), None)
     }
 }
 
 impl AppState {
-    pub fn new(ice_servers: Vec<IceServerConfig>) -> Self {
+    pub fn new(
+        ice_servers: Vec<IceServerConfig>,
+        turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
+    ) -> Self {
         Self {
             registry: Arc::new(RoomRegistry::new()),
             peers: Arc::new(PeerHub::new()),
             ice_servers: Arc::new(ice_servers),
+            turn_rest_credentials,
         }
     }
 }
@@ -78,8 +86,19 @@ async fn noise_providers() -> Json<Vec<lyre_core::NoiseCancellationConfig>> {
     Json(supported_noise_providers())
 }
 
-async fn ice_servers(State(state): State<AppState>) -> Json<Vec<IceServerConfig>> {
-    Json((*state.ice_servers).clone())
+async fn ice_servers(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<IceServerConfig>>, ApiError> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock must be after unix epoch")
+        .as_secs();
+    let servers = lyre_core::ice_servers_with_turn_rest_credentials(
+        &state.ice_servers,
+        state.turn_rest_credentials.as_ref(),
+        now,
+    )?;
+    Ok(Json(servers))
 }
 
 async fn media_topology() -> Json<lyre_core::MediaTopology> {
@@ -305,18 +324,21 @@ mod tests {
 
     #[tokio::test]
     async fn ice_server_route_preserves_configured_servers() {
-        let app = router(AppState::new(vec![
-            IceServerConfig {
-                urls: vec!["stun:one.example:3478".to_owned()],
-                username: None,
-                credential: None,
-            },
-            IceServerConfig {
-                urls: vec!["stun:one.example:3478".to_owned()],
-                username: Some("user".to_owned()),
-                credential: Some("pass".to_owned()),
-            },
-        ]));
+        let app = router(AppState::new(
+            vec![
+                IceServerConfig {
+                    urls: vec!["stun:one.example:3478".to_owned()],
+                    username: None,
+                    credential: None,
+                },
+                IceServerConfig {
+                    urls: vec!["stun:one.example:3478".to_owned()],
+                    username: Some("user".to_owned()),
+                    credential: Some("pass".to_owned()),
+                },
+            ],
+            None,
+        ));
         let response = app
             .oneshot(
                 Request::builder()
@@ -330,6 +352,37 @@ mod tests {
         let body = body_json(response).await;
         assert_eq!(body.as_array().unwrap().len(), 2);
         assert_eq!(body[1]["username"], "user");
+    }
+
+    #[tokio::test]
+    async fn ice_server_route_generates_short_lived_turn_credentials() {
+        let app = router(AppState::new(
+            vec![IceServerConfig {
+                urls: vec!["turn:turn.example:3478".to_owned()],
+                username: Some("static-user".to_owned()),
+                credential: Some("static-pass".to_owned()),
+            }],
+            Some(lyre_core::TurnRestCredentialsConfig {
+                secret: "turn-secret".to_owned(),
+                ttl_seconds: 3600,
+                identity: "lyre".to_owned(),
+            }),
+        ));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/webrtc/ice-servers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = body_json(response).await;
+        assert_eq!(body[0]["urls"][0], "turn:turn.example:3478");
+        assert!(body[0]["username"].as_str().unwrap().ends_with(":lyre"));
+        assert_ne!(body[0]["credential"], "static-pass");
+        assert!(!body.to_string().contains("turn-secret"));
     }
 
     #[tokio::test]
