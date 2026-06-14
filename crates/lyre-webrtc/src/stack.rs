@@ -3,10 +3,25 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::{
+    media_ingress::MediaIngressRecorder, ServerMediaRemoteTrack, ServerMediaRtpPacket,
+    ServerMediaTrackKind,
+};
+use rtc::{
+    peer_connection::configuration::{
+        interceptor_registry::register_default_interceptors,
+        media_engine::{MediaEngine, MIME_TYPE_OPUS},
+    },
+    rtp_transceiver::rtp_sender::{RTCRtpCodec, RTCRtpCodecParameters, RtpCodecKind},
+};
 use thiserror::Error;
-use webrtc::peer_connection::{
-    PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCIceCandidateInit,
-    RTCIceGatheringState, RTCPeerConnectionIceEvent, RTCSessionDescription,
+use webrtc::{
+    media_stream::track_remote::{TrackRemote, TrackRemoteEvent},
+    peer_connection::{
+        PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCIceCandidateInit,
+        RTCIceGatheringState, RTCPeerConnectionIceEvent, RTCSessionDescription, Registry,
+    },
+    rtp_transceiver::{RTCRtpTransceiverDirection, RTCRtpTransceiverInit},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -21,13 +36,52 @@ impl WebRtcStack {
         &self,
     ) -> Result<WebRtcPeerConnectionHandle, WebRtcStackError> {
         let local_ice_candidates = Arc::new(Mutex::new(Vec::new()));
+        let media_ingress = MediaIngressRecorder::default();
         let handler = Arc::new(PeerConnectionHandler {
             local_ice_candidates: Arc::clone(&local_ice_candidates),
+            media_ingress: media_ingress.clone(),
         });
+        let mut media_engine = MediaEngine::default();
+        media_engine
+            .register_codec(
+                RTCRtpCodecParameters {
+                    rtp_codec: RTCRtpCodec {
+                        mime_type: MIME_TYPE_OPUS.to_owned(),
+                        clock_rate: 48_000,
+                        channels: 2,
+                        sdp_fmtp_line: String::new(),
+                        rtcp_feedback: vec![],
+                    },
+                    payload_type: 111,
+                },
+                RtpCodecKind::Audio,
+            )
+            .map_err(|source| WebRtcStackError::CreatePeerConnection {
+                source: Box::new(source),
+            })?;
+        let registry = register_default_interceptors(Registry::new(), &mut media_engine).map_err(
+            |source| WebRtcStackError::CreatePeerConnection {
+                source: Box::new(source),
+            },
+        )?;
         let peer_connection = PeerConnectionBuilder::new()
             .with_handler(handler)
+            .with_media_engine(media_engine)
+            .with_interceptor_registry(registry)
             .with_udp_addrs(vec!["127.0.0.1:0".to_owned()])
             .build()
+            .await
+            .map_err(|source| WebRtcStackError::CreatePeerConnection {
+                source: Box::new(source),
+            })?;
+        peer_connection
+            .add_transceiver_from_kind(
+                RtpCodecKind::Audio,
+                Some(RTCRtpTransceiverInit {
+                    direction: RTCRtpTransceiverDirection::Recvonly,
+                    ..Default::default()
+                }),
+            )
             .await
             .map_err(|source| WebRtcStackError::CreatePeerConnection {
                 source: Box::new(source),
@@ -36,6 +90,7 @@ impl WebRtcStack {
         Ok(WebRtcPeerConnectionHandle {
             _peer_connection: Arc::from(peer_connection),
             local_ice_candidates,
+            media_ingress,
         })
     }
 }
@@ -43,6 +98,7 @@ impl WebRtcStack {
 #[derive(Clone)]
 struct PeerConnectionHandler {
     local_ice_candidates: Arc<Mutex<Vec<ServerMediaIceCandidateInit>>>,
+    media_ingress: MediaIngressRecorder,
 }
 
 #[async_trait::async_trait]
@@ -71,6 +127,51 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
                 });
         }
     }
+
+    async fn on_track(&self, track: Arc<dyn TrackRemote>) {
+        let track_id = track.track_id().await.to_string();
+        let kind = match track.kind().await {
+            RtpCodecKind::Audio => ServerMediaTrackKind::Audio,
+            RtpCodecKind::Video => ServerMediaTrackKind::Video,
+            _ => ServerMediaTrackKind::Unknown,
+        };
+        let mime_type = first_codec_mime_type(&track).await;
+        self.media_ingress
+            .record_remote_track(ServerMediaRemoteTrack {
+                track_id: track_id.clone(),
+                kind: kind.clone(),
+                mime_type,
+            });
+
+        if kind != ServerMediaTrackKind::Audio {
+            return;
+        }
+
+        let media_ingress = self.media_ingress.clone();
+        tokio::spawn(async move {
+            while let Some(event) = track.poll().await {
+                if let TrackRemoteEvent::OnRtpPacket(packet) = event {
+                    media_ingress.record_rtp_packet(ServerMediaRtpPacket {
+                        track_id: track_id.clone(),
+                        sequence_number: packet.header.sequence_number,
+                        timestamp: packet.header.timestamp,
+                        marker: packet.header.marker,
+                        payload_type: packet.header.payload_type,
+                        payload: packet.payload.to_vec(),
+                    });
+                }
+            }
+        });
+    }
+}
+
+async fn first_codec_mime_type(track: &Arc<dyn TrackRemote>) -> Option<String> {
+    for ssrc in track.ssrcs().await {
+        if let Some(codec) = track.codec(ssrc).await {
+            return Some(codec.mime_type);
+        }
+    }
+    None
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -108,6 +209,7 @@ impl From<ServerMediaIceCandidateInit> for RTCIceCandidateInit {
 pub struct WebRtcPeerConnectionHandle {
     _peer_connection: Arc<dyn PeerConnection>,
     local_ice_candidates: Arc<Mutex<Vec<ServerMediaIceCandidateInit>>>,
+    media_ingress: MediaIngressRecorder,
 }
 
 impl std::fmt::Debug for WebRtcPeerConnectionHandle {
@@ -136,6 +238,14 @@ impl WebRtcPeerConnectionHandle {
             .lock()
             .expect("local ICE candidate collection lock must not be poisoned")
             .clone()
+    }
+
+    pub fn remote_tracks(&self) -> Vec<ServerMediaRemoteTrack> {
+        self.media_ingress.remote_tracks()
+    }
+
+    pub fn received_rtp_packets(&self) -> Vec<ServerMediaRtpPacket> {
+        self.media_ingress.received_rtp_packets()
     }
 
     pub async fn answer_remote_offer(&self, offer_sdp: String) -> Result<String, WebRtcStackError> {
@@ -236,145 +346,4 @@ pub enum WebRtcStackError {
     },
     #[error("WebRTC peer connection did not produce a local description")]
     MissingLocalDescription,
-}
-
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn create_peer_connection_returns_lyre_handle() {
-        let handle = super::WebRtcStack::new()
-            .create_peer_connection()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            std::any::type_name_of_val(&handle),
-            "lyre_webrtc::stack::WebRtcPeerConnectionHandle"
-        );
-    }
-
-    async fn offer_sdp() -> String {
-        let offerer = super::WebRtcStack::new()
-            .create_peer_connection()
-            .await
-            .unwrap();
-        offerer.create_local_offer_for_test().await.unwrap()
-    }
-
-    fn host_candidate() -> super::ServerMediaIceCandidateInit {
-        super::ServerMediaIceCandidateInit {
-            candidate: "candidate:1 1 UDP 2130706431 192.168.1.100 54321 typ host".to_owned(),
-            sdp_mid: Some("0".to_owned()),
-            sdp_mline_index: Some(0),
-            username_fragment: None,
-        }
-    }
-
-    async fn wait_for_local_candidates(
-        handle: &super::WebRtcPeerConnectionHandle,
-    ) -> Vec<super::ServerMediaIceCandidateInit> {
-        for _ in 0..128 {
-            let candidates = handle.local_ice_candidates();
-            if candidates
-                .iter()
-                .any(|candidate| candidate.candidate.starts_with("candidate:"))
-                && candidates
-                    .iter()
-                    .any(|candidate| candidate.candidate.is_empty())
-            {
-                return candidates;
-            }
-            tokio::task::yield_now().await;
-        }
-        handle.local_ice_candidates()
-    }
-
-    #[tokio::test]
-    async fn answer_remote_offer_returns_answer_sdp() {
-        let answerer = super::WebRtcStack::new()
-            .create_peer_connection()
-            .await
-            .unwrap();
-
-        let answer = answerer
-            .answer_remote_offer(offer_sdp().await)
-            .await
-            .unwrap();
-
-        assert!(answer.starts_with("v=0"));
-    }
-
-    #[tokio::test]
-    async fn invalid_remote_offer_preserves_source_error() {
-        let answerer = super::WebRtcStack::new()
-            .create_peer_connection()
-            .await
-            .unwrap();
-
-        let error = answerer
-            .answer_remote_offer("not sdp".to_owned())
-            .await
-            .unwrap_err();
-
-        assert!(std::error::Error::source(&error).is_some());
-    }
-
-    #[tokio::test]
-    async fn add_remote_ice_candidate_accepts_candidate_after_answer() {
-        let answerer = super::WebRtcStack::new()
-            .create_peer_connection()
-            .await
-            .unwrap();
-        answerer
-            .answer_remote_offer(offer_sdp().await)
-            .await
-            .unwrap();
-
-        answerer
-            .add_remote_ice_candidate(host_candidate())
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn invalid_remote_ice_candidate_preserves_source_error() {
-        let answerer = super::WebRtcStack::new()
-            .create_peer_connection()
-            .await
-            .unwrap();
-        answerer
-            .answer_remote_offer(offer_sdp().await)
-            .await
-            .unwrap();
-        let mut candidate = host_candidate();
-        candidate.candidate = "not a candidate".to_owned();
-
-        let error = answerer
-            .add_remote_ice_candidate(candidate)
-            .await
-            .unwrap_err();
-
-        assert!(std::error::Error::source(&error).is_some());
-    }
-
-    #[tokio::test]
-    async fn local_ice_candidates_are_lyre_owned_values() {
-        let answerer = super::WebRtcStack::new()
-            .create_peer_connection()
-            .await
-            .unwrap();
-        answerer
-            .answer_remote_offer(offer_sdp().await)
-            .await
-            .unwrap();
-
-        let candidates = wait_for_local_candidates(&answerer).await;
-
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.candidate.starts_with("candidate:")));
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.candidate.is_empty()));
-    }
 }

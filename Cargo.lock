@@ -1513,8 +1513,10 @@ name = "lyre-webrtc"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bytes",
  "dashmap",
  "lyre-core",
+ "rtc",
  "serde",
  "thiserror 2.0.18",
  "tokio",

@@ -219,6 +219,8 @@ async fn close_and_close_room_remove_stored_handles() {
 
     assert_eq!(negotiator.stored_peer_connection_count(), 0);
     assert!(negotiator.local_ice_candidates(&key).is_empty());
+    assert!(negotiator.remote_tracks(&key).is_empty());
+    assert!(negotiator.received_rtp_packets(&key).is_empty());
 
     negotiator
         .answer_offer(offer("audio-main", offer_sdp().await))
@@ -228,4 +230,19 @@ async fn close_and_close_room_remove_stored_handles() {
 
     assert_eq!(negotiator.stored_peer_connection_count(), 0);
     assert!(negotiator.local_ice_candidates(&key).is_empty());
+    assert!(negotiator.remote_tracks(&key).is_empty());
+    assert!(negotiator.received_rtp_packets(&key).is_empty());
+}
+
+#[tokio::test]
+async fn server_media_snapshot_queries_return_empty_for_missing_session() {
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
+    let missing_key = ServerMediaSessionKey {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("missing_user"),
+    };
+
+    assert!(negotiator.remote_tracks(&missing_key).is_empty());
+    assert!(negotiator.received_rtp_packets(&missing_key).is_empty());
 }

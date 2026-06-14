@@ -1,10 +1,14 @@
+pub mod media_ingress;
 pub mod negotiation;
 pub mod session;
 pub mod stack;
 
 #[cfg(test)]
 mod negotiation_tests;
+#[cfg(test)]
+mod stack_tests;
 
+pub use media_ingress::{ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaTrackKind};
 pub use negotiation::{
     ServerMediaAnswer, ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator,
     ServerMediaOffer,

@@ -24,13 +24,15 @@
 - Dependency-isolated Rust WebRTC server session boundary in `lyre-webrtc`.
 - Server media WebRTC offer/answer negotiation boundary.
 - Server media ICE candidate exchange boundary.
+- Server audio RTP ingress boundary with Opus receive negotiation, remote track snapshots, and internal RTP packet capture.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
 ## Next
 
-- Implement real WebRTC media termination/SFU-like audio pipeline and broadcast architecture.
-- Wire the RNNoise provider runtime into real server media termination and broadcast.
+- Decode incoming Opus RTP into PCM frames and feed the existing server media runtime.
+- Wire RNNoise/DeepFilterNet providers to real decoded WebRTC tracks.
+- Implement RTP/RTCP forwarding or SFU-style packetization for processed audio.
 - Broadcast processed server audio frames to clients.
 - Add DeepFilterNet binding and processing implementation.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.

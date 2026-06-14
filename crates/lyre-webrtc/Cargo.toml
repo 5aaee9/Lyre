@@ -6,8 +6,10 @@ version.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+bytes.workspace = true
 dashmap.workspace = true
 lyre-core = { path = "../lyre-core" }
+rtc.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

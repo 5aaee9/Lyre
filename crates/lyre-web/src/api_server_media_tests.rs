@@ -4,8 +4,8 @@ use axum::{
     http::{Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use lyre_core::RoomId;
-use lyre_webrtc::WebRtcStack;
+use lyre_core::{RoomId, UserId};
+use lyre_webrtc::{ServerMediaSessionKey, WebRtcStack};
 use tower::ServiceExt;
 
 async fn body_json(response: axum::response::Response) -> serde_json::Value {
@@ -235,4 +235,34 @@ async fn server_media_candidates_route_lists_server_candidates() {
             && candidate["user_id"] == "user_01"
             && candidate["candidate"] == ""
     }));
+}
+
+#[tokio::test]
+async fn app_state_server_media_snapshots_are_internal_and_empty_for_missing_session() {
+    let state = AppState::default();
+    let key = ServerMediaSessionKey {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+    };
+
+    assert!(state.server_media_remote_tracks(&key).is_empty());
+    assert!(state.server_media_received_rtp_packets(&key).is_empty());
+}
+
+#[tokio::test]
+async fn server_media_raw_rtp_packets_route_does_not_exist() {
+    let app = router(AppState::default());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/rooms/DEFAULT/server-media/rtp-packets?user_id=user_01")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

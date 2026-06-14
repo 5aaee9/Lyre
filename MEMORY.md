@@ -113,3 +113,11 @@
 - Added server media ICE candidate add/query REST boundaries for negotiated server peer connections.
 - Kept candidate conversion and direct `webrtc` ICE types isolated inside `lyre-webrtc`.
 - Server media ICE exchange is still control-plane only; RTP/RTCP, Opus, RNNoise ingestion, and browser playback remain future work.
+
+## 2026-06-15 Server Audio RTP Ingress
+
+- Added the first server-side WebRTC audio RTP ingress boundary in `lyre-webrtc`.
+- Server peer connections now register Opus payload type 111, add a recvonly audio transceiver, record remote track metadata, and retain incoming audio RTP packet snapshots behind Lyre-owned DTOs.
+- Kept direct `webrtc` and `rtc` media/RTP types isolated inside `lyre-webrtc`; `lyre-web` only exposes internal AppState snapshot methods for tests and future runtime wiring.
+- Did not add a public raw RTP REST endpoint.
+- Opus decode, decoded PCM conversion, RNNoise/DeepFilterNet ingestion from real tracks, processed audio broadcast, RTP/RTCP forwarding, and browser playback remain future work.

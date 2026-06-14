@@ -22,8 +22,8 @@ use lyre_core::{
 };
 use lyre_webrtc::{
     ServerMediaAnswer, ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator,
-    ServerMediaOffer, ServerMediaSessionConfig, ServerMediaSessionKey, ServerMediaSessionRegistry,
-    ServerMediaSessionStatus, WebRtcStack,
+    ServerMediaOffer, ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaSessionConfig,
+    ServerMediaSessionKey, ServerMediaSessionRegistry, ServerMediaSessionStatus, WebRtcStack,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -146,6 +146,20 @@ impl AppState {
         key: &ServerMediaSessionKey,
     ) -> Vec<ServerMediaIceCandidate> {
         self.server_media_negotiator.local_ice_candidates(key)
+    }
+
+    pub fn server_media_remote_tracks(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Vec<ServerMediaRemoteTrack> {
+        self.server_media_negotiator.remote_tracks(key)
+    }
+
+    pub fn server_media_received_rtp_packets(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Vec<ServerMediaRtpPacket> {
+        self.server_media_negotiator.received_rtp_packets(key)
     }
 
     #[cfg(test)]

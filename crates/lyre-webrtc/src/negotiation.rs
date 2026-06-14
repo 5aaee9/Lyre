@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ServerMediaIceCandidateInit, ServerMediaSessionConfig, ServerMediaSessionKey,
-    ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcPeerConnectionHandle, WebRtcStack,
-    WebRtcStackError,
+    ServerMediaIceCandidateInit, ServerMediaRemoteTrack, ServerMediaRtpPacket,
+    ServerMediaSessionConfig, ServerMediaSessionKey, ServerMediaSessionRegistry,
+    ServerMediaSessionState, WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +162,20 @@ impl ServerMediaNegotiator {
                     .map(|candidate| ServerMediaIceCandidate::from_init(key, candidate))
                     .collect()
             })
+            .unwrap_or_default()
+    }
+
+    pub fn remote_tracks(&self, key: &ServerMediaSessionKey) -> Vec<ServerMediaRemoteTrack> {
+        self.peer_connections
+            .get(key)
+            .map(|peer_connection| peer_connection.remote_tracks())
+            .unwrap_or_default()
+    }
+
+    pub fn received_rtp_packets(&self, key: &ServerMediaSessionKey) -> Vec<ServerMediaRtpPacket> {
+        self.peer_connections
+            .get(key)
+            .map(|peer_connection| peer_connection.received_rtp_packets())
             .unwrap_or_default()
     }
 
