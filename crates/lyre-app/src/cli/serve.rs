@@ -7,64 +7,109 @@ use thiserror::Error;
 
 #[derive(Debug, Args)]
 pub struct ServeArgs {
-    #[arg(long, default_value = "0.0.0.0", env = "LYRE_HOST")]
+    #[arg(
+        long,
+        default_value = "0.0.0.0",
+        env = "LYRE_HOST",
+        help = "Network host for the API listener"
+    )]
     pub host: String,
-    #[arg(long, default_value_t = 8080, env = "LYRE_PORT")]
+    #[arg(
+        long,
+        default_value_t = 8080,
+        env = "LYRE_PORT",
+        help = "TCP port for the API listener"
+    )]
     pub port: u16,
-    #[arg(long = "ice-server")]
+    #[arg(long = "ice-server", help = "ICE server exposed to WebRTC clients")]
     pub ice_servers: Vec<String>,
-    #[arg(long, env = "LYRE_TURN_REST_SECRET")]
+    #[arg(
+        long,
+        env = "LYRE_TURN_REST_SECRET",
+        help = "Shared secret for issuing TURN REST credentials"
+    )]
     pub turn_rest_secret: Option<String>,
-    #[arg(long, default_value_t = 3600, env = "LYRE_TURN_REST_TTL_SECONDS")]
+    #[arg(
+        long,
+        default_value_t = 3600,
+        env = "LYRE_TURN_REST_TTL_SECONDS",
+        help = "Seconds before generated TURN REST credentials expire"
+    )]
     pub turn_rest_ttl_seconds: u64,
-    #[arg(long, default_value = "lyre", env = "LYRE_TURN_REST_IDENTITY")]
+    #[arg(
+        long,
+        default_value = "lyre",
+        env = "LYRE_TURN_REST_IDENTITY",
+        help = "Identity prefix used when generating TURN REST credentials"
+    )]
     pub turn_rest_identity: String,
-    #[arg(long, default_value_t = false, env = "LYRE_EMBEDDED_TURN")]
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "LYRE_EMBEDDED_TURN",
+        help = "Run an embedded UDP TURN relay with the API server"
+    )]
     pub embedded_turn: bool,
     #[arg(
         long,
         default_value = "0.0.0.0:3478",
-        env = "LYRE_EMBEDDED_TURN_LISTEN"
+        env = "LYRE_EMBEDDED_TURN_LISTEN",
+        help = "Socket address where the embedded TURN relay listens"
     )]
     pub embedded_turn_listen: String,
     #[arg(
         long,
         default_value = "127.0.0.1:3478",
-        env = "LYRE_EMBEDDED_TURN_EXTERNAL"
+        env = "LYRE_EMBEDDED_TURN_EXTERNAL",
+        help = "Public socket address advertised for the embedded TURN relay"
     )]
     pub embedded_turn_external: String,
-    #[arg(long, default_value = "lyre.local", env = "LYRE_EMBEDDED_TURN_REALM")]
+    #[arg(
+        long,
+        default_value = "lyre.local",
+        env = "LYRE_EMBEDDED_TURN_REALM",
+        help = "Authentication realm for the embedded TURN relay"
+    )]
     pub embedded_turn_realm: String,
     #[arg(
         long,
         default_value = "49152..65535",
-        env = "LYRE_EMBEDDED_TURN_PORT_RANGE"
+        env = "LYRE_EMBEDDED_TURN_PORT_RANGE",
+        help = "UDP relay port range for the embedded TURN relay"
     )]
     pub embedded_turn_port_range: String,
-    #[arg(long, env = "LYRE_STATE_FILE")]
+    #[arg(
+        long,
+        env = "LYRE_STATE_FILE",
+        help = "JSON state file used to persist anonymous rooms and access tokens"
+    )]
     pub state_file: Option<String>,
     #[arg(
         long,
         default_value_t = super::deepfilternet::DEFAULT_DEEPFILTERNET_FFT_SIZE,
-        env = "LYRE_DEEPFILTERNET_FFT_SIZE"
+        env = "LYRE_DEEPFILTERNET_FFT_SIZE",
+        help = "DeepFilterNet FFT window size"
     )]
     pub deepfilternet_fft_size: usize,
     #[arg(
         long,
         default_value_t = super::deepfilternet::DEFAULT_DEEPFILTERNET_HOP_SIZE,
-        env = "LYRE_DEEPFILTERNET_HOP_SIZE"
+        env = "LYRE_DEEPFILTERNET_HOP_SIZE",
+        help = "DeepFilterNet hop size"
     )]
     pub deepfilternet_hop_size: usize,
     #[arg(
         long,
         default_value_t = super::deepfilternet::DEFAULT_DEEPFILTERNET_ERB_BANDS,
-        env = "LYRE_DEEPFILTERNET_ERB_BANDS"
+        env = "LYRE_DEEPFILTERNET_ERB_BANDS",
+        help = "DeepFilterNet ERB band count"
     )]
     pub deepfilternet_erb_bands: usize,
     #[arg(
         long,
         default_value_t = super::deepfilternet::DEFAULT_DEEPFILTERNET_MIN_ERB_FREQS,
-        env = "LYRE_DEEPFILTERNET_MIN_ERB_FREQS"
+        env = "LYRE_DEEPFILTERNET_MIN_ERB_FREQS",
+        help = "DeepFilterNet minimum ERB frequency bin count"
     )]
     pub deepfilternet_min_erb_freqs: usize,
 }

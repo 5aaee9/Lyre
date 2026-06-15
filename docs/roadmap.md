@@ -48,6 +48,7 @@
 - Concise README with detailed setup, configuration, API, media, development, and deployment documentation split under `docs/`.
 - Nix flake packaging for the Rust API binary with crane, fenix, flake-utils, and a Rust development shell.
 - GitHub Actions CI for Nix flake check, API package build, clippy, rustfmt, and Hestia-backed Nix cache maintenance.
+- Clap help text for Lyre commands, subcommands, and serve options.
 
 ## Next
 

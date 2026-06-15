@@ -225,7 +225,7 @@
 ## 2026-06-15 Kubernetes Helm Deployment
 
 - Added a `scripts/kubernetes` Helm chart that deploys Lyre as two workloads: `lyre-api` and `lyre-web`.
-- Named the chart package `lyre` and publish it under the `ghcr.io/5aaee9/lyre/chart` OCI namespace so Rancher can show `lyre` as the installable chart while Kubernetes resources still default to Lyre names.
+- Named the chart package `lyre` and publish it under the `ghcr.io/5aaee9/lyre/chart` OCI namespace so Helm OCI publishing lands at `ghcr.io/5aaee9/lyre/chart/lyre` while Kubernetes resources still default to Lyre names.
 - Kept runtime configuration in chart values for `LYRE_API_BIND`, `APP_BASE_URL`, and `APP_API_URL`; production hostnames are expected to be supplied via values or `--set`.
 - Kept Ingress and Gateway API HTTPRoute disabled by default; when enabled, both route `/api`, `/rpc`, `/health`, and `/metrics` to the Rust API service and all other paths to the Next.js web service.
 - Added optional embedded TURN service values while keeping it disabled by default because production UDP relay exposure is environment-specific.
