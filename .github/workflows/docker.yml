@@ -31,7 +31,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/${{ matrix.image.name }}
+          images: ghcr.io/5aaee9/lyre/${{ matrix.image.name }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -70,7 +70,7 @@ jobs:
             --version "${{ steps.chart-version.outputs.version }}" \
             --app-version "${{ steps.chart-version.outputs.version }}"
       - name: Push Helm chart to GHCR
-        run: helm push dist/chart-*.tgz oci://ghcr.io/${{ github.repository }}
+        run: helm push dist/chart-*.tgz oci://ghcr.io/5aaee9/lyre
       - name: Cleanup Untagged Chart
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
