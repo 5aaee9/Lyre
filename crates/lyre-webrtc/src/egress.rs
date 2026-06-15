@@ -89,7 +89,7 @@ impl ServerMediaEgress {
                     codec: RTCRtpCodec {
                         mime_type: "audio/opus".to_owned(),
                         clock_rate: SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ,
-                        channels: 2,
+                        channels: SERVER_MEDIA_EGRESS_CHANNELS,
                         sdp_fmtp_line: String::new(),
                         rtcp_feedback: vec![],
                     },
@@ -228,6 +228,7 @@ fn validate_frame(frame: &ServerMediaProcessedAudioFrame) -> Result<(), ServerMe
 mod tests {
     use super::*;
     use opus_rs::OpusDecoder;
+    use webrtc::media_stream::Track;
 
     fn frame(samples: Vec<f32>) -> ServerMediaProcessedAudioFrame {
         ServerMediaProcessedAudioFrame {
@@ -300,6 +301,14 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn egress_track_advertises_encoded_channel_count() {
+        let egress = ServerMediaEgress::new().unwrap();
+        let codec = egress.track().codec(5678).await.unwrap();
+
+        assert_eq!(codec.channels, SERVER_MEDIA_EGRESS_CHANNELS);
     }
 
     #[test]

@@ -66,6 +66,7 @@
 - Server-side RNNoise and DeepFilterNet processing now keep state per room/user/track and run off Tokio core workers so relay ICE keepalives are not blocked by denoise DSP work.
 - DeepFilterNet DSP processing now preserves continuous stream state across decoded PCM batches without injecting synthetic silence at every API call boundary.
 - Server-media packet loss concealment now preserves forward PCM sample order while fading synthetic frames, avoiding short high-frequency artifacts from reversed waveform playback.
+- Server-media Opus egress now advertises the same mono channel count that the Rust encoder emits, avoiding a mono payload/stereo track mismatch.
 
 ## Next
 
