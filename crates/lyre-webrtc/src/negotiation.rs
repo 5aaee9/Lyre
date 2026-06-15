@@ -174,6 +174,10 @@ impl ServerMediaNegotiator {
             .unwrap_or_default()
     }
 
+    pub fn session_status(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {
+        self.sessions.status(key)
+    }
+
     pub fn received_rtp_packets(&self, key: &ServerMediaSessionKey) -> Vec<ServerMediaRtpPacket> {
         self.peer_connections
             .get(key)

@@ -194,6 +194,57 @@ async fn app_state_processes_real_drained_server_media_pcm_batch() {
 }
 
 #[tokio::test]
+async fn app_state_processes_drained_server_media_pcm_under_negotiated_track_id() {
+    let state = AppState::default();
+    let key = key();
+    start_relay_with_audio_track(&state);
+
+    let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
+    let answer = state
+        .server_media_negotiator
+        .answer_offer(lyre_webrtc::ServerMediaOffer {
+            room_id: key.room_id.clone(),
+            user_id: key.user_id.clone(),
+            audio_track_id: "audio-main".to_owned(),
+            sdp: offer.offer_sdp.clone(),
+        })
+        .await
+        .unwrap();
+    for candidate in offer.remote_candidates().await {
+        state
+            .server_media_negotiator
+            .add_remote_ice_candidate(lyre_webrtc::ServerMediaIceCandidate {
+                room_id: key.room_id.clone(),
+                user_id: key.user_id.clone(),
+                candidate: candidate.candidate,
+                sdp_mid: candidate.sdp_mid,
+                sdp_mline_index: candidate.sdp_mline_index,
+                username_fragment: candidate.username_fragment,
+            })
+            .await
+            .unwrap();
+    }
+    offer
+        .accept_answer_and_send_valid_opus(&answer, state.server_media_ice_candidates(&key))
+        .await;
+
+    for _ in 0..100 {
+        if state.process_server_media_pcm_frames(&key).unwrap() > 0 {
+            let frames = state.processed_media_frames(&key.room_id);
+            assert!(frames.iter().any(|frame| {
+                frame.user_id == key.user_id
+                    && frame.track_id == "audio-main"
+                    && frame.sequence == 42
+            }));
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("decoded server media PCM frame was not processed under negotiated track id");
+}
+
+#[tokio::test]
 async fn app_state_discards_real_drained_server_media_pcm_batch_on_error() {
     let state = AppState::default();
     let key = key();

@@ -99,7 +99,7 @@ async fn runtime_pump_processes_real_decoded_pcm_without_manual_drain() {
             key.room_id.clone(),
             RegisterMediaTrackRequest {
                 user_id: key.user_id.clone(),
-                track_id: "audio".to_owned(),
+                track_id: "audio-main".to_owned(),
                 kind: MediaTrackKind::Audio,
             },
         )
@@ -136,7 +136,7 @@ async fn runtime_pump_processes_real_decoded_pcm_without_manual_drain() {
         let frames = state.processed_media_frames(&key.room_id);
         if frames.iter().any(|frame| {
             frame.user_id == key.user_id
-                && frame.track_id == "audio"
+                && frame.track_id == "audio-main"
                 && frame.sequence == 42
                 && frame.noise.provider == NoiseProvider::Rnnoise
                 && frame.samples.len() == lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE
@@ -147,6 +147,68 @@ async fn runtime_pump_processes_real_decoded_pcm_without_manual_drain() {
     }
 
     panic!("server media runtime pump did not process decoded PCM");
+}
+
+#[tokio::test]
+async fn runtime_pump_uses_negotiated_audio_track_id_for_decoded_pcm() {
+    let state = AppState::default();
+    let key = key();
+    state
+        .media_relays
+        .start(key.room_id.clone(), StartMediaRelayRequest::default());
+    state
+        .media_relays
+        .register_track(
+            key.room_id.clone(),
+            RegisterMediaTrackRequest {
+                user_id: key.user_id.clone(),
+                track_id: "audio-main".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
+
+    let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
+    let answer = state
+        .answer_server_media_offer(ServerMediaOffer {
+            room_id: key.room_id.clone(),
+            user_id: key.user_id.clone(),
+            audio_track_id: "audio-main".to_owned(),
+            sdp: offer.offer_sdp.clone(),
+        })
+        .await
+        .unwrap();
+    for candidate in offer.remote_candidates().await {
+        state
+            .add_server_media_ice_candidate(ServerMediaIceCandidate {
+                room_id: key.room_id.clone(),
+                user_id: key.user_id.clone(),
+                candidate: candidate.candidate,
+                sdp_mid: candidate.sdp_mid,
+                sdp_mline_index: candidate.sdp_mline_index,
+                username_fragment: candidate.username_fragment,
+            })
+            .await
+            .unwrap();
+    }
+    offer
+        .accept_answer_and_send_valid_opus(&answer, state.server_media_ice_candidates(&key))
+        .await;
+
+    for _ in 0..150 {
+        let frames = state.processed_media_frames(&key.room_id);
+        if frames.iter().any(|frame| {
+            frame.user_id == key.user_id
+                && frame.track_id == "audio-main"
+                && frame.sequence == 42
+                && frame.samples.len() == lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE
+        }) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("server media runtime pump did not process decoded PCM under negotiated track id");
 }
 
 #[tokio::test]
@@ -193,7 +255,7 @@ async fn runtime_pump_processes_after_delayed_relay_and_track_registration() {
             key.room_id.clone(),
             RegisterMediaTrackRequest {
                 user_id: key.user_id.clone(),
-                track_id: "audio".to_owned(),
+                track_id: "audio-main".to_owned(),
                 kind: MediaTrackKind::Audio,
             },
         )

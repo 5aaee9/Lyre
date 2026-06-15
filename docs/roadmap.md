@@ -54,6 +54,7 @@
 - Server-media WebRTC now advertises a reachable host ICE address instead of loopback-only candidates.
 - Server-media audio now queues early browser ICE candidates until server offer negotiation creates the peer session.
 - Server-media host ICE candidates can advertise a configured public IP for VPC/NAT deployments.
+- Server-media decoded PCM is processed under the negotiated relay audio track ID so browser track IDs do not drop relayed audio.
 
 ## Next
 

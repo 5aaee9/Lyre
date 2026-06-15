@@ -82,6 +82,12 @@ impl ServerMediaSessionRegistry {
         )
     }
 
+    pub fn status(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {
+        self.sessions
+            .get(key)
+            .map(|session| status_from_session(key, &session))
+    }
+
     pub fn close(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {
         let mut session = self.sessions.get_mut(key)?;
         session.state = ServerMediaSessionState::Closed;
@@ -231,6 +237,34 @@ mod tests {
         assert_eq!(
             registry.active_sessions()[0].state,
             ServerMediaSessionState::Negotiating
+        );
+    }
+
+    #[test]
+    fn status_returns_existing_session() {
+        let registry = ServerMediaSessionRegistry::new();
+        let key = ServerMediaSessionKey {
+            room_id: RoomId::default_room(),
+            user_id: UserId::from_external("user_01"),
+        };
+        registry.start(config("DEFAULT", "user_01", "audio-main"));
+
+        let status = registry.status(&key).unwrap();
+
+        assert_eq!(status.audio_track_id, "audio-main");
+        assert_eq!(status.state, ServerMediaSessionState::New);
+    }
+
+    #[test]
+    fn status_missing_session_returns_none() {
+        let registry = ServerMediaSessionRegistry::new();
+
+        assert_eq!(
+            registry.status(&ServerMediaSessionKey {
+                room_id: RoomId::default_room(),
+                user_id: UserId::from_external("missing"),
+            }),
+            None
         );
     }
 

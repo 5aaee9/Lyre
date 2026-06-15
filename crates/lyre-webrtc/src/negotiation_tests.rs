@@ -175,6 +175,25 @@ async fn add_remote_ice_candidate_missing_peer_returns_error_without_session() {
 }
 
 #[tokio::test]
+async fn session_status_returns_negotiated_audio_track_id() {
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
+    let key = ServerMediaSessionKey {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+    };
+    negotiator
+        .answer_offer(offer("audio-main", offer_sdp().await))
+        .await
+        .unwrap();
+
+    let status = negotiator.session_status(&key).unwrap();
+
+    assert_eq!(status.audio_track_id, "audio-main");
+    assert_eq!(status.state, ServerMediaSessionState::Negotiating);
+}
+
+#[tokio::test]
 async fn local_ice_candidates_are_keyed_by_session() {
     let sessions = Arc::new(ServerMediaSessionRegistry::new());
     let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
