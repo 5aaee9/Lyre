@@ -116,3 +116,23 @@ async fn local_ice_candidates_are_lyre_owned_values() {
         .iter()
         .any(|candidate| candidate.candidate.is_empty()));
 }
+
+#[tokio::test]
+async fn local_ice_candidates_are_not_loopback_only() {
+    let answerer = WebRtcStack::new().create_peer_connection().await.unwrap();
+    answerer
+        .answer_remote_offer(offer_sdp().await)
+        .await
+        .unwrap();
+
+    let candidates = wait_for_local_candidates(&answerer).await;
+    let host_candidates = candidates
+        .iter()
+        .filter(|candidate| candidate.candidate.contains(" typ host"))
+        .collect::<Vec<_>>();
+
+    assert!(!host_candidates.is_empty());
+    assert!(host_candidates.iter().any(|candidate| {
+        !candidate.candidate.contains(" 127.0.0.1 ") && !candidate.candidate.contains(" 0.0.0.0 ")
+    }));
+}

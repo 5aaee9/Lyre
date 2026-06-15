@@ -1,5 +1,6 @@
 use std::{
     error::Error,
+    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::{Arc, Mutex},
 };
 
@@ -76,7 +77,7 @@ impl WebRtcStack {
             .with_handler(handler)
             .with_media_engine(media_engine)
             .with_interceptor_registry(registry)
-            .with_udp_addrs(vec!["127.0.0.1:0".to_owned()])
+            .with_udp_addrs(vec![server_media_udp_addr()])
             .build()
             .await
             .map_err(|source| WebRtcStackError::CreatePeerConnection {
@@ -96,6 +97,28 @@ impl WebRtcStack {
             media_egress,
         })
     }
+}
+
+fn server_media_udp_addr() -> String {
+    let socket = match UdpSocket::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))) {
+        Ok(socket) => socket,
+        Err(_) => return "127.0.0.1:0".to_owned(),
+    };
+    if socket.connect("8.8.8.8:80").is_ok() {
+        if let Ok(SocketAddr::V4(addr)) = socket.local_addr() {
+            if !addr.ip().is_unspecified() {
+                return format!("{}:0", addr.ip());
+            }
+        }
+    }
+    if socket.connect("2001:4860:4860::8888:80").is_ok() {
+        if let Ok(SocketAddr::V6(addr)) = socket.local_addr() {
+            if !addr.ip().is_unspecified() {
+                return format!("[{}]:0", addr.ip());
+            }
+        }
+    }
+    format!("{}:0", IpAddr::V4(Ipv4Addr::LOCALHOST))
 }
 
 #[derive(Clone)]
