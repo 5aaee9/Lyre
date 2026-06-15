@@ -49,13 +49,25 @@
           strictDeps = true;
           nativeBuildInputs = [
             pkgs.autoPatchelfHook
+            pkgs.pkg-config
           ];
           buildInputs = [
             pkgs.libopus
+            pkgs.onnxruntime
+            pkgs.openssl
             pkgs.stdenv.cc.cc.lib
           ];
           runtimeDependencies = [
             pkgs.libopus
+            pkgs.onnxruntime
+            pkgs.openssl
+            pkgs.stdenv.cc.cc.lib
+          ];
+          ORT_LIB_PATH = "${pkgs.onnxruntime}/lib";
+          ORT_PREFER_DYNAMIC_LINK = "true";
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+            pkgs.onnxruntime
+            pkgs.openssl
             pkgs.stdenv.cc.cc.lib
           ];
         };
@@ -120,6 +132,9 @@
             devToolchain
             fenixPkgs.rust-analyzer
             libopus
+            onnxruntime
+            openssl
+            pkg-config
           ];
         };
 
