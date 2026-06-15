@@ -24,7 +24,10 @@ type SettingsState = {
 export const defaultNoiseConfig: NoiseCancellationConfig = {
   provider: "off",
   intensity: 0.5,
-  voice_activity_threshold: 0.35
+  voice_activity_threshold: 0.35,
+  dpdfnet: {
+    model: "dpdfnet2_48khz_hr"
+  }
 };
 
 export const defaultAudioProcessingConfig: AudioProcessingConfig = {

@@ -21,10 +21,10 @@ import { MediaTrackKind as WebrpcMediaTrackKind } from "./lyre.gen";
 import { NoiseProvider as WebrpcNoiseProvider } from "./lyre.gen";
 import { runtimeConfig } from "./runtime-config";
 
-export type NoiseProvider = "off" | "rnnoise" | "deepfilternet";
+export type NoiseProvider = "off" | "rnnoise" | "deepfilternet" | "dpdfnet";
 
 export function parseNoiseProvider(value: string): NoiseProvider {
-  if (value === "rnnoise" || value === "deepfilternet") {
+  if (value === "rnnoise" || value === "deepfilternet" || value === "dpdfnet") {
     return value;
   }
   return "off";
@@ -36,6 +36,8 @@ export function generatedNoiseProviderToRest(provider: WebrpcNoiseProvider): Noi
       return "rnnoise";
     case WebrpcNoiseProvider.DEEPFILTERNET:
       return "deepfilternet";
+    case WebrpcNoiseProvider.DPDFNET:
+      return "dpdfnet";
     case WebrpcNoiseProvider.OFF:
       return "off";
   }

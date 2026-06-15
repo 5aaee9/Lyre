@@ -1,7 +1,9 @@
 use super::ice::{parse_ice_server_entries, IceServerConfigError};
 use clap::Args;
 use lyre_core::{default_ice_servers, IceServerConfig, TurnRestCredentialsConfig};
-use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
+use lyre_noise_cancelling::{
+    DeepFilterNetRuntimeConfig, DpdfNetRuntimeConfig, NoiseModelRuntimeConfig,
+};
 use std::{env, net::IpAddr, path::PathBuf, str::FromStr};
 use thiserror::Error;
 
@@ -129,6 +131,13 @@ pub struct ServeArgs {
         help = "DeepFilterNet minimum ERB frequency bin count"
     )]
     pub deepfilternet_min_erb_freqs: usize,
+    #[arg(
+        long,
+        default_value = lyre_noise_cancelling::DPDFNET_DEFAULT_MODEL_DIR,
+        env = "LYRE_DPDFNET_MODEL_DIR",
+        help = "Directory containing DPDFNet ONNX models"
+    )]
+    pub dpdfnet_model_dir: PathBuf,
 }
 
 impl ServeArgs {
@@ -323,6 +332,17 @@ impl ServeArgs {
             erb_bands: self.deepfilternet_erb_bands,
             min_erb_freqs: self.deepfilternet_min_erb_freqs,
             ..DeepFilterNetRuntimeConfig::default()
+        })
+    }
+
+    pub fn effective_noise_model_runtime(
+        &self,
+    ) -> Result<NoiseModelRuntimeConfig, super::deepfilternet::DeepFilterNetConfigError> {
+        Ok(NoiseModelRuntimeConfig {
+            deepfilternet: self.effective_deepfilternet_runtime()?,
+            dpdfnet: DpdfNetRuntimeConfig {
+                model_dir: self.dpdfnet_model_dir.clone(),
+            },
         })
     }
 }

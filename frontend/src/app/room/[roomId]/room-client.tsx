@@ -219,9 +219,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <div className="border-b border-[#d8ded6] px-4 py-3 text-sm font-semibold">Users</div>
         <ul className="divide-y divide-[#edf0ec]">
           {(room?.users ?? []).map((user) => (
-            <li className="flex items-center justify-between px-4 py-3 text-sm" key={user.id}>
+            <li className="px-4 py-3 text-sm" key={user.id}>
               <span>{user.nickname}</span>
-              <span className="text-xs text-[#5c6a61]">{user.noise.provider}</span>
             </li>
           ))}
         </ul>

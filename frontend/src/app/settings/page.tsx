@@ -32,7 +32,7 @@ export default function SettingsPage() {
         <Input value={nickname} onChange={(event) => setNickname(event.target.value)} />
       </label>
       <label className="grid gap-2 text-sm font-medium">
-        Noise cancellation
+        Server Noise Cancelling
         <Select
           value={noise.provider}
           onChange={(event) =>
@@ -45,8 +45,32 @@ export default function SettingsPage() {
           <option value="off">Off</option>
           <option value="rnnoise">RNNoise</option>
           <option value="deepfilternet">DeepFilterNet</option>
+          <option value="dpdfnet">DPDFNet</option>
         </Select>
       </label>
+      {noise.provider === "dpdfnet" ? (
+        <label className="grid gap-2 text-sm font-medium">
+          DPDFNet model
+          <Select
+            value={noise.dpdfnet.model}
+            onChange={(event) =>
+              setNoise({
+                ...noise,
+                dpdfnet: {
+                  model: event.target.value
+                }
+              })
+            }
+          >
+            <option value="baseline">baseline</option>
+            <option value="dpdfnet2">dpdfnet2</option>
+            <option value="dpdfnet4">dpdfnet4</option>
+            <option value="dpdfnet8">dpdfnet8</option>
+            <option value="dpdfnet2_48khz_hr">dpdfnet2_48khz_hr</option>
+            <option value="dpdfnet8_48khz_hr">dpdfnet8_48khz_hr</option>
+          </Select>
+        </label>
+      ) : null}
       <label className="grid gap-2 text-sm font-medium">
         Intensity
         <Input

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetSettingsStoreForTests } from "./settings-store";
+import { defaultNoiseConfig, resetSettingsStoreForTests } from "./settings-store";
 import {
   readAudioProcessingConfig,
   readNickname,
@@ -32,14 +32,20 @@ describe("storage", () => {
 
   it("stores nickname and noise config", () => {
     writeNickname("Ada");
-    writeNoiseConfig({ provider: "rnnoise", intensity: 0.6, voice_activity_threshold: 0.2 });
+    writeNoiseConfig({
+      provider: "rnnoise",
+      intensity: 0.6,
+      voice_activity_threshold: 0.2,
+      dpdfnet: defaultNoiseConfig.dpdfnet
+    });
     writeAudioProcessingConfig({ echoCancellation: false, autoGainControl: true, noiseSuppression: true });
 
     expect(readNickname()).toBe("Ada");
     expect(readNoiseConfig()).toEqual({
       provider: "rnnoise",
       intensity: 0.6,
-      voice_activity_threshold: 0.2
+      voice_activity_threshold: 0.2,
+      dpdfnet: defaultNoiseConfig.dpdfnet
     });
     expect(readAudioProcessingConfig()).toEqual({
       echoCancellation: false,

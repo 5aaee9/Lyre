@@ -156,6 +156,7 @@ mod tests {
                     provider: NoiseProvider::Rnnoise,
                     intensity: 0.8,
                     voice_activity_threshold: 0.2,
+                    ..NoiseCancellationConfig::default()
                 }),
             },
         );
@@ -285,6 +286,7 @@ mod tests {
                     provider: NoiseProvider::Rnnoise,
                     intensity: 0.8,
                     voice_activity_threshold: 0.2,
+                    ..NoiseCancellationConfig::default()
                 },
             }
         );

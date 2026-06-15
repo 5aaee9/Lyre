@@ -1,7 +1,7 @@
 use crate::{api::AppState, router, state_persistence::RoomStatePersistence};
 use anyhow::{Context, Result};
 use lyre_core::{IceServerConfig, TurnRestCredentialsConfig};
-use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
+use lyre_noise_cancelling::NoiseModelRuntimeConfig;
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
@@ -19,7 +19,7 @@ pub struct ServeConfig {
     pub server_media_public_ip: Option<IpAddr>,
     pub server_media_port_range: Option<lyre_webrtc::ServerMediaPortRange>,
     pub state_file: Option<PathBuf>,
-    pub deepfilternet_runtime: DeepFilterNetRuntimeConfig,
+    pub model_runtime: NoiseModelRuntimeConfig,
     pub cors_allowed_origins: Vec<String>,
 }
 
@@ -37,11 +37,11 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
         .with_context(|| format!("failed to bind Lyre API listener at {addr}"))?;
     tracing::info!(%addr, "Lyre API listening");
     let room_state_persistence = config.state_file.clone().map(RoomStatePersistence::new);
-    let state = AppState::with_room_state_persistence_and_server_media_public_ip(
+    let state = AppState::with_room_state_persistence_server_media_and_noise_model_runtime(
         config.ice_servers,
         config.turn_rest_credentials,
         room_state_persistence,
-        config.deepfilternet_runtime,
+        config.model_runtime,
         config.server_media_public_ip,
         config.server_media_port_range,
     )

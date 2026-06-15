@@ -216,7 +216,9 @@ async fn noise_provider_route_returns_supported_providers() {
         .unwrap();
 
     let body = body_json(response).await;
-    assert_eq!(body.as_array().unwrap().len(), 3);
+    assert_eq!(body.as_array().unwrap().len(), 4);
+    assert_eq!(body[3]["provider"], "dpdfnet");
+    assert_eq!(body[3]["dpdfnet"]["model"], "dpdfnet2_48khz_hr");
 }
 
 #[tokio::test]

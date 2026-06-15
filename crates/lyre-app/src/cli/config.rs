@@ -7,6 +7,7 @@ pub struct ConfigPrint {
     pub noise_providers: Vec<lyre_core::NoiseCancellationConfig>,
     pub ice_servers: Vec<IceServerConfig>,
     pub deepfilternet_runtime: DeepFilterNetRuntimeConfigPrint,
+    pub dpdfnet_runtime: DpdfNetRuntimeConfigPrint,
 }
 
 #[derive(Debug, Serialize)]
@@ -17,6 +18,11 @@ pub struct DeepFilterNetRuntimeConfigPrint {
     pub hop_size: usize,
     pub erb_bands: usize,
     pub min_erb_freqs: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DpdfNetRuntimeConfigPrint {
+    pub model_dir: String,
 }
 
 impl From<lyre_noise_cancelling::DeepFilterNetRuntimeConfig> for DeepFilterNetRuntimeConfigPrint {
@@ -38,6 +44,9 @@ pub fn config_print() -> ConfigPrint {
         noise_providers: supported_noise_providers(),
         ice_servers: default_ice_servers(),
         deepfilternet_runtime: lyre_noise_cancelling::DeepFilterNetRuntimeConfig::default().into(),
+        dpdfnet_runtime: DpdfNetRuntimeConfigPrint {
+            model_dir: lyre_noise_cancelling::DPDFNET_DEFAULT_MODEL_DIR.to_owned(),
+        },
     }
 }
 
@@ -49,7 +58,7 @@ mod tests {
     fn config_print_has_defaults() {
         let value = serde_json::to_value(config_print()).unwrap();
         assert_eq!(value["default_room_id"], "DEFAULT");
-        assert_eq!(value["noise_providers"].as_array().unwrap().len(), 3);
+        assert_eq!(value["noise_providers"].as_array().unwrap().len(), 4);
         assert_eq!(
             value["ice_servers"][0]["urls"][0],
             "stun:stun.l.google.com:19302"
@@ -60,5 +69,6 @@ mod tests {
         assert_eq!(value["deepfilternet_runtime"]["hop_size"], 480);
         assert_eq!(value["deepfilternet_runtime"]["erb_bands"], 32);
         assert_eq!(value["deepfilternet_runtime"]["min_erb_freqs"], 2);
+        assert_eq!(value["dpdfnet_runtime"]["model_dir"], "dpdfnet/onnx");
     }
 }

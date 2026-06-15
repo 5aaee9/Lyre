@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NoiseCancellationConfig, UserProfile } from "@/lib/api";
-import { resetSettingsStoreForTests, useSettingsStore } from "@/lib/settings-store";
+import { defaultNoiseConfig, resetSettingsStoreForTests, useSettingsStore } from "@/lib/settings-store";
 import { RoomClient } from "./room-client";
 
 const send = vi.fn();
@@ -34,7 +34,7 @@ function makeUser(id: string, nickname = id): UserProfile {
     id,
     nickname,
     joined_at: new Date().toISOString(),
-    noise: { provider: "off", intensity: 0.5, voice_activity_threshold: 0.35 }
+    noise: defaultNoiseConfig
   };
 }
 
@@ -185,6 +185,17 @@ describe("RoomClient", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("does not show peer noise cancelling providers in the room user list", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+
+    expect(screen.getByText("Ada")).toBeInTheDocument();
+    expect(screen.queryByText("off")).not.toBeInTheDocument();
+    expect(screen.queryByText("rnnoise")).not.toBeInTheDocument();
+    expect(screen.queryByText("deepfilternet")).not.toBeInTheDocument();
+  });
+
   it("rejoins when stored room session belongs to another room", async () => {
     sessionStorage.setItem(
       "lyre.roomSession",
@@ -232,7 +243,8 @@ describe("RoomClient", () => {
     const noise: NoiseCancellationConfig = {
       provider: "rnnoise",
       intensity: 0.8,
-      voice_activity_threshold: 0.2
+      voice_activity_threshold: 0.2,
+      dpdfnet: defaultNoiseConfig.dpdfnet
     };
     useSettingsStore.getState().setNoise(noise);
     render(<RoomClient roomId="DEFAULT" />);

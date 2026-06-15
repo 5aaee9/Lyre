@@ -98,7 +98,8 @@ export interface LyreClient {
 export enum NoiseProvider {
   OFF = 'OFF',
   RNNOISE = 'RNNOISE',
-  DEEPFILTERNET = 'DEEPFILTERNET'
+  DEEPFILTERNET = 'DEEPFILTERNET',
+  DPDFNET = 'DPDFNET'
 }
 
 export enum MediaTopologyMode {
@@ -130,6 +131,11 @@ export interface NoiseCancellationConfig {
   provider: NoiseProvider
   intensity: number
   voiceActivityThreshold: number
+  dpdfnet: DpdfNetConfig
+}
+
+export interface DpdfNetConfig {
+  model: string
 }
 
 export interface IceServerConfig {
@@ -883,4 +889,3 @@ function parseWebrpcGenVersions(header: string): WebrpcGenVersions {
     schemaVersion: schemaVersion ?? "",
   };
 }
-

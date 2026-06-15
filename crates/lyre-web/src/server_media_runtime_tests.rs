@@ -122,6 +122,7 @@ async fn app_state_processes_real_drained_server_media_pcm_batch() {
                 provider: NoiseProvider::Rnnoise,
                 intensity: 0.5,
                 voice_activity_threshold: 0.35,
+                ..NoiseCancellationConfig::default()
             }),
         },
     );

@@ -181,6 +181,7 @@ pub enum NoiseProvider {
     OFF,
     RNNOISE,
     DEEPFILTERNET,
+    DPDFNET,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,6 +220,22 @@ pub struct NoiseCancellationConfig {
     pub provider: NoiseProvider,
     pub intensity: f32,
     pub voice_activity_threshold: f32,
+    #[serde(default)]
+    pub dpdfnet: DpdfNetConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DpdfNetConfig {
+    pub model: String,
+}
+
+impl Default for DpdfNetConfig {
+    fn default() -> Self {
+        Self {
+            model: lyre_noise_cancelling::DPDFNET_DEFAULT_MODEL.to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

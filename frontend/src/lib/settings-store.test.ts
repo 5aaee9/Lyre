@@ -30,7 +30,8 @@ describe("settings store", () => {
     useSettingsStore.getState().setNoise({
       provider: "rnnoise",
       intensity: 0.6,
-      voice_activity_threshold: 0.2
+      voice_activity_threshold: 0.2,
+      dpdfnet: defaultNoiseConfig.dpdfnet
     });
     useSettingsStore.getState().setAudioProcessing({
       echoCancellation: false,
@@ -46,7 +47,8 @@ describe("settings store", () => {
         noise: {
           provider: "rnnoise",
           intensity: 0.6,
-          voice_activity_threshold: 0.2
+          voice_activity_threshold: 0.2,
+          dpdfnet: defaultNoiseConfig.dpdfnet
         },
         audioProcessing: {
           echoCancellation: false,

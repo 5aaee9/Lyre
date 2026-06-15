@@ -3,7 +3,9 @@ use lyre_core::{
     AudioFrame, MediaRelayError, MediaRelayRegistry, MediaRuntime, ProcessedAudioFrame,
     ProcessedAudioSink, RoomId,
 };
-use lyre_noise_cancelling::{DeepFilterNetRuntimeConfig, NoiseCancellingAudioFrameProcessor};
+use lyre_noise_cancelling::{
+    DeepFilterNetRuntimeConfig, NoiseCancellingAudioFrameProcessor, NoiseModelRuntimeConfig,
+};
 use std::{fmt, sync::Arc};
 use tokio::sync::broadcast;
 
@@ -64,10 +66,23 @@ impl WebMediaRuntime {
         relays: Arc<MediaRelayRegistry>,
         deepfilternet_runtime: DeepFilterNetRuntimeConfig,
     ) -> Self {
+        Self::with_noise_model_runtime(
+            relays,
+            NoiseModelRuntimeConfig {
+                deepfilternet: deepfilternet_runtime,
+                ..NoiseModelRuntimeConfig::default()
+            },
+        )
+    }
+
+    pub fn with_noise_model_runtime(
+        relays: Arc<MediaRelayRegistry>,
+        model_runtime: NoiseModelRuntimeConfig,
+    ) -> Self {
         let sink = ProcessedAudioBroadcaster::default();
         let runtime = MediaRuntime::new(
             relays,
-            NoiseCancellingAudioFrameProcessor::new(deepfilternet_runtime),
+            NoiseCancellingAudioFrameProcessor::with_model_runtime(model_runtime),
             sink.clone(),
         );
         Self { runtime, sink }

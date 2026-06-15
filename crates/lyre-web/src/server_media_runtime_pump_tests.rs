@@ -90,6 +90,7 @@ async fn runtime_pump_processes_real_decoded_pcm_without_manual_drain() {
                 provider: NoiseProvider::Rnnoise,
                 intensity: 0.5,
                 voice_activity_threshold: 0.35,
+                ..NoiseCancellationConfig::default()
             }),
         },
     );

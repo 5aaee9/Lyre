@@ -22,7 +22,7 @@ pub use media_runtime::{
     AudioFrame, AudioFrameProcessor, MediaRuntime, PassthroughAudioFrameProcessor,
     ProcessedAudioFrame, ProcessedAudioSink,
 };
-pub use noise::{supported_noise_providers, NoiseCancellationConfig, NoiseProvider};
+pub use noise::{supported_noise_providers, DpdfNetConfig, NoiseCancellationConfig, NoiseProvider};
 pub use room::{
     JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, LeaveRoomResponse, PersistedRoom,
     PersistedRoomRegistry, PersistedRoomRegistryError, PersistedRoomUser, RoomAccessError,

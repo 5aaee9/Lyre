@@ -14,7 +14,8 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     fireEvent.change(screen.getByLabelText("Nickname"), { target: { value: "Ada" } });
-    fireEvent.change(screen.getByLabelText("Noise cancellation"), { target: { value: "deepfilternet" } });
+    fireEvent.change(screen.getByLabelText("Server Noise Cancelling"), { target: { value: "dpdfnet" } });
+    fireEvent.change(screen.getByLabelText("DPDFNet model"), { target: { value: "dpdfnet8_48khz_hr" } });
     fireEvent.change(screen.getByLabelText("Intensity"), { target: { value: "0.75" } });
     fireEvent.change(screen.getByLabelText("Voice activity threshold"), { target: { value: "0.2" } });
     fireEvent.click(screen.getByLabelText("Echo cancellation"));
@@ -22,9 +23,12 @@ describe("SettingsPage", () => {
 
     expect(readNickname()).toBe("Ada");
     expect(readNoiseConfig()).toEqual({
-      provider: "deepfilternet",
+      provider: "dpdfnet",
       intensity: 0.75,
-      voice_activity_threshold: 0.2
+      voice_activity_threshold: 0.2,
+      dpdfnet: {
+        model: "dpdfnet8_48khz_hr"
+      }
     });
     expect(readSettingsSnapshot().audioProcessing).toEqual({
       echoCancellation: false,

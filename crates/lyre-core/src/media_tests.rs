@@ -27,6 +27,7 @@ fn start_records_default_and_custom_noise() {
         provider: NoiseProvider::Rnnoise,
         intensity: 0.8,
         voice_activity_threshold: 0.2,
+        ..NoiseCancellationConfig::default()
     };
     let status = registry.start(
         RoomId::default_room(),
@@ -81,6 +82,7 @@ fn read_only_track_lookup_reports_participant_track_and_kind() {
                 provider: NoiseProvider::Rnnoise,
                 intensity: 0.8,
                 voice_activity_threshold: 0.2,
+                ..NoiseCancellationConfig::default()
             }),
         },
     );
@@ -263,6 +265,7 @@ fn remove_participant_keeps_relay_active_noise_and_other_participants() {
         provider: NoiseProvider::Rnnoise,
         intensity: 0.8,
         voice_activity_threshold: 0.2,
+        ..NoiseCancellationConfig::default()
     };
     registry.start(
         room_id.clone(),

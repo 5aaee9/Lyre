@@ -14,7 +14,7 @@ use lyre_core::{
     default_ice_servers, AudioFrame, IceServerConfig, JoinRoomRequest, MediaRelayError,
     MediaRelayRegistry, ProcessedAudioFrame, RoomId, RoomRegistry,
 };
-use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
+use lyre_noise_cancelling::{DeepFilterNetRuntimeConfig, NoiseModelRuntimeConfig};
 use lyre_webrtc::{
     ServerMediaNegotiator, ServerMediaPortRange, ServerMediaSessionRegistry, WebRtcStack,
 };
@@ -84,10 +84,36 @@ impl AppState {
         server_media_public_ip: Option<IpAddr>,
         server_media_port_range: Option<ServerMediaPortRange>,
     ) -> anyhow::Result<Self> {
-        let deepfilternet_runtime = deepfilternet_runtime
+        Self::with_room_state_persistence_server_media_and_noise_model_runtime(
+            ice_servers,
+            turn_rest_credentials,
+            room_state_persistence,
+            NoiseModelRuntimeConfig {
+                deepfilternet: deepfilternet_runtime,
+                ..NoiseModelRuntimeConfig::default()
+            },
+            server_media_public_ip,
+            server_media_port_range,
+        )
+    }
+
+    pub fn with_room_state_persistence_server_media_and_noise_model_runtime(
+        ice_servers: Vec<IceServerConfig>,
+        turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
+        room_state_persistence: Option<RoomStatePersistence>,
+        model_runtime: NoiseModelRuntimeConfig,
+        server_media_public_ip: Option<IpAddr>,
+        server_media_port_range: Option<ServerMediaPortRange>,
+    ) -> anyhow::Result<Self> {
+        let deepfilternet_runtime = model_runtime
+            .deepfilternet
             .validate()
             .map_err(anyhow::Error::from)
             .context("invalid DeepFilterNet runtime config")?;
+        let model_runtime = NoiseModelRuntimeConfig {
+            deepfilternet: deepfilternet_runtime,
+            ..model_runtime
+        };
         let registry = match &room_state_persistence {
             Some(persistence) => persistence.load_registry()?,
             None => RoomRegistry::new(),
@@ -98,9 +124,9 @@ impl AppState {
             WebRtcStack::with_server_media_config(server_media_public_ip, server_media_port_range),
             Arc::clone(&server_media_sessions),
         ));
-        let media_runtime = Arc::new(WebMediaRuntime::with_deepfilternet_runtime(
+        let media_runtime = Arc::new(WebMediaRuntime::with_noise_model_runtime(
             Arc::clone(&media_relays),
-            deepfilternet_runtime,
+            model_runtime,
         ));
         let server_media_runtime_pump = Arc::new(ServerMediaRuntimePump::new(
             Arc::clone(&media_runtime),

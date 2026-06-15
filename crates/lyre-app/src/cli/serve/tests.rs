@@ -60,5 +60,6 @@ fn default_serve_args() -> ServeArgs {
         deepfilternet_hop_size: 480,
         deepfilternet_erb_bands: 32,
         deepfilternet_min_erb_freqs: 2,
+        dpdfnet_model_dir: "dpdfnet/onnx".into(),
     }
 }

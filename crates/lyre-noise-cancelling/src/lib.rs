@@ -1,16 +1,21 @@
 mod deepfilternet;
+mod dpdfnet;
 
-pub use lyre_core::{NoiseCancellationConfig, NoiseProvider};
+pub use lyre_core::{DpdfNetConfig, NoiseCancellationConfig, NoiseProvider};
 
 pub use deepfilternet::{
     DeepFilterNetNoiseCanceller, DeepFilterNetRuntimeConfig, DEEPFILTERNET_CHANNELS,
     DEEPFILTERNET_DEFAULT_ERB_BANDS, DEEPFILTERNET_DEFAULT_FFT_SIZE,
     DEEPFILTERNET_DEFAULT_MIN_ERB_FREQS, DEEPFILTERNET_FRAME_SIZE, DEEPFILTERNET_SAMPLE_RATE_HZ,
 };
+pub use dpdfnet::{
+    DpdfNetModelSpec, DpdfNetNoiseCanceller, DpdfNetRuntimeConfig, DPDFNET_CHANNELS,
+    DPDFNET_DEFAULT_MODEL, DPDFNET_DEFAULT_MODEL_DIR, DPDFNET_SUPPORTED_MODELS,
+};
 
 use lyre_core::{AudioFrame, AudioFrameProcessor};
 use nnnoiseless::DenoiseState;
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, path::PathBuf, sync::Mutex};
 use thiserror::Error;
 
 pub const RNNOISE_SAMPLE_RATE_HZ: u32 = 48_000;
@@ -49,6 +54,16 @@ pub enum NoiseCancellationError {
     },
     #[error("invalid DeepFilterNet runtime config: {reason}")]
     InvalidDeepFilterNetRuntimeConfig { reason: String },
+    #[error("noise provider `{provider:?}` model file is unavailable at `{path}`")]
+    ModelFileUnavailable {
+        provider: NoiseProvider,
+        path: PathBuf,
+    },
+    #[error("noise provider `{provider:?}` runtime failed: {reason}")]
+    RuntimeFailure {
+        provider: NoiseProvider,
+        reason: String,
+    },
 }
 
 pub(crate) fn invalid_deepfilternet_runtime_config(
@@ -57,6 +72,29 @@ pub(crate) fn invalid_deepfilternet_runtime_config(
     NoiseCancellationError::InvalidDeepFilterNetRuntimeConfig {
         reason: reason.into(),
     }
+}
+
+pub(crate) fn model_file_unavailable(
+    provider: NoiseProvider,
+    path: PathBuf,
+) -> NoiseCancellationError {
+    NoiseCancellationError::ModelFileUnavailable { provider, path }
+}
+
+pub(crate) fn noise_runtime_error(
+    provider: NoiseProvider,
+    error: impl std::fmt::Display,
+) -> NoiseCancellationError {
+    NoiseCancellationError::RuntimeFailure {
+        provider,
+        reason: error.to_string(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct NoiseModelRuntimeConfig {
+    pub deepfilternet: DeepFilterNetRuntimeConfig,
+    pub dpdfnet: DpdfNetRuntimeConfig,
 }
 
 pub trait NoiseCanceller: Send {
@@ -69,19 +107,36 @@ pub trait NoiseCanceller: Send {
 pub fn build_noise_canceller(
     config: NoiseCancellationConfig,
 ) -> Result<Box<dyn NoiseCanceller + Send>, NoiseCancellationError> {
-    build_noise_canceller_with_runtime_config(config, DeepFilterNetRuntimeConfig::default())
+    build_noise_canceller_with_model_config(config, NoiseModelRuntimeConfig::default())
 }
 
 pub fn build_noise_canceller_with_runtime_config(
     config: NoiseCancellationConfig,
     deepfilternet_runtime: DeepFilterNetRuntimeConfig,
 ) -> Result<Box<dyn NoiseCanceller + Send>, NoiseCancellationError> {
+    build_noise_canceller_with_model_config(
+        config,
+        NoiseModelRuntimeConfig {
+            deepfilternet: deepfilternet_runtime,
+            ..NoiseModelRuntimeConfig::default()
+        },
+    )
+}
+
+pub fn build_noise_canceller_with_model_config(
+    config: NoiseCancellationConfig,
+    model_runtime: NoiseModelRuntimeConfig,
+) -> Result<Box<dyn NoiseCanceller + Send>, NoiseCancellationError> {
     match config.provider {
         NoiseProvider::Off => Ok(Box::new(PassthroughNoiseCanceller::new(config))),
         NoiseProvider::Rnnoise => Ok(Box::new(RnnoiseNoiseCanceller::new(config))),
         NoiseProvider::Deepfilternet => Ok(Box::new(DeepFilterNetNoiseCanceller::new(
             config,
-            deepfilternet_runtime,
+            model_runtime.deepfilternet,
+        )?)),
+        NoiseProvider::Dpdfnet => Ok(Box::new(DpdfNetNoiseCanceller::new(
+            config,
+            &model_runtime.dpdfnet,
         )?)),
     }
 }
@@ -199,6 +254,7 @@ struct NoiseConfigKey {
     intensity_bits: u32,
     voice_activity_threshold_bits: u32,
     deepfilternet_runtime: Option<DeepFilterNetRuntimeConfig>,
+    dpdfnet_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -206,6 +262,7 @@ enum NoiseProviderKey {
     Off,
     Rnnoise,
     Deepfilternet,
+    Dpdfnet,
 }
 
 impl From<NoiseProvider> for NoiseProviderKey {
@@ -214,6 +271,7 @@ impl From<NoiseProvider> for NoiseProviderKey {
             NoiseProvider::Off => Self::Off,
             NoiseProvider::Rnnoise => Self::Rnnoise,
             NoiseProvider::Deepfilternet => Self::Deepfilternet,
+            NoiseProvider::Dpdfnet => Self::Dpdfnet,
         }
     }
 }
@@ -233,20 +291,29 @@ impl NoiseConfigKey {
             voice_activity_threshold_bits: config.voice_activity_threshold.to_bits(),
             deepfilternet_runtime: (config.provider == NoiseProvider::Deepfilternet)
                 .then_some(deepfilternet_runtime),
+            dpdfnet_model: (config.provider == NoiseProvider::Dpdfnet)
+                .then(|| config.dpdfnet.model.clone()),
         }
     }
 }
 
 pub struct NoiseCancellingAudioFrameProcessor {
     cancellers: Mutex<HashMap<NoiseConfigKey, Box<dyn NoiseCanceller + Send>>>,
-    deepfilternet_runtime: DeepFilterNetRuntimeConfig,
+    model_runtime: NoiseModelRuntimeConfig,
 }
 
 impl NoiseCancellingAudioFrameProcessor {
     pub fn new(deepfilternet_runtime: DeepFilterNetRuntimeConfig) -> Self {
+        Self::with_model_runtime(NoiseModelRuntimeConfig {
+            deepfilternet: deepfilternet_runtime,
+            ..NoiseModelRuntimeConfig::default()
+        })
+    }
+
+    pub fn with_model_runtime(model_runtime: NoiseModelRuntimeConfig) -> Self {
         Self {
             cancellers: Mutex::new(HashMap::new()),
-            deepfilternet_runtime,
+            model_runtime,
         }
     }
 }
@@ -263,12 +330,12 @@ impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
             .cancellers
             .lock()
             .expect("noise canceller mutex poisoned");
-        let key = NoiseConfigKey::new(frame, noise, self.deepfilternet_runtime);
+        let key = NoiseConfigKey::new(frame, noise, self.model_runtime.deepfilternet);
         let canceller = match cancellers.get_mut(&key) {
             Some(canceller) => canceller,
-            None => match build_noise_canceller_with_runtime_config(
+            None => match build_noise_canceller_with_model_config(
                 noise.clone(),
-                self.deepfilternet_runtime,
+                self.model_runtime.clone(),
             ) {
                 Ok(canceller) => cancellers.entry(key).or_insert(canceller),
                 Err(error) => {

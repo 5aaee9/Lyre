@@ -6,6 +6,7 @@ impl From<lyre_core::NoiseProvider> for NoiseProvider {
             lyre_core::NoiseProvider::Off => Self::OFF,
             lyre_core::NoiseProvider::Rnnoise => Self::RNNOISE,
             lyre_core::NoiseProvider::Deepfilternet => Self::DEEPFILTERNET,
+            lyre_core::NoiseProvider::Dpdfnet => Self::DPDFNET,
         }
     }
 }
@@ -16,6 +17,7 @@ impl From<NoiseProvider> for lyre_core::NoiseProvider {
             NoiseProvider::OFF => Self::Off,
             NoiseProvider::RNNOISE => Self::Rnnoise,
             NoiseProvider::DEEPFILTERNET => Self::Deepfilternet,
+            NoiseProvider::DPDFNET => Self::Dpdfnet,
         }
     }
 }
@@ -26,6 +28,9 @@ impl From<lyre_core::NoiseCancellationConfig> for NoiseCancellationConfig {
             provider: config.provider.into(),
             intensity: config.intensity,
             voice_activity_threshold: config.voice_activity_threshold,
+            dpdfnet: DpdfNetConfig {
+                model: config.dpdfnet.model,
+            },
         }
     }
 }
@@ -36,6 +41,9 @@ impl From<NoiseCancellationConfig> for lyre_core::NoiseCancellationConfig {
             provider: config.provider.into(),
             intensity: config.intensity,
             voice_activity_threshold: config.voice_activity_threshold,
+            dpdfnet: lyre_core::DpdfNetConfig {
+                model: config.dpdfnet.model,
+            },
         }
     }
 }
@@ -226,6 +234,7 @@ mod tests {
                 provider: lyre_core::NoiseProvider::Rnnoise,
                 intensity: 0.8,
                 voice_activity_threshold: 0.2,
+                ..lyre_core::NoiseCancellationConfig::default()
             },
         ))
         .unwrap();

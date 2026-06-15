@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
             let server_media_port_range = args
                 .effective_server_media_port_range_with_embedded_turn(embedded_turn.as_ref())?
                 .map(lyre_web::ServerMediaPortRange::from);
-            let deepfilternet_runtime = args.effective_deepfilternet_runtime()?;
+            let model_runtime = args.effective_noise_model_runtime()?;
             let cors_allowed_origins = args.effective_cors_allowed_origins();
             lyre_web::serve(ServeConfig {
                 host,
@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
                 server_media_public_ip,
                 server_media_port_range,
                 state_file,
-                deepfilternet_runtime,
+                model_runtime,
                 cors_allowed_origins,
             })
             .await

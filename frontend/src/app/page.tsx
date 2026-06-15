@@ -63,10 +63,11 @@ export default function Home() {
             }
           >
             <option value="off">Off</option>
-            <option value="rnnoise">RNNoise</option>
-            <option value="deepfilternet">DeepFilterNet</option>
-          </Select>
-        </label>
+          <option value="rnnoise">RNNoise</option>
+          <option value="deepfilternet">DeepFilterNet</option>
+          <option value="dpdfnet">DPDFNet</option>
+        </Select>
+      </label>
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={remember} onChange={(event) => setRemember(event.target.checked)} />
           Remember Room ID

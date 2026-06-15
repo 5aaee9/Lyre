@@ -1,5 +1,5 @@
 use super::*;
-use lyre_core::{AudioFrame, AudioFrameProcessor, RoomId, UserId};
+use lyre_core::{AudioFrame, AudioFrameProcessor, DpdfNetConfig, RoomId, UserId};
 
 mod deepfilternet;
 
@@ -8,6 +8,17 @@ fn config(provider: NoiseProvider) -> NoiseCancellationConfig {
         provider,
         intensity: 0.5,
         voice_activity_threshold: 0.35,
+        ..NoiseCancellationConfig::default()
+    }
+}
+
+fn dpdfnet_config(model: &str) -> NoiseCancellationConfig {
+    NoiseCancellationConfig {
+        provider: NoiseProvider::Dpdfnet,
+        dpdfnet: DpdfNetConfig {
+            model: model.to_owned(),
+        },
+        ..NoiseCancellationConfig::default()
     }
 }
 
@@ -39,6 +50,33 @@ fn factory_builds_off_passthrough() {
 
     assert_eq!(output.samples, vec![0.25, -0.5, 0.75]);
     assert_eq!(output.voice_activity_probability, None);
+}
+
+#[test]
+fn factory_loads_dpdfnet_from_configured_model_directory() {
+    let result = build_noise_canceller_with_model_config(
+        dpdfnet_config("dpdfnet2_48khz_hr"),
+        NoiseModelRuntimeConfig {
+            dpdfnet: DpdfNetRuntimeConfig {
+                model_dir: std::path::PathBuf::from("dpdfnet/onnx"),
+            },
+            ..NoiseModelRuntimeConfig::default()
+        },
+    );
+
+    let Err(error) = result else {
+        panic!("expected missing DPDFNet model error");
+    };
+    assert!(matches!(
+        error,
+        NoiseCancellationError::ModelFileUnavailable {
+            provider: NoiseProvider::Dpdfnet,
+            ..
+        }
+    ));
+    assert!(error
+        .to_string()
+        .contains("dpdfnet/onnx/dpdfnet2_48khz_hr.onnx"));
 }
 
 #[test]
@@ -287,6 +325,7 @@ fn audio_frame_processor_adapter_preserves_state_per_config_key() {
             provider: NoiseProvider::Rnnoise,
             intensity: 0.5,
             voice_activity_threshold: 0.35,
+            ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig::default(),
     );
@@ -296,6 +335,7 @@ fn audio_frame_processor_adapter_preserves_state_per_config_key() {
             provider: NoiseProvider::Rnnoise,
             intensity: f32::from_bits(0.5f32.to_bits()),
             voice_activity_threshold: 0.35,
+            ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig::default(),
     );
@@ -305,6 +345,7 @@ fn audio_frame_processor_adapter_preserves_state_per_config_key() {
             provider: NoiseProvider::Rnnoise,
             intensity: 0.6,
             voice_activity_threshold: 0.35,
+            ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig::default(),
     );
@@ -331,6 +372,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
             provider: NoiseProvider::Deepfilternet,
             intensity: 0.5,
             voice_activity_threshold: 0.35,
+            ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig::default(),
     );
@@ -340,6 +382,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
             provider: NoiseProvider::Deepfilternet,
             intensity: 0.5,
             voice_activity_threshold: 0.35,
+            ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig {
             fft_size: 1920,
@@ -353,6 +396,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
             provider: NoiseProvider::Rnnoise,
             intensity: 0.5,
             voice_activity_threshold: 0.35,
+            ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig::default(),
     );
@@ -362,6 +406,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
             provider: NoiseProvider::Rnnoise,
             intensity: 0.5,
             voice_activity_threshold: 0.35,
+            ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig {
             fft_size: 1920,

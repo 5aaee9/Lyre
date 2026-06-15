@@ -302,6 +302,7 @@ fn start_relay_with_provider(state: &AppState, room_id: &RoomId, provider: Noise
                 provider,
                 intensity: 0.5,
                 voice_activity_threshold: 0.35,
+                ..NoiseCancellationConfig::default()
             }),
         },
     );
