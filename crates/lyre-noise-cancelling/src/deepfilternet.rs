@@ -119,7 +119,6 @@ pub struct DeepFilterNetNoiseCanceller {
     config: NoiseCancellationConfig,
     runtime: DeepFilterNetRuntimeConfig,
     state: DFState,
-    delayed_samples: Vec<f32>,
 }
 
 impl DeepFilterNetNoiseCanceller {
@@ -138,7 +137,6 @@ impl DeepFilterNetNoiseCanceller {
                 runtime.erb_bands,
                 runtime.min_erb_freqs,
             ),
-            delayed_samples: Vec::new(),
         })
     }
 
@@ -158,21 +156,12 @@ impl NoiseCanceller for DeepFilterNetNoiseCanceller {
     ) -> Result<NoiseFrameOutput, NoiseCancellationError> {
         validate_deepfilternet_frame(self.runtime, frame)?;
 
-        let mut reconstructed = Vec::with_capacity(frame.samples.len() + self.runtime.hop_size);
+        let mut samples = Vec::with_capacity(frame.samples.len());
         for chunk in frame.samples.chunks_exact(self.runtime.hop_size) {
             let mut output = vec![0.0; self.runtime.hop_size];
             self.state.process_frame(chunk, &mut output);
-            reconstructed.extend(output);
+            samples.extend(output);
         }
-        let silence = vec![0.0; self.runtime.hop_size];
-        let mut delayed = vec![0.0; self.runtime.hop_size];
-        self.state.process_frame(&silence, &mut delayed);
-        reconstructed.extend(delayed);
-
-        let mut samples = Vec::with_capacity(frame.samples.len());
-        samples.append(&mut self.delayed_samples);
-        samples.extend(reconstructed);
-        self.delayed_samples = samples.split_off(frame.samples.len());
 
         Ok(NoiseFrameOutput {
             samples,

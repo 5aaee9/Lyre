@@ -116,6 +116,49 @@ fn deepfilternet_preserves_decoded_opus_pcm_amplitude_after_stream_warmup() {
 }
 
 #[test]
+fn deepfilternet_streaming_batches_match_single_batch_processing() {
+    let input = (0..DEEPFILTERNET_FRAME_SIZE * 4)
+        .map(|index| ((index as f32) / 24.0).sin() * 0.1)
+        .collect::<Vec<_>>();
+    let mut streaming = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
+    let mut single_batch = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
+
+    let mut streaming_output = streaming
+        .process_frame(NoiseFrame {
+            sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+            channels: DEEPFILTERNET_CHANNELS,
+            samples: &input[..DEEPFILTERNET_FRAME_SIZE * 2],
+        })
+        .unwrap()
+        .samples;
+    streaming_output.extend(
+        streaming
+            .process_frame(NoiseFrame {
+                sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+                channels: DEEPFILTERNET_CHANNELS,
+                samples: &input[DEEPFILTERNET_FRAME_SIZE * 2..],
+            })
+            .unwrap()
+            .samples,
+    );
+    let single_batch_output = single_batch
+        .process_frame(NoiseFrame {
+            sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+            channels: DEEPFILTERNET_CHANNELS,
+            samples: &input,
+        })
+        .unwrap()
+        .samples;
+
+    let max_delta = streaming_output
+        .iter()
+        .zip(single_batch_output.iter())
+        .map(|(streaming, single_batch)| (streaming - single_batch).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(max_delta < 0.000001, "max_delta={max_delta}");
+}
+
+#[test]
 fn deepfilternet_custom_runtime_accepts_configured_hop_size() {
     let runtime = DeepFilterNetRuntimeConfig {
         fft_size: 1920,
