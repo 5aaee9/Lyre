@@ -41,6 +41,7 @@
 - Optional JSON file persistence for anonymous room/user/session access state.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
+- GitHub Actions workflow for deploying the Next.js frontend to Vercel production.
 - Release and manual `lyre` Helm chart publishing for deploying `lyre-api` and `lyre-web`, with optional Ingress and Gateway API HTTPRoute entry points.
 - Helm readiness and liveness health checks for both `lyre-api` and `lyre-web`.
 - Aggregate Prometheus-compatible `/metrics` endpoint for process-local API observability.
