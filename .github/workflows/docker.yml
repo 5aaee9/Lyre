@@ -42,6 +42,7 @@ jobs:
       - name: Cleanup Untagged Image
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
+          packages: ${{ github.event.repository.name }}/${{ matrix.image.name }}
           delete-untagged: true
 
   helm-chart:
@@ -70,3 +71,8 @@ jobs:
             --app-version "${{ steps.chart-version.outputs.version }}"
       - name: Push Helm chart to GHCR
         run: helm push dist/chart-*.tgz oci://ghcr.io/${{ github.repository }}
+      - name: Cleanup Untagged Chart
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: ${{ github.event.repository.name }}/chart
+          delete-untagged: true
