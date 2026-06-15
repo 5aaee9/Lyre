@@ -17,6 +17,7 @@ use webrtc::media_stream::{
 pub const SERVER_MEDIA_EGRESS_PAYLOAD_TYPE: u8 = 111;
 pub const SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const SERVER_MEDIA_EGRESS_CHANNELS: u16 = 1;
+const SERVER_MEDIA_EGRESS_APPLICATION: Application = Application::Audio;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerMediaProcessedAudioFrame {
@@ -158,7 +159,7 @@ impl ServerMediaOpusEgress {
         let encoder = OpusEncoder::new(
             SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ as i32,
             SERVER_MEDIA_EGRESS_CHANNELS as usize,
-            Application::Voip,
+            SERVER_MEDIA_EGRESS_APPLICATION,
         )
         .map_err(|source| ServerMediaEgressError::EncoderInit {
             message: source.to_owned(),
@@ -309,6 +310,11 @@ mod tests {
         let codec = egress.track().codec(5678).await.unwrap();
 
         assert_eq!(codec.channels, SERVER_MEDIA_EGRESS_CHANNELS);
+    }
+
+    #[test]
+    fn egress_encoder_uses_audio_application_without_voip_preprocessing() {
+        assert_eq!(SERVER_MEDIA_EGRESS_APPLICATION, Application::Audio);
     }
 
     #[test]
