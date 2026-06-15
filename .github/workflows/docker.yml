@@ -48,6 +48,7 @@ jobs:
   helm-chart:
     runs-on: ubuntu-latest
     needs: docker
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     steps:
       - uses: actions/checkout@v5
       - uses: azure/setup-helm@v4
@@ -57,11 +58,7 @@ jobs:
         id: chart-version
         shell: bash
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="0.1.0-${GITHUB_SHA::7}"
-          fi
+          version="${GITHUB_REF_NAME#v}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Package Helm chart
         run: |

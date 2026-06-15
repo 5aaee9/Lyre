@@ -41,7 +41,7 @@
 - Optional JSON file persistence for anonymous room/user/session access state.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
-- Helm chart for deploying `lyre-api` and `lyre-web`, with optional Ingress and Gateway API HTTPRoute entry points.
+- Release-tag-only Helm chart publishing for deploying `lyre-api` and `lyre-web`, with optional Ingress and Gateway API HTTPRoute entry points.
 - Aggregate Prometheus-compatible `/metrics` endpoint for process-local API observability.
 - Rust WebRPC runtime routes at `POST /rpc/Lyre/<Method>` compatible with the generated TypeScript client while preserving REST routes.
 - Concise README with detailed setup, configuration, API, media, development, and deployment documentation split under `docs/`.
