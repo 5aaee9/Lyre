@@ -18,6 +18,7 @@ pub const SERVER_MEDIA_EGRESS_PAYLOAD_TYPE: u8 = 111;
 pub const SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const SERVER_MEDIA_EGRESS_CHANNELS: u16 = 1;
 const SERVER_MEDIA_EGRESS_APPLICATION: Application = Application::Audio;
+const SERVER_MEDIA_EGRESS_GAP_FADE_SAMPLES: usize = 240;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerMediaProcessedAudioFrame {
@@ -186,34 +187,26 @@ impl ServerMediaOpusEgress {
         })
     }
 
-    fn reset_encoder(&mut self) -> Result<(), ServerMediaEgressError> {
-        self.encoder = new_opus_encoder()?;
-        Ok(())
-    }
-
     pub(crate) fn encode(
         &mut self,
         frame: &ServerMediaProcessedAudioFrame,
     ) -> Result<Vec<ServerMediaEgressRtpPacket>, ServerMediaEgressError> {
         validate_frame(frame)?;
-        if let Some(rtp_timestamp) = frame.rtp_timestamp {
-            if self
-                .next_source_rtp_timestamp
+        let source_gap = frame.rtp_timestamp.is_some_and(|rtp_timestamp| {
+            self.next_source_rtp_timestamp
                 .is_some_and(|next| next != rtp_timestamp)
-            {
-                self.reset_encoder()?;
-            }
-        }
+        });
+        let samples = if source_gap {
+            fade_in_after_gap(&frame.samples)
+        } else {
+            frame.samples.clone()
+        };
         let mut packets = Vec::new();
-        for (chunk_index, samples) in frame
-            .samples
-            .chunks(SERVER_MEDIA_OPUS_FRAME_SIZE)
-            .enumerate()
-        {
+        for (chunk_index, chunk) in samples.chunks(SERVER_MEDIA_OPUS_FRAME_SIZE).enumerate() {
             let mut payload = vec![0_u8; 512];
             let payload_len = self
                 .encoder
-                .encode(samples, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut payload)
+                .encode(chunk, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut payload)
                 .map_err(|source| ServerMediaEgressError::Encode {
                     message: source.to_owned(),
                 })?;
@@ -237,6 +230,21 @@ impl ServerMediaOpusEgress {
         }
         Ok(packets)
     }
+}
+
+fn fade_in_after_gap(samples: &[f32]) -> Vec<f32> {
+    let fade_len = samples.len().min(SERVER_MEDIA_EGRESS_GAP_FADE_SAMPLES);
+    samples
+        .iter()
+        .enumerate()
+        .map(|(index, sample)| {
+            if index < fade_len {
+                sample * index as f32 / fade_len as f32
+            } else {
+                *sample
+            }
+        })
+        .collect()
 }
 
 fn new_opus_encoder() -> Result<OpusEncoder, ServerMediaEgressError> {
@@ -359,24 +367,43 @@ mod tests {
     }
 
     #[test]
-    fn egress_encoder_resets_after_source_rtp_timestamp_discontinuity() {
+    fn gap_fade_starts_at_zero_and_reaches_original_pcm() {
+        let input = vec![0.5; SERVER_MEDIA_OPUS_FRAME_SIZE];
+
+        let faded = fade_in_after_gap(&input);
+
+        assert_eq!(faded[0], 0.0);
+        assert!(faded[1] > 0.0);
+        assert!(faded[SERVER_MEDIA_EGRESS_GAP_FADE_SAMPLES - 1] < 0.5);
+        assert_eq!(faded[SERVER_MEDIA_EGRESS_GAP_FADE_SAMPLES], 0.5);
+        assert_eq!(faded[SERVER_MEDIA_OPUS_FRAME_SIZE - 1], 0.5);
+    }
+
+    #[test]
+    fn egress_encoder_fades_pcm_after_source_rtp_timestamp_discontinuity() {
         let mut discontinuous = ServerMediaOpusEgress::new().unwrap();
-        let input = (0..SERVER_MEDIA_OPUS_FRAME_SIZE)
-            .map(|index| ((index as f32) / 24.0).sin() * 0.1)
-            .collect::<Vec<_>>();
         discontinuous
-            .encode(&frame_with_rtp_timestamp(9_600, input.clone()))
+            .encode(&frame_with_rtp_timestamp(
+                9_600,
+                vec![0.5; SERVER_MEDIA_OPUS_FRAME_SIZE],
+            ))
             .unwrap();
 
         let after_gap = discontinuous
-            .encode(&frame_with_rtp_timestamp(96_000, input.clone()))
+            .encode(&frame_with_rtp_timestamp(
+                96_000,
+                vec![0.5; SERVER_MEDIA_OPUS_FRAME_SIZE],
+            ))
             .unwrap();
-        let fresh = ServerMediaOpusEgress::new()
+        let continuous = ServerMediaOpusEgress::new()
             .unwrap()
-            .encode(&frame_with_rtp_timestamp(96_000, input))
+            .encode(&frame_with_rtp_timestamp(
+                9_600,
+                vec![0.5; SERVER_MEDIA_OPUS_FRAME_SIZE],
+            ))
             .unwrap();
 
-        assert_eq!(after_gap[0].payload, fresh[0].payload);
+        assert_ne!(after_gap[0].payload, continuous[0].payload);
         assert_eq!(after_gap[0].sequence_number, 1);
         assert_eq!(after_gap[0].timestamp, SERVER_MEDIA_OPUS_FRAME_SIZE as u32);
     }

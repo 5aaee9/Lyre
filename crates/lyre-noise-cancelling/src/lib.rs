@@ -238,13 +238,8 @@ impl NoiseConfigKey {
 }
 
 pub struct NoiseCancellingAudioFrameProcessor {
-    cancellers: Mutex<HashMap<NoiseConfigKey, NoiseCancellerState>>,
+    cancellers: Mutex<HashMap<NoiseConfigKey, Box<dyn NoiseCanceller + Send>>>,
     deepfilternet_runtime: DeepFilterNetRuntimeConfig,
-}
-
-struct NoiseCancellerState {
-    canceller: Box<dyn NoiseCanceller + Send>,
-    next_rtp_timestamp: Option<u32>,
 }
 
 impl NoiseCancellingAudioFrameProcessor {
@@ -269,18 +264,13 @@ impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
             .lock()
             .expect("noise canceller mutex poisoned");
         let key = NoiseConfigKey::new(frame, noise, self.deepfilternet_runtime);
-        let state = match cancellers.get_mut(&key) {
-            Some(state) => state,
+        let canceller = match cancellers.get_mut(&key) {
+            Some(canceller) => canceller,
             None => match build_noise_canceller_with_runtime_config(
                 noise.clone(),
                 self.deepfilternet_runtime,
             ) {
-                Ok(canceller) => cancellers
-                    .entry(key.clone())
-                    .or_insert(NoiseCancellerState {
-                        canceller,
-                        next_rtp_timestamp: None,
-                    }),
+                Ok(canceller) => cancellers.entry(key).or_insert(canceller),
                 Err(error) => {
                     tracing::warn!(
                         error = format_args!("{error:#}"),
@@ -296,50 +286,13 @@ impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
                 }
             },
         };
-        if let Some(rtp_timestamp) = frame.rtp_timestamp {
-            if state
-                .next_rtp_timestamp
-                .is_some_and(|next| next != rtp_timestamp)
-            {
-                match build_noise_canceller_with_runtime_config(
-                    noise.clone(),
-                    self.deepfilternet_runtime,
-                ) {
-                    Ok(canceller) => {
-                        state.canceller = canceller;
-                        state.next_rtp_timestamp = None;
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            error = format_args!("{error:#}"),
-                            room_id = %frame.room_id,
-                            user_id = %frame.user_id,
-                            track_id = %frame.track_id,
-                            sample_rate_hz = frame.sample_rate_hz,
-                            channels = frame.channels,
-                            samples = frame.samples.len(),
-                            "noise canceller reset unavailable; passing audio frame through"
-                        );
-                        return frame.samples.clone();
-                    }
-                }
-            }
-        }
 
-        match state.canceller.process_frame(NoiseFrame {
+        match canceller.process_frame(NoiseFrame {
             sample_rate_hz: frame.sample_rate_hz,
             channels: frame.channels,
             samples: &frame.samples,
         }) {
-            Ok(output) => {
-                if let Some(rtp_timestamp) = frame.rtp_timestamp {
-                    state.next_rtp_timestamp =
-                        Some(rtp_timestamp.wrapping_add(
-                            (frame.samples.len() / usize::from(frame.channels)) as u32,
-                        ));
-                }
-                output.samples
-            }
+            Ok(output) => output.samples,
             Err(error) => {
                 tracing::warn!(
                     error = format_args!("{error:#}"),

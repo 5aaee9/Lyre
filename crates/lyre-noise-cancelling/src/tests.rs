@@ -225,34 +225,6 @@ fn audio_frame_processor_adapter_keeps_rnnoise_state_per_audio_source() {
 }
 
 #[test]
-fn audio_frame_processor_adapter_resets_rnnoise_state_after_rtp_timestamp_gap() {
-    let processor = NoiseCancellingAudioFrameProcessor::default();
-    let fresh_processor = NoiseCancellingAudioFrameProcessor::default();
-    let input = decoded_opus_frame_samples();
-    let frame = AudioFrame {
-        room_id: RoomId::default_room(),
-        user_id: UserId::from_external("user_01"),
-        track_id: "audio-main".to_owned(),
-        sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
-        channels: RNNOISE_CHANNELS,
-        sequence: 1,
-        rtp_timestamp: Some(9_600),
-        samples: input.clone(),
-    };
-    processor.process(&frame, &config(NoiseProvider::Rnnoise));
-
-    let after_gap = AudioFrame {
-        sequence: 2,
-        rtp_timestamp: Some(96_000),
-        ..frame
-    };
-    let output = processor.process(&after_gap, &config(NoiseProvider::Rnnoise));
-    let expected = fresh_processor.process(&after_gap, &config(NoiseProvider::Rnnoise));
-
-    assert_eq!(output, expected);
-}
-
-#[test]
 fn audio_frame_processor_adapter_uses_deepfilternet_for_valid_audio() {
     let processor = NoiseCancellingAudioFrameProcessor::default();
     let input = decoded_opus_frame_samples();
@@ -271,34 +243,6 @@ fn audio_frame_processor_adapter_uses_deepfilternet_for_valid_audio() {
 
     assert_eq!(output.len(), DEEPFILTERNET_FRAME_SIZE * 2);
     assert!(output.iter().all(|sample| sample.is_finite()));
-}
-
-#[test]
-fn audio_frame_processor_adapter_resets_deepfilternet_state_after_rtp_timestamp_gap() {
-    let processor = NoiseCancellingAudioFrameProcessor::default();
-    let fresh_processor = NoiseCancellingAudioFrameProcessor::default();
-    let input = decoded_opus_frame_samples();
-    let frame = AudioFrame {
-        room_id: RoomId::default_room(),
-        user_id: UserId::from_external("user_01"),
-        track_id: "audio-main".to_owned(),
-        sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
-        channels: DEEPFILTERNET_CHANNELS,
-        sequence: 1,
-        rtp_timestamp: Some(9_600),
-        samples: input,
-    };
-    processor.process(&frame, &config(NoiseProvider::Deepfilternet));
-
-    let after_gap = AudioFrame {
-        sequence: 2,
-        rtp_timestamp: Some(96_000),
-        ..frame
-    };
-    let output = processor.process(&after_gap, &config(NoiseProvider::Deepfilternet));
-    let expected = fresh_processor.process(&after_gap, &config(NoiseProvider::Deepfilternet));
-
-    assert_eq!(output, expected);
 }
 
 #[test]

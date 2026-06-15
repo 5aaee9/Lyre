@@ -71,8 +71,7 @@
 - Server-media Opus egress now uses the audio encoder application to avoid applying a second VoIP high-pass preprocessing stage to relayed audio.
 - Server-media relay with noise cancellation off now forwards incoming Opus RTP directly to recipients, bypassing Rust decode/process/re-encode.
 - Server-media Opus ingress now resets decoder state across RTP timestamp discontinuities so speech after browser DTX silence does not reuse stale decoder prediction.
-- Server-media processed Opus egress now carries source RTP timestamp metadata through the runtime and resets encoder state after source timestamp gaps.
-- Server-side RNNoise and DeepFilterNet state now resets across source RTP timestamp gaps so denoise DSP state does not span browser DTX silence.
+- Server-media processed Opus egress now carries source RTP timestamp metadata through the runtime and fades in after source timestamp gaps to avoid click/pop discontinuities.
 
 ## Next
 
