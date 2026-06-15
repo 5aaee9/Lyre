@@ -70,7 +70,7 @@
 - Server-media jitter buffering now skips packet-loss concealment across RTP timestamp discontinuities so speech after silence does not get prefixed by synthetic old PCM.
 - Server-media Opus egress now uses the audio encoder application to avoid applying a second VoIP high-pass preprocessing stage to relayed audio.
 - Server-media relay with noise cancellation off now forwards incoming Opus RTP directly to recipients, bypassing Rust decode/process/re-encode.
-- Server-media Opus ingress now resets decoder state across RTP timestamp discontinuities so speech after browser DTX silence does not reuse stale decoder prediction.
+- Server-media Opus ingress now keeps decoder state across RTP timestamp discontinuities so browser DTX gaps do not turn resumed speech into clipped processed PCM.
 - Server-media processed Opus egress now carries source RTP timestamp metadata through the runtime and fades in after source timestamp gaps to avoid click/pop discontinuities.
 
 ## Next

@@ -34,32 +34,19 @@ pub enum ServerMediaDecodeError {
 
 pub struct ServerMediaOpusDecoder {
     decoder: OpusDecoder,
-    next_rtp_timestamp: Option<u32>,
 }
 
 impl ServerMediaOpusDecoder {
     pub fn new() -> Result<Self, ServerMediaDecodeError> {
         Ok(Self {
             decoder: new_opus_decoder()?,
-            next_rtp_timestamp: None,
         })
-    }
-
-    fn reset(&mut self) -> Result<(), ServerMediaDecodeError> {
-        self.decoder = new_opus_decoder()?;
-        Ok(())
     }
 
     pub fn decode_packet(
         &mut self,
         packet: &ServerMediaRtpPacket,
     ) -> Result<ServerMediaPcmFrame, ServerMediaDecodeError> {
-        if self
-            .next_rtp_timestamp
-            .is_some_and(|next| next != packet.timestamp)
-        {
-            self.reset()?;
-        }
         let mut samples =
             vec![0.0_f32; SERVER_MEDIA_OPUS_FRAME_SIZE * SERVER_MEDIA_OPUS_CHANNELS as usize];
         self.decoder
@@ -67,11 +54,6 @@ impl ServerMediaOpusDecoder {
             .map_err(|source| ServerMediaDecodeError::Decode {
                 message: source.to_owned(),
             })?;
-        self.next_rtp_timestamp = Some(
-            packet
-                .timestamp
-                .wrapping_add(SERVER_MEDIA_OPUS_FRAME_SIZE as u32),
-        );
         Ok(ServerMediaPcmFrame {
             track_id: packet.track_id.clone(),
             sequence_number: packet.sequence_number,
@@ -149,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn decoder_resets_after_rtp_timestamp_discontinuity() {
+    fn decoder_keeps_state_after_rtp_timestamp_discontinuity() {
         let mut discontinuous = ServerMediaOpusDecoder::new().unwrap();
         discontinuous
             .decode_packet(&packet_with_timestamp(9_600))
@@ -163,7 +145,7 @@ mod tests {
             .decode_packet(&packet_with_timestamp(96_000))
             .unwrap();
 
-        assert_eq!(after_gap.samples, fresh.samples);
+        assert_ne!(after_gap.samples, fresh.samples);
     }
 
     #[test]
