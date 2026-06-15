@@ -22,6 +22,8 @@ An embedded UDP TURN relay can be enabled with `--embedded-turn` or `LYRE_EMBEDD
 
 When embedded TURN is enabled and no `--ice-server` / `LYRE_ICE_SERVERS` is configured, Lyre advertises `turn:<embedded-turn-external>` through `/api/webrtc/ice-servers`. Explicit ICE server configuration disables this auto-injection. The embedded TURN runtime uses the MIT `turn-server` crate from the `turn-rs` project; that relay validates the HMAC credential but does not enforce the timestamp embedded in TURN REST usernames, so keep TURN credential TTL short.
 
+The server-side DeepFilterNet provider currently configures libDF DSP/STFT frame processing, not pretrained DeepFilterNet neural model inference. Runtime parameters can be set with `--deepfilternet-fft-size` / `LYRE_DEEPFILTERNET_FFT_SIZE`, `--deepfilternet-hop-size` / `LYRE_DEEPFILTERNET_HOP_SIZE`, `--deepfilternet-erb-bands` / `LYRE_DEEPFILTERNET_ERB_BANDS`, and `--deepfilternet-min-erb-freqs` / `LYRE_DEEPFILTERNET_MIN_ERB_FREQS`. Defaults are 960 FFT size, 480 hop size, 32 ERB bands, and 2 minimum ERB frequencies. Invalid combinations fail startup instead of falling back silently.
+
 API routes:
 
 - `GET /health`
@@ -78,7 +80,7 @@ The media relay REST endpoints expose the initial room-scoped state skeleton for
 
 `lyre-core` also defines a decoded-PCM media runtime boundary for the future server relay. It accepts already-decoded audio frames, requires an active relay and a registered audio track without mutating relay state, runs an `AudioFrameProcessor`, and publishes processed PCM to an internal `ProcessedAudioSink`. This boundary still does not terminate WebRTC, decode or encode Opus, perform real room broadcast, or run concrete RNNoise/DeepFilterNet implementations.
 
-`lyre-noise-cancelling` can now run RNNoise-compatible processing for decoded 48 kHz mono PCM frames of 480 samples using `nnnoiseless`. RNNoise returns voice activity detection metadata, but Lyre's `intensity` and `voice_activity_threshold` settings do not alter or suppress output yet. DeepFilterNet remains a planned runtime backend and direct factory creation reports it as unsupported until real model loading/inference is added. This still does not terminate browser WebRTC media, decode/encode Opus, or broadcast processed audio.
+`lyre-noise-cancelling` can now run RNNoise-compatible processing for decoded 48 kHz mono PCM frames of 480 samples using `nnnoiseless`. RNNoise returns voice activity detection metadata, but Lyre's `intensity` and `voice_activity_threshold` settings do not alter or suppress output yet. DeepFilterNet uses the Rust `deep_filter` crate's libDF DSP/STFT runtime and can be configured at process startup, but it still does not load pretrained DeepFilterNet neural model checkpoints. This still does not terminate browser WebRTC media by itself.
 
 `lyre-web::AppState` now owns an internal decoded-PCM media runtime wired to the media relay registry and RNNoise-capable processor. Processed frames are stored in an internal in-memory sink for tests and future broadcaster integration. This is not browser WebRTC media termination or client broadcast yet.
 

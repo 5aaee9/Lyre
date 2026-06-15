@@ -1,6 +1,7 @@
 use crate::{api::AppState, router, state_persistence::RoomStatePersistence};
 use anyhow::{Context, Result};
 use lyre_core::{IceServerConfig, TurnRestCredentialsConfig};
+use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
 use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 use tokio::net::TcpListener;
 
@@ -12,6 +13,7 @@ pub struct ServeConfig {
     pub turn_rest_credentials: Option<TurnRestCredentialsConfig>,
     pub embedded_turn: Option<lyre_turn::EmbeddedTurnConfig>,
     pub state_file: Option<PathBuf>,
+    pub deepfilternet_runtime: DeepFilterNetRuntimeConfig,
 }
 
 impl ServeConfig {
@@ -32,6 +34,7 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
         config.ice_servers,
         config.turn_rest_credentials,
         room_state_persistence,
+        config.deepfilternet_runtime,
     )
     .context("failed to initialize Lyre room state")?;
     let api = async move {

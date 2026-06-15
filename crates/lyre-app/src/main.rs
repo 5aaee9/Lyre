@@ -19,6 +19,7 @@ async fn main() -> Result<()> {
             let turn_rest_credentials = args.effective_turn_rest_credentials()?;
             let embedded_turn = args.effective_embedded_turn_config()?;
             let state_file = args.effective_state_file()?;
+            let deepfilternet_runtime = args.effective_deepfilternet_runtime()?;
             lyre_web::serve(ServeConfig {
                 host,
                 port,
@@ -26,6 +27,7 @@ async fn main() -> Result<()> {
                 turn_rest_credentials,
                 embedded_turn,
                 state_file,
+                deepfilternet_runtime,
             })
             .await
             .context("failed to run Lyre server")?;

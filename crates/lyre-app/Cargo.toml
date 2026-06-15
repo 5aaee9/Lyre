@@ -12,6 +12,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 lyre-core = { path = "../lyre-core" }
+lyre-noise-cancelling = { path = "../lyre-noise-cancelling" }
 lyre-turn = { path = "../lyre-turn" }
 lyre-web = { path = "../lyre-web" }
 serde.workspace = true

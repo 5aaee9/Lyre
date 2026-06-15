@@ -174,6 +174,13 @@
 - This is STFT/ISTFT frame reconstruction and provider plumbing only; it does not include pretrained DeepFilterNet neural model inference, post-filtering, model configuration, or proven noise attenuation.
 - Full DeepFilterNet model inference remains future work.
 
+## 2026-06-15 DeepFilterNet Runtime Configuration
+
+- Added a Lyre-owned `DeepFilterNetRuntimeConfig` for libDF sample rate, channel count, FFT size, hop size, ERB bands, and minimum ERB frequencies.
+- Validated runtime config before constructing `DFState` so invalid CLI/env input fails startup instead of reaching panic-prone libDF invariants or falling back silently.
+- Threaded the runtime config from `lyre serve` CLI/env and `lyre config print` through `lyre-web::ServeConfig`, `AppState`, `WebMediaRuntime`, and the noise canceller cache key.
+- Kept this explicitly scoped to libDF DSP/STFT configuration; `deep_filter = 0.2.5` still does not provide a Rust pretrained neural checkpoint loader.
+
 ## 2026-06-15 Server Media Jitter Buffer
 
 - Added a bounded server-media RTP jitter buffer in `lyre-webrtc` before Opus decode.

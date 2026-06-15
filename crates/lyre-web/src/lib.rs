@@ -1,6 +1,7 @@
 pub mod api;
 pub mod api_server_media;
 pub mod api_server_media_state;
+pub mod app_state;
 pub mod error;
 pub mod media_egress;
 pub mod media_runtime;
@@ -42,5 +43,6 @@ mod state_persistence_tests;
 #[cfg(test)]
 mod webrpc_tests;
 
-pub use api::{router, AppState};
+pub use api::router;
+pub use app_state::AppState;
 pub use server::{serve, ServeConfig};

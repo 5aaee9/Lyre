@@ -1,0 +1,216 @@
+use crate::{
+    error::ApiError,
+    media_egress::{ProcessedAudioEgressFanout, ProcessedAudioEgressFrame},
+    media_runtime::WebMediaRuntime,
+    metrics::MetricsState,
+    processed_audio_webrtc_egress_pump::ProcessedAudioWebRtcEgressPump,
+    server_media_runtime_pump::ServerMediaRuntimePump,
+    signalling::PeerHub,
+    state_persistence::RoomStatePersistence,
+};
+use anyhow::Context;
+use lyre_core::{
+    default_ice_servers, AudioFrame, IceServerConfig, JoinRoomRequest, MediaRelayError,
+    MediaRelayRegistry, ProcessedAudioFrame, RoomId, RoomRegistry,
+};
+use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
+use lyre_webrtc::{ServerMediaNegotiator, ServerMediaSessionRegistry, WebRtcStack};
+use std::sync::Arc;
+use tokio::sync::{broadcast, Mutex};
+
+#[derive(Debug, Clone)]
+pub struct AppState {
+    pub registry: Arc<RoomRegistry>,
+    pub media_relays: Arc<MediaRelayRegistry>,
+    pub media_runtime: Arc<WebMediaRuntime>,
+    pub media_egress: Arc<ProcessedAudioEgressFanout>,
+    pub processed_audio_webrtc_egress_pump: Arc<ProcessedAudioWebRtcEgressPump>,
+    pub server_media_sessions: Arc<ServerMediaSessionRegistry>,
+    pub server_media_negotiator: Arc<ServerMediaNegotiator>,
+    pub server_media_runtime_pump: Arc<ServerMediaRuntimePump>,
+    pub peers: Arc<PeerHub>,
+    pub metrics: Arc<MetricsState>,
+    pub ice_servers: Arc<Vec<IceServerConfig>>,
+    pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
+    room_state_persistence: Arc<Mutex<Option<RoomStatePersistence>>>,
+    pub room_state_persistence_lock: Arc<Mutex<()>>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new(default_ice_servers(), None)
+    }
+}
+
+impl AppState {
+    pub fn new(
+        ice_servers: Vec<IceServerConfig>,
+        turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
+    ) -> Self {
+        Self::with_room_state_persistence(
+            ice_servers,
+            turn_rest_credentials,
+            None,
+            DeepFilterNetRuntimeConfig::default(),
+        )
+        .expect("in-memory AppState construction must not fail")
+    }
+
+    pub fn with_room_state_persistence(
+        ice_servers: Vec<IceServerConfig>,
+        turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
+        room_state_persistence: Option<RoomStatePersistence>,
+        deepfilternet_runtime: DeepFilterNetRuntimeConfig,
+    ) -> anyhow::Result<Self> {
+        let deepfilternet_runtime = deepfilternet_runtime
+            .validate()
+            .map_err(anyhow::Error::from)
+            .context("invalid DeepFilterNet runtime config")?;
+        let registry = match &room_state_persistence {
+            Some(persistence) => persistence.load_registry()?,
+            None => RoomRegistry::new(),
+        };
+        let media_relays = Arc::new(MediaRelayRegistry::new());
+        let server_media_sessions = Arc::new(ServerMediaSessionRegistry::new());
+        let server_media_negotiator = Arc::new(ServerMediaNegotiator::new(
+            WebRtcStack::new(),
+            Arc::clone(&server_media_sessions),
+        ));
+        let media_runtime = Arc::new(WebMediaRuntime::with_deepfilternet_runtime(
+            Arc::clone(&media_relays),
+            deepfilternet_runtime,
+        ));
+        let server_media_runtime_pump = Arc::new(ServerMediaRuntimePump::new(
+            Arc::clone(&media_runtime),
+            Arc::clone(&server_media_negotiator),
+        ));
+        let media_egress = Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&media_relays)));
+        let processed_audio_webrtc_egress_pump = Arc::new(ProcessedAudioWebRtcEgressPump::new(
+            Arc::clone(&media_runtime),
+            Arc::clone(&media_egress),
+            Arc::clone(&server_media_negotiator),
+        ));
+        Ok(Self {
+            registry: Arc::new(registry),
+            media_runtime,
+            media_egress,
+            processed_audio_webrtc_egress_pump,
+            server_media_sessions,
+            server_media_negotiator,
+            server_media_runtime_pump,
+            media_relays,
+            peers: Arc::new(PeerHub::new()),
+            metrics: Arc::new(MetricsState::default()),
+            ice_servers: Arc::new(ice_servers),
+            turn_rest_credentials,
+            room_state_persistence: Arc::new(Mutex::new(room_state_persistence)),
+            room_state_persistence_lock: Arc::new(Mutex::new(())),
+        })
+    }
+
+    #[cfg(test)]
+    pub async fn set_room_state_persistence_for_tests(
+        &self,
+        persistence: Option<RoomStatePersistence>,
+    ) {
+        *self.room_state_persistence.lock().await = persistence;
+    }
+
+    pub fn process_media_frame(&self, frame: AudioFrame) -> Result<(), MediaRelayError> {
+        self.media_runtime.process_frame(frame)
+    }
+
+    pub fn processed_media_frames(&self, room_id: &RoomId) -> Vec<ProcessedAudioFrame> {
+        self.media_runtime.frames_for_room(room_id)
+    }
+
+    pub fn processed_audio_egress_frames(
+        &self,
+        frame: &ProcessedAudioFrame,
+    ) -> Result<Vec<ProcessedAudioEgressFrame>, MediaRelayError> {
+        self.media_egress.fanout(frame)
+    }
+
+    pub fn subscribe_processed_media_frames(
+        &self,
+        room_id: &RoomId,
+    ) -> broadcast::Receiver<ProcessedAudioFrame> {
+        self.media_runtime.subscribe(room_id)
+    }
+
+    pub fn clear_processed_media_room(&self, room_id: &RoomId) {
+        self.media_runtime.clear_room(room_id);
+    }
+
+    pub fn stop_media_relay(
+        &self,
+        room_id: RoomId,
+        request: lyre_core::StopMediaRelayRequest,
+    ) -> lyre_core::MediaRelayRoomStatus {
+        self.processed_audio_webrtc_egress_pump.stop(&room_id);
+        let status = self.media_relays.stop(room_id.clone(), request);
+        self.clear_processed_media_room(&room_id);
+        self.close_server_media_sessions_for_room(&room_id);
+        status
+    }
+
+    pub fn start_media_relay(
+        &self,
+        room_id: RoomId,
+        request: lyre_core::StartMediaRelayRequest,
+    ) -> lyre_core::MediaRelayRoomStatus {
+        let status = self.media_relays.start(room_id.clone(), request);
+        self.processed_audio_webrtc_egress_pump.start(room_id);
+        status
+    }
+
+    pub async fn join_room_persisted(
+        &self,
+        room_id: RoomId,
+        request: JoinRoomRequest,
+    ) -> Result<lyre_core::JoinRoomResponse, ApiError> {
+        let _guard = self.room_state_persistence_lock.lock().await;
+        let persistence = self.room_state_persistence.lock().await.clone();
+        let Some(persistence) = persistence else {
+            let response = self.registry.join(room_id, request);
+            self.metrics.record_join();
+            return Ok(response);
+        };
+        let rollback = self.registry.to_persisted();
+        let response = self.registry.join(room_id, request);
+        if let Err(error) = persistence.save_registry(&self.registry) {
+            self.registry.replace_with_persisted(rollback);
+            self.metrics.record_persistence_failure();
+            return Err(ApiError::from(error));
+        }
+        self.metrics.record_join();
+        Ok(response)
+    }
+
+    pub async fn leave_room_persisted(
+        &self,
+        room_id: &RoomId,
+        user_id: &lyre_core::UserId,
+    ) -> Result<lyre_core::RoomSnapshot, ApiError> {
+        let _guard = self.room_state_persistence_lock.lock().await;
+        let persistence = self.room_state_persistence.lock().await.clone();
+        let Some(persistence) = persistence else {
+            let response = self.registry.leave(room_id, user_id);
+            if response.removed {
+                self.metrics.record_leave();
+            }
+            return Ok(response.room);
+        };
+        let rollback = self.registry.to_persisted();
+        let response = self.registry.leave(room_id, user_id);
+        if let Err(error) = persistence.save_registry(&self.registry) {
+            self.registry.replace_with_persisted(rollback);
+            self.metrics.record_persistence_failure();
+            return Err(ApiError::from(error));
+        }
+        if response.removed {
+            self.metrics.record_leave();
+        }
+        Ok(response.room)
+    }
+}

@@ -1452,6 +1452,7 @@ dependencies = [
  "anyhow",
  "clap",
  "lyre-core",
+ "lyre-noise-cancelling",
  "lyre-turn",
  "lyre-web",
  "serde",

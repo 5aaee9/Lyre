@@ -28,6 +28,7 @@
 - Decoded incoming Opus RTP into 48 kHz mono PCM frames and fed them into the existing server media runtime.
 - Server-side RNNoise processing for real decoded 20 ms Opus PCM frames.
 - DeepFilterNet provider wiring through Rust libDF DSP frame reconstruction.
+- DeepFilterNet libDF runtime configuration through CLI/env, server state, and media runtime construction.
 - Automatic server-media draining and processing for negotiated WebRTC tracks.
 - Bounded server-media RTP jitter buffering with duplicate/stale packet dropping and deterministic loss detection.
 - Deterministic PCM packet loss concealment synthesis for server media ingress after jitter-buffer loss detection.

@@ -1,6 +1,8 @@
 use super::*;
 use lyre_core::{AudioFrame, AudioFrameProcessor, RoomId, UserId};
 
+mod deepfilternet;
+
 fn config(provider: NoiseProvider) -> NoiseCancellationConfig {
     NoiseCancellationConfig {
         provider,
@@ -61,91 +63,6 @@ fn rnnoise_rejects_wrong_sample_rate_channels_and_frame_size() {
             expected_samples: RNNOISE_FRAME_SIZE,
         }
     );
-}
-
-#[test]
-fn factory_builds_deepfilternet_dsp_runtime() {
-    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
-
-    let output = canceller
-        .process_frame(NoiseFrame {
-            sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
-            channels: DEEPFILTERNET_CHANNELS,
-            samples: &[0.25; DEEPFILTERNET_FRAME_SIZE],
-        })
-        .unwrap();
-
-    assert_eq!(output.samples.len(), DEEPFILTERNET_FRAME_SIZE);
-    assert!(output.samples.iter().all(|sample| sample.is_finite()));
-    assert_eq!(output.voice_activity_probability, None);
-}
-
-#[test]
-fn deepfilternet_rejects_wrong_sample_rate_channels_and_frame_size() {
-    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
-
-    assert_eq!(
-        canceller
-            .process_frame(NoiseFrame {
-                sample_rate_hz: 44_100,
-                channels: 2,
-                samples: &[0.0; 32],
-            })
-            .unwrap_err(),
-        NoiseCancellationError::InvalidFrameShape {
-            provider: NoiseProvider::Deepfilternet,
-            sample_rate_hz: 44_100,
-            channels: 2,
-            samples: 32,
-            expected_sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
-            expected_channels: DEEPFILTERNET_CHANNELS,
-            expected_samples: DEEPFILTERNET_FRAME_SIZE,
-        }
-    );
-}
-
-#[test]
-fn deepfilternet_rejects_empty_or_non_multiple_frame_size() {
-    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
-
-    for samples in [Vec::new(), vec![0.0; DEEPFILTERNET_FRAME_SIZE + 1]] {
-        assert_eq!(
-            canceller
-                .process_frame(NoiseFrame {
-                    sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
-                    channels: DEEPFILTERNET_CHANNELS,
-                    samples: &samples,
-                })
-                .unwrap_err(),
-            NoiseCancellationError::InvalidFrameShape {
-                provider: NoiseProvider::Deepfilternet,
-                sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
-                channels: DEEPFILTERNET_CHANNELS,
-                samples: samples.len(),
-                expected_sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
-                expected_channels: DEEPFILTERNET_CHANNELS,
-                expected_samples: DEEPFILTERNET_FRAME_SIZE,
-            }
-        );
-    }
-}
-
-#[test]
-fn deepfilternet_processes_960_sample_mono_frame_in_chunks() {
-    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
-    let input = decoded_opus_frame_samples();
-
-    let output = canceller
-        .process_frame(NoiseFrame {
-            sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
-            channels: DEEPFILTERNET_CHANNELS,
-            samples: &input,
-        })
-        .unwrap();
-
-    assert_eq!(output.samples.len(), DEEPFILTERNET_FRAME_SIZE * 2);
-    assert!(output.samples.iter().all(|sample| sample.is_finite()));
-    assert_eq!(output.voice_activity_probability, None);
 }
 
 #[test]
@@ -291,22 +208,78 @@ fn audio_frame_processor_adapter_passthroughs_invalid_or_unsupported_frames() {
 
 #[test]
 fn audio_frame_processor_adapter_preserves_state_per_config_key() {
-    let first = NoiseConfigKey::from(&NoiseCancellationConfig {
-        provider: NoiseProvider::Rnnoise,
-        intensity: 0.5,
-        voice_activity_threshold: 0.35,
-    });
-    let second = NoiseConfigKey::from(&NoiseCancellationConfig {
-        provider: NoiseProvider::Rnnoise,
-        intensity: f32::from_bits(0.5f32.to_bits()),
-        voice_activity_threshold: 0.35,
-    });
-    let third = NoiseConfigKey::from(&NoiseCancellationConfig {
-        provider: NoiseProvider::Rnnoise,
-        intensity: 0.6,
-        voice_activity_threshold: 0.35,
-    });
+    let first = NoiseConfigKey::new(
+        &NoiseCancellationConfig {
+            provider: NoiseProvider::Rnnoise,
+            intensity: 0.5,
+            voice_activity_threshold: 0.35,
+        },
+        DeepFilterNetRuntimeConfig::default(),
+    );
+    let second = NoiseConfigKey::new(
+        &NoiseCancellationConfig {
+            provider: NoiseProvider::Rnnoise,
+            intensity: f32::from_bits(0.5f32.to_bits()),
+            voice_activity_threshold: 0.35,
+        },
+        DeepFilterNetRuntimeConfig::default(),
+    );
+    let third = NoiseConfigKey::new(
+        &NoiseCancellationConfig {
+            provider: NoiseProvider::Rnnoise,
+            intensity: 0.6,
+            voice_activity_threshold: 0.35,
+        },
+        DeepFilterNetRuntimeConfig::default(),
+    );
 
     assert_eq!(first, second);
     assert_ne!(first, third);
+}
+
+#[test]
+fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key() {
+    let default = NoiseConfigKey::new(
+        &NoiseCancellationConfig {
+            provider: NoiseProvider::Deepfilternet,
+            intensity: 0.5,
+            voice_activity_threshold: 0.35,
+        },
+        DeepFilterNetRuntimeConfig::default(),
+    );
+    let custom = NoiseConfigKey::new(
+        &NoiseCancellationConfig {
+            provider: NoiseProvider::Deepfilternet,
+            intensity: 0.5,
+            voice_activity_threshold: 0.35,
+        },
+        DeepFilterNetRuntimeConfig {
+            fft_size: 1920,
+            hop_size: 960,
+            ..DeepFilterNetRuntimeConfig::default()
+        },
+    );
+    let rnnoise_default = NoiseConfigKey::new(
+        &NoiseCancellationConfig {
+            provider: NoiseProvider::Rnnoise,
+            intensity: 0.5,
+            voice_activity_threshold: 0.35,
+        },
+        DeepFilterNetRuntimeConfig::default(),
+    );
+    let rnnoise_custom = NoiseConfigKey::new(
+        &NoiseCancellationConfig {
+            provider: NoiseProvider::Rnnoise,
+            intensity: 0.5,
+            voice_activity_threshold: 0.35,
+        },
+        DeepFilterNetRuntimeConfig {
+            fft_size: 1920,
+            hop_size: 960,
+            ..DeepFilterNetRuntimeConfig::default()
+        },
+    );
+
+    assert_ne!(default, custom);
+    assert_eq!(rnnoise_default, rnnoise_custom);
 }

@@ -11,6 +11,7 @@ use lyre_core::{
     PersistedRoom, PersistedRoomRegistry, PersistedRoomUser, RoomAccessToken, RoomId, UserId,
     UserProfile,
 };
+use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
 use std::{
     path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
@@ -65,6 +66,7 @@ async fn state_file_load_makes_persisted_users_visible() {
         Default::default(),
         None,
         Some(RoomStatePersistence::new(path.clone())),
+        DeepFilterNetRuntimeConfig::default(),
     )
     .unwrap();
     let app = router(state);
@@ -103,6 +105,7 @@ async fn restored_token_authorizes_leave_and_rewrites_state_file() {
         Default::default(),
         None,
         Some(RoomStatePersistence::new(path.clone())),
+        DeepFilterNetRuntimeConfig::default(),
     )
     .unwrap();
     let app = router(state);
@@ -134,6 +137,7 @@ async fn successful_join_writes_user_and_token_to_state_file() {
         Default::default(),
         None,
         Some(RoomStatePersistence::new(path.clone())),
+        DeepFilterNetRuntimeConfig::default(),
     )
     .unwrap();
     let app = router(state);
@@ -172,6 +176,7 @@ async fn failed_persisted_join_rolls_back_user_without_token_response() {
         Default::default(),
         None,
         Some(RoomStatePersistence::new(path.clone())),
+        DeepFilterNetRuntimeConfig::default(),
     )
     .unwrap_err();
 
@@ -180,7 +185,13 @@ async fn failed_persisted_join_rolls_back_user_without_token_response() {
         "{state:#}"
     );
 
-    let state = AppState::with_room_state_persistence(Default::default(), None, None).unwrap();
+    let state = AppState::with_room_state_persistence(
+        Default::default(),
+        None,
+        None,
+        DeepFilterNetRuntimeConfig::default(),
+    )
+    .unwrap();
     state
         .set_room_state_persistence_for_tests(Some(RoomStatePersistence::new(path.clone())))
         .await;
@@ -236,6 +247,7 @@ async fn failed_persisted_leave_rolls_back_user_and_token() {
         Default::default(),
         None,
         Some(RoomStatePersistence::new(path.clone())),
+        DeepFilterNetRuntimeConfig::default(),
     )
     .unwrap();
     state
@@ -288,6 +300,7 @@ fn malformed_state_file_fails_state_construction_with_context() {
         Default::default(),
         None,
         Some(RoomStatePersistence::new(path.clone())),
+        DeepFilterNetRuntimeConfig::default(),
     )
     .unwrap_err();
 
@@ -309,6 +322,7 @@ fn missing_parent_state_file_fails_state_construction_with_context() {
         Default::default(),
         None,
         Some(RoomStatePersistence::new(path)),
+        DeepFilterNetRuntimeConfig::default(),
     )
     .unwrap_err();
 
@@ -316,4 +330,22 @@ fn missing_parent_state_file_fails_state_construction_with_context() {
         format!("{error:#}").contains("Lyre room state parent directory does not exist"),
         "{error:#}"
     );
+}
+
+#[test]
+fn invalid_deepfilternet_runtime_fails_state_construction_with_context() {
+    let error = AppState::with_room_state_persistence(
+        Default::default(),
+        None,
+        None,
+        DeepFilterNetRuntimeConfig {
+            fft_size: 480,
+            hop_size: 480,
+            ..DeepFilterNetRuntimeConfig::default()
+        },
+    )
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains("invalid DeepFilterNet runtime config"));
+    assert!(format!("{error:#}").contains("hop_size * 2 must be <= fft_size"));
 }
