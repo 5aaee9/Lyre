@@ -77,6 +77,18 @@ impl ServerMediaJitterBuffer {
             let rtp_timestamp = self
                 .next_timestamp
                 .expect("jitter buffer timestamp initialized");
+            if let Some(packet) = self.pending.values().next() {
+                let expected_timestamp_gap = sequence_distance(sequence, packet.sequence_number)
+                    as u32
+                    * SERVER_MEDIA_OPUS_FRAME_SIZE as u32;
+                if timestamp_distance(rtp_timestamp, packet.timestamp)
+                    > expected_timestamp_gap as i32
+                {
+                    self.next_sequence = Some(packet.sequence_number);
+                    self.next_timestamp = Some(packet.timestamp);
+                    continue;
+                }
+            }
             outputs.push(ServerMediaJitterBufferOutput::ConcealmentRequired(
                 ServerMediaConcealmentRequired {
                     track_id: self
@@ -98,6 +110,10 @@ impl ServerMediaJitterBuffer {
 
 fn sequence_distance(from: u16, to: u16) -> i16 {
     to.wrapping_sub(from) as i16
+}
+
+fn timestamp_distance(from: u32, to: u32) -> i32 {
+    to.wrapping_sub(from) as i32
 }
 
 #[cfg(test)]
@@ -174,6 +190,26 @@ mod tests {
             ServerMediaJitterBufferOutput::ConcealmentRequired(event)
                 if event.sequence_number == 21 && event.rtp_timestamp == 20_960
         ));
+        assert_eq!(emitted_sequences(&outputs), vec![22, 23, 24, 25]);
+    }
+
+    #[test]
+    fn skips_concealment_when_timestamp_gap_indicates_discontinuous_silence() {
+        let mut buffer = ServerMediaJitterBuffer::default();
+
+        assert_eq!(
+            emitted_sequences(&buffer.push(packet(20, 20_000))),
+            vec![20]
+        );
+        assert!(buffer.push(packet(22, 40_000)).is_empty());
+        assert!(buffer.push(packet(23, 40_960)).is_empty());
+        assert!(buffer.push(packet(24, 41_920)).is_empty());
+        let outputs = buffer.push(packet(25, 42_880));
+
+        assert!(outputs.iter().all(|output| !matches!(
+            output,
+            ServerMediaJitterBufferOutput::ConcealmentRequired(_)
+        )));
         assert_eq!(emitted_sequences(&outputs), vec![22, 23, 24, 25]);
     }
 

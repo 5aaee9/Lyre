@@ -67,6 +67,7 @@
 - DeepFilterNet DSP processing now preserves continuous stream state across decoded PCM batches without injecting synthetic silence at every API call boundary.
 - Server-media packet loss concealment now preserves forward PCM sample order while fading synthetic frames, avoiding short high-frequency artifacts from reversed waveform playback.
 - Server-media Opus egress now advertises the same mono channel count that the Rust encoder emits, avoiding a mono payload/stereo track mismatch.
+- Server-media jitter buffering now skips packet-loss concealment across RTP timestamp discontinuities so speech after silence does not get prefixed by synthetic old PCM.
 
 ## Next
 
