@@ -5,6 +5,7 @@ use crate::{
     processed_audio_webrtc_egress_pump::ProcessedAudioWebRtcEgressPump,
     server_media_runtime_pump::ServerMediaRuntimePump,
     signalling::{route_signal_message, PeerHub, SignalMessage, SignalPayload},
+    state_persistence::RoomStatePersistence,
 };
 use axum::{
     extract::{
@@ -28,7 +29,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tower_http::{
     cors::CorsLayer,
     trace::{DefaultOnResponse, TraceLayer},
@@ -48,6 +49,8 @@ pub struct AppState {
     pub peers: Arc<PeerHub>,
     pub ice_servers: Arc<Vec<IceServerConfig>>,
     pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
+    room_state_persistence: Arc<Mutex<Option<RoomStatePersistence>>>,
+    pub room_state_persistence_lock: Arc<Mutex<()>>,
 }
 
 impl Default for AppState {
@@ -61,6 +64,19 @@ impl AppState {
         ice_servers: Vec<IceServerConfig>,
         turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
     ) -> Self {
+        Self::with_room_state_persistence(ice_servers, turn_rest_credentials, None)
+            .expect("in-memory AppState construction must not fail")
+    }
+
+    pub fn with_room_state_persistence(
+        ice_servers: Vec<IceServerConfig>,
+        turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
+        room_state_persistence: Option<RoomStatePersistence>,
+    ) -> anyhow::Result<Self> {
+        let registry = match &room_state_persistence {
+            Some(persistence) => persistence.load_registry()?,
+            None => RoomRegistry::new(),
+        };
         let media_relays = Arc::new(MediaRelayRegistry::new());
         let server_media_sessions = Arc::new(ServerMediaSessionRegistry::new());
         let server_media_negotiator = Arc::new(ServerMediaNegotiator::new(
@@ -78,8 +94,8 @@ impl AppState {
             Arc::clone(&media_egress),
             Arc::clone(&server_media_negotiator),
         ));
-        Self {
-            registry: Arc::new(RoomRegistry::new()),
+        Ok(Self {
+            registry: Arc::new(registry),
             media_runtime,
             media_egress,
             processed_audio_webrtc_egress_pump,
@@ -90,7 +106,17 @@ impl AppState {
             peers: Arc::new(PeerHub::new()),
             ice_servers: Arc::new(ice_servers),
             turn_rest_credentials,
-        }
+            room_state_persistence: Arc::new(Mutex::new(room_state_persistence)),
+            room_state_persistence_lock: Arc::new(Mutex::new(())),
+        })
+    }
+
+    #[cfg(test)]
+    pub async fn set_room_state_persistence_for_tests(
+        &self,
+        persistence: Option<RoomStatePersistence>,
+    ) {
+        *self.room_state_persistence.lock().await = persistence;
     }
 
     pub fn process_media_frame(&self, frame: AudioFrame) -> Result<(), MediaRelayError> {
@@ -139,6 +165,44 @@ impl AppState {
         let status = self.media_relays.start(room_id.clone(), request);
         self.processed_audio_webrtc_egress_pump.start(room_id);
         status
+    }
+
+    pub async fn join_room_persisted(
+        &self,
+        room_id: RoomId,
+        request: JoinRoomRequest,
+    ) -> Result<lyre_core::JoinRoomResponse, ApiError> {
+        let _guard = self.room_state_persistence_lock.lock().await;
+        let persistence = self.room_state_persistence.lock().await.clone();
+        let Some(persistence) = persistence else {
+            return Ok(self.registry.join(room_id, request));
+        };
+        let rollback = self.registry.to_persisted();
+        let response = self.registry.join(room_id, request);
+        if let Err(error) = persistence.save_registry(&self.registry) {
+            self.registry.replace_with_persisted(rollback);
+            return Err(ApiError::from(error));
+        }
+        Ok(response)
+    }
+
+    pub async fn leave_room_persisted(
+        &self,
+        room_id: &RoomId,
+        user_id: &lyre_core::UserId,
+    ) -> Result<lyre_core::RoomSnapshot, ApiError> {
+        let _guard = self.room_state_persistence_lock.lock().await;
+        let persistence = self.room_state_persistence.lock().await.clone();
+        let Some(persistence) = persistence else {
+            return Ok(self.registry.leave(room_id, user_id));
+        };
+        let rollback = self.registry.to_persisted();
+        let snapshot = self.registry.leave(room_id, user_id);
+        if let Err(error) = persistence.save_registry(&self.registry) {
+            self.registry.replace_with_persisted(rollback);
+            return Err(ApiError::from(error));
+        }
+        Ok(snapshot)
     }
 }
 
@@ -279,7 +343,7 @@ async fn join_room(
     Json(request): Json<JoinRoomRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    let response = state.registry.join(room_id.clone(), request);
+    let response = state.join_room_persisted(room_id.clone(), request).await?;
     state.peers.user_joined(&room_id, response.user.clone());
     Ok((StatusCode::CREATED, Json(response)))
 }
@@ -292,7 +356,9 @@ async fn leave_room(
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
     authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
-    let snapshot = state.registry.leave(&room_id, &request.user_id);
+    let snapshot = state
+        .leave_room_persisted(&room_id, &request.user_id)
+        .await?;
     state.peers.user_left(&room_id, &request.user_id);
     Ok(Json(snapshot))
 }

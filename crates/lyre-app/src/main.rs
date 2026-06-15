@@ -18,12 +18,14 @@ async fn main() -> Result<()> {
             let ice_servers = args.effective_ice_servers()?;
             let turn_rest_credentials = args.effective_turn_rest_credentials()?;
             let embedded_turn = args.effective_embedded_turn_config()?;
+            let state_file = args.effective_state_file()?;
             lyre_web::serve(ServeConfig {
                 host,
                 port,
                 ice_servers,
                 turn_rest_credentials,
                 embedded_turn,
+                state_file,
             })
             .await
             .context("failed to run Lyre server")?;

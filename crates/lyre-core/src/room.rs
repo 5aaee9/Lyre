@@ -70,6 +70,29 @@ pub struct LeaveRoomRequest {
     pub user_id: UserId,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PersistedRoomRegistry {
+    pub rooms: Vec<PersistedRoom>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PersistedRoom {
+    pub room_id: RoomId,
+    pub users: Vec<PersistedRoomUser>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PersistedRoomUser {
+    pub profile: UserProfile,
+    pub access_token: RoomAccessToken,
+}
+
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum PersistedRoomRegistryError {
+    #[error("persisted room id is invalid")]
+    InvalidRoomId(#[from] crate::RoomIdError),
+}
+
 #[derive(Debug, Default)]
 struct RoomState {
     users: DashMap<UserId, UserProfile>,
@@ -84,6 +107,12 @@ pub struct RoomRegistry {
 impl RoomRegistry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn from_persisted(persisted: PersistedRoomRegistry) -> Self {
+        let registry = Self::new();
+        registry.replace_with_persisted(persisted);
+        registry
     }
 
     pub fn snapshot(&self, room_id: RoomId) -> RoomSnapshot {
@@ -161,6 +190,56 @@ impl RoomRegistry {
             Ok(())
         } else {
             Err(RoomAccessError::Invalid)
+        }
+    }
+
+    pub fn to_persisted(&self) -> PersistedRoomRegistry {
+        let mut rooms = self
+            .rooms
+            .iter()
+            .map(|room_entry| {
+                let mut users = room_entry
+                    .value()
+                    .users
+                    .iter()
+                    .filter_map(|user_entry| {
+                        let access_token = room_entry
+                            .value()
+                            .access_tokens
+                            .get(user_entry.key())
+                            .map(|token| token.value().clone())?;
+                        Some(PersistedRoomUser {
+                            profile: user_entry.value().clone(),
+                            access_token,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                users.sort_by(|left, right| {
+                    left.profile
+                        .nickname
+                        .cmp(&right.profile.nickname)
+                        .then(left.profile.id.cmp(&right.profile.id))
+                });
+                PersistedRoom {
+                    room_id: room_entry.key().clone(),
+                    users,
+                }
+            })
+            .collect::<Vec<_>>();
+        rooms.sort_by(|left, right| left.room_id.cmp(&right.room_id));
+        PersistedRoomRegistry { rooms }
+    }
+
+    pub fn replace_with_persisted(&self, persisted: PersistedRoomRegistry) {
+        self.rooms.clear();
+        for persisted_room in persisted.rooms {
+            let room = self.rooms.entry(persisted_room.room_id).or_default();
+            for persisted_user in persisted_room.users {
+                let user_id = persisted_user.profile.id.clone();
+                room.users.insert(user_id.clone(), persisted_user.profile);
+                room.access_tokens
+                    .insert(user_id, persisted_user.access_token);
+            }
         }
     }
 

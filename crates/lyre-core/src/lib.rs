@@ -3,6 +3,7 @@ pub mod media;
 pub mod media_runtime;
 pub mod noise;
 pub mod room;
+pub mod room_persistence;
 pub mod webrtc;
 
 #[cfg(test)]
@@ -20,8 +21,9 @@ pub use media_runtime::{
 };
 pub use noise::{supported_noise_providers, NoiseCancellationConfig, NoiseProvider};
 pub use room::{
-    JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, RoomAccessError, RoomAccessToken,
-    RoomRegistry, RoomSnapshot, UserProfile,
+    JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, PersistedRoom, PersistedRoomRegistry,
+    PersistedRoomRegistryError, PersistedRoomUser, RoomAccessError, RoomAccessToken, RoomRegistry,
+    RoomSnapshot, UserProfile,
 };
 pub use webrtc::{
     current_media_topology, default_ice_servers, generate_turn_rest_credentials,

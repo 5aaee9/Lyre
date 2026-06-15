@@ -193,3 +193,9 @@
 - Mutating room, signalling, media relay, and server-media routes validate bearer tokens; public discovery routes remain unauthenticated.
 - WebSocket signalling uses an `access_token` query parameter because browser WebSockets cannot set `Authorization`; request tracing records only redacted paths.
 - TURN remains NAT traversal only. Server-side denoise still requires the server-media decode/process/broadcast path. Future client-side denoise should use Rust WASM.
+
+## 2026-06-15 Room State Persistence
+
+- Added optional JSON file persistence for anonymous room users and access tokens via `--state-file` / `LYRE_STATE_FILE`.
+- Persisted state is limited to the room registry. WebSocket peer handles, WebRTC sessions, relay pumps, processed audio buffers, TURN state, and media runtime state remain process-local.
+- Persisted join/leave mutations are serialized and roll back in-memory registry state if the state file write fails, so failed leaves do not resurrect tokens after restart.

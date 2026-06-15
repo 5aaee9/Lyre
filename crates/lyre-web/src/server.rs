@@ -1,7 +1,7 @@
-use crate::{api::AppState, router};
+use crate::{api::AppState, router, state_persistence::RoomStatePersistence};
 use anyhow::{Context, Result};
 use lyre_core::{IceServerConfig, TurnRestCredentialsConfig};
-use std::{net::SocketAddr, str::FromStr};
+use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 use tokio::net::TcpListener;
 
 #[derive(Debug, Clone)]
@@ -11,6 +11,7 @@ pub struct ServeConfig {
     pub ice_servers: Vec<IceServerConfig>,
     pub turn_rest_credentials: Option<TurnRestCredentialsConfig>,
     pub embedded_turn: Option<lyre_turn::EmbeddedTurnConfig>,
+    pub state_file: Option<PathBuf>,
 }
 
 impl ServeConfig {
@@ -26,16 +27,17 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
         .await
         .with_context(|| format!("failed to bind Lyre API listener at {addr}"))?;
     tracing::info!(%addr, "Lyre API listening");
+    let room_state_persistence = config.state_file.clone().map(RoomStatePersistence::new);
+    let state = AppState::with_room_state_persistence(
+        config.ice_servers,
+        config.turn_rest_credentials,
+        room_state_persistence,
+    )
+    .context("failed to initialize Lyre room state")?;
     let api = async move {
-        axum::serve(
-            listener,
-            router(AppState::new(
-                config.ice_servers,
-                config.turn_rest_credentials,
-            )),
-        )
-        .await
-        .context("Lyre API server failed")
+        axum::serve(listener, router(state))
+            .await
+            .context("Lyre API server failed")
     };
     let turn = config.embedded_turn.map(lyre_turn::run_embedded_turn);
     run_api_and_optional_turn(api, turn).await

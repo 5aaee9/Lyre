@@ -9,6 +9,7 @@ pub mod server;
 pub mod server_media_runtime;
 pub mod server_media_runtime_pump;
 pub mod signalling;
+pub mod state_persistence;
 
 #[cfg(test)]
 mod api_media_broadcast_tests;
@@ -32,6 +33,8 @@ mod server_media_runtime_pump_tests;
 mod server_media_runtime_tests;
 #[cfg(test)]
 mod signalling_tests;
+#[cfg(test)]
+mod state_persistence_tests;
 
 pub use api::{router, AppState};
 pub use server::{serve, ServeConfig};

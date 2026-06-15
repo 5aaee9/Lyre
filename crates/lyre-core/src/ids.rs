@@ -11,7 +11,7 @@ pub enum RoomIdError {
     Blank,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 pub struct RoomId(String);
 
@@ -50,6 +50,16 @@ impl FromStr for RoomId {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::parse_boundary(value)
+    }
+}
+
+impl<'de> Deserialize<'de> for RoomId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse_boundary(value).map_err(serde::de::Error::custom)
     }
 }
 

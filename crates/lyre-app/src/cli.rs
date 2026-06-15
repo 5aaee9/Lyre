@@ -4,7 +4,7 @@ use lyre_core::{
     DEFAULT_ROOM_ID,
 };
 use serde::Serialize;
-use std::env;
+use std::{env, path::PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Parser)]
@@ -57,6 +57,8 @@ pub struct ServeArgs {
         env = "LYRE_EMBEDDED_TURN_PORT_RANGE"
     )]
     pub embedded_turn_port_range: String,
+    #[arg(long, env = "LYRE_STATE_FILE")]
+    pub state_file: Option<String>,
 }
 
 impl ServeArgs {
@@ -153,6 +155,21 @@ impl ServeArgs {
             static_auth_secret: turn_rest.secret,
         }))
     }
+
+    pub fn effective_state_file(&self) -> Result<Option<PathBuf>, StateFileConfigError> {
+        let Some(path) = self
+            .state_file
+            .clone()
+            .or_else(|| env::var("LYRE_STATE_FILE").ok())
+        else {
+            return Ok(None);
+        };
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            return Err(StateFileConfigError::BlankPath);
+        }
+        Ok(Some(PathBuf::from(trimmed)))
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -208,6 +225,12 @@ pub enum TurnRestConfigError {
     InvalidEmbeddedTurnListen { value: String },
     #[error("embedded TURN external address must be an IP socket address, got `{value}`")]
     InvalidEmbeddedTurnExternal { value: String },
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum StateFileConfigError {
+    #[error("state file path must not be blank")]
+    BlankPath,
 }
 
 fn parse_ice_server_entries(
@@ -299,6 +322,7 @@ mod tests {
             embedded_turn_external: "127.0.0.1:3478".to_owned(),
             embedded_turn_realm: "lyre.local".to_owned(),
             embedded_turn_port_range: "49152..65535".to_owned(),
+            state_file: None,
         }
     }
 
@@ -717,6 +741,71 @@ mod tests {
                 }
                 Commands::Config(_) => panic!("expected serve"),
             }
+        }
+    }
+
+    #[test]
+    fn parses_state_file_cli_arg() {
+        let cli =
+            Cli::try_parse_from(["lyre", "serve", "--state-file", "/tmp/lyre-state.json"]).unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                assert_eq!(
+                    args.effective_state_file().unwrap().unwrap(),
+                    PathBuf::from("/tmp/lyre-state.json")
+                );
+            }
+            Commands::Config(_) => panic!("expected serve"),
+        }
+    }
+
+    #[test]
+    fn state_file_env_enables_persistence() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("LYRE_STATE_FILE", "/tmp/lyre-env-state.json");
+        let cli = Cli::try_parse_from(["lyre", "serve"]).unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                assert_eq!(
+                    args.effective_state_file().unwrap().unwrap(),
+                    PathBuf::from("/tmp/lyre-env-state.json")
+                );
+            }
+            Commands::Config(_) => panic!("expected serve"),
+        }
+        std::env::remove_var("LYRE_STATE_FILE");
+    }
+
+    #[test]
+    fn state_file_cli_takes_precedence_over_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("LYRE_STATE_FILE", "/tmp/lyre-env-state.json");
+        let cli =
+            Cli::try_parse_from(["lyre", "serve", "--state-file", "/tmp/lyre-cli-state.json"])
+                .unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                assert_eq!(
+                    args.effective_state_file().unwrap().unwrap(),
+                    PathBuf::from("/tmp/lyre-cli-state.json")
+                );
+            }
+            Commands::Config(_) => panic!("expected serve"),
+        }
+        std::env::remove_var("LYRE_STATE_FILE");
+    }
+
+    #[test]
+    fn rejects_blank_state_file_path() {
+        let cli = Cli::try_parse_from(["lyre", "serve", "--state-file", " "]).unwrap();
+        match cli.command {
+            Commands::Serve(args) => {
+                assert_eq!(
+                    args.effective_state_file(),
+                    Err(StateFileConfigError::BlankPath)
+                );
+            }
+            Commands::Config(_) => panic!("expected serve"),
         }
     }
 

@@ -9,6 +9,7 @@ use serde::Serialize;
 pub enum ApiError {
     BadRoomId(RoomIdError),
     MediaRelay(MediaRelayError),
+    Persistence(anyhow::Error),
     ServerMediaNegotiation(ServerMediaNegotiationError),
     TurnRestCredentials(TurnRestCredentialsError),
     Unauthorized,
@@ -43,11 +44,24 @@ impl From<ServerMediaNegotiationError> for ApiError {
     }
 }
 
+impl From<anyhow::Error> for ApiError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Persistence(error)
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let (status, error) = match self {
             Self::BadRoomId(error) => (StatusCode::BAD_REQUEST, error.to_string()),
             Self::MediaRelay(error) => (StatusCode::CONFLICT, error.to_string()),
+            Self::Persistence(error) => {
+                tracing::error!(error = %format!("{error:#}"), "room state persistence failed");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "room state persistence failed".to_owned(),
+                )
+            }
             Self::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 "room access token is invalid".to_owned(),
