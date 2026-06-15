@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "./page";
 import { joinRoom } from "@/lib/api";
-import { resetSettingsStoreForTests, useSettingsStore } from "@/lib/settings-store";
+import { defaultNoiseConfig, resetSettingsStoreForTests, useSettingsStore } from "@/lib/settings-store";
 
 const navigation = vi.hoisted(() => ({
   push: vi.fn()
@@ -32,7 +32,12 @@ describe("Home", () => {
         id: "user_a",
         nickname: "User A",
         joined_at: "2026-06-14T00:00:00Z",
-        noise: { provider: "deepfilternet", intensity: 0.8, voice_activity_threshold: 0.15 }
+        noise: {
+          provider: "deepfilternet",
+          intensity: 0.8,
+          voice_activity_threshold: 0.15,
+          dpdfnet: defaultNoiseConfig.dpdfnet
+        }
       },
       room: {
         room_id: "DEFAULT",
@@ -42,7 +47,12 @@ describe("Home", () => {
   });
 
   it("keeps stored noise numeric parameters when changing provider before joining", async () => {
-    useSettingsStore.getState().setNoise({ provider: "rnnoise", intensity: 0.8, voice_activity_threshold: 0.15 });
+    useSettingsStore.getState().setNoise({
+      provider: "rnnoise",
+      intensity: 0.8,
+      voice_activity_threshold: 0.15,
+      dpdfnet: defaultNoiseConfig.dpdfnet
+    });
 
     render(<Home />);
 
@@ -52,7 +62,12 @@ describe("Home", () => {
     await waitFor(() => {
       expect(joinRoom).toHaveBeenCalledWith("DEFAULT", {
         nickname: "",
-        noise: { provider: "deepfilternet", intensity: 0.8, voice_activity_threshold: 0.15 }
+        noise: {
+          provider: "deepfilternet",
+          intensity: 0.8,
+          voice_activity_threshold: 0.15,
+          dpdfnet: defaultNoiseConfig.dpdfnet
+        }
       });
     });
     expect(JSON.parse(sessionStorage.getItem("lyre.roomSession") ?? "{}")).toMatchObject({

@@ -44,6 +44,27 @@ export const defaultSettingsState = {
   audioProcessing: defaultAudioProcessingConfig
 };
 
+function mergeSettingsState(persistedState: unknown, currentState: SettingsState): SettingsState {
+  const persisted = persistedState as Partial<SettingsState>;
+
+  return {
+    ...currentState,
+    ...persisted,
+    noise: {
+      ...defaultNoiseConfig,
+      ...persisted.noise,
+      dpdfnet: {
+        ...defaultNoiseConfig.dpdfnet,
+        ...persisted.noise?.dpdfnet
+      }
+    },
+    audioProcessing: {
+      ...defaultAudioProcessingConfig,
+      ...persisted.audioProcessing
+    }
+  };
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -56,7 +77,8 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "lyre.settings",
-      storage: createJSONStorage(() => localStorage)
+      storage: createJSONStorage(() => localStorage),
+      merge: mergeSettingsState
     }
   )
 );

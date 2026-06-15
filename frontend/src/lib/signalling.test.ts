@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { encodeAnswer, encodeIceCandidate, encodeOffer, reducePresence, roomSocketUrl } from "./signalling";
+import { defaultNoiseConfig } from "./settings-store";
 
 describe("signalling", () => {
   beforeEach(() => {
@@ -29,7 +30,12 @@ describe("signalling", () => {
       id: "user_a",
       nickname: "Ada",
       joined_at: new Date().toISOString(),
-      noise: { provider: "off" as const, intensity: 0.5, voice_activity_threshold: 0.35 }
+      noise: {
+        provider: "off" as const,
+        intensity: 0.5,
+        voice_activity_threshold: 0.35,
+        dpdfnet: defaultNoiseConfig.dpdfnet
+      }
     };
     let state = reducePresence(
       {},

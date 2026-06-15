@@ -45,6 +45,7 @@ import {
   type ServerMediaAnswer as WebrpcServerMediaAnswer,
   type ServerMediaIceCandidate as WebrpcServerMediaIceCandidate
 } from "./lyre.gen";
+import { defaultNoiseConfig } from "./settings-store";
 
 const providerFromGenerated: NoiseProvider = generatedNoiseProviderToRest(WebrpcNoiseProvider.OFF);
 void providerFromGenerated;
@@ -55,7 +56,7 @@ const joinResponseFromGeneratedDerivedShape: JoinRoomResponse = {
     id: "user_a",
     nickname: "Ada",
     joined_at: "2026-06-14T00:00:00Z",
-    noise: { provider: "off", intensity: 0.5, voice_activity_threshold: 0.35 }
+    noise: { provider: "off", intensity: 0.5, voice_activity_threshold: 0.35, dpdfnet: defaultNoiseConfig.dpdfnet }
   },
   room: {
     room_id: "DEFAULT",
@@ -70,7 +71,12 @@ const generatedJoinRoomResponseContract: WebrpcJoinRoomResponse = {
     id: "user_a",
     nickname: "Ada",
     joinedAt: "2026-06-14T00:00:00Z",
-    noise: { provider: WebrpcNoiseProvider.OFF, intensity: 0.5, voiceActivityThreshold: 0.35 }
+    noise: {
+      provider: WebrpcNoiseProvider.OFF,
+      intensity: 0.5,
+      voiceActivityThreshold: 0.35,
+      dpdfnet: defaultNoiseConfig.dpdfnet
+    }
   },
   room: {
     roomID: "DEFAULT",
@@ -94,7 +100,7 @@ const mediaRelayFromGeneratedDerivedShape: MediaRelayRoomStatus = {
   mode: "media_relay",
   server_side_audio_processing: false,
   server_side_noise_cancelling: false,
-  noise: { provider: "off", intensity: 0.5, voice_activity_threshold: 0.35 },
+  noise: { provider: "off", intensity: 0.5, voice_activity_threshold: 0.35, dpdfnet: defaultNoiseConfig.dpdfnet },
   participants: [{ user_id: "user_a", tracks: [{ track_id: "audio-main", kind: "audio" }] }]
 };
 void mediaRelayFromGeneratedDerivedShape;
@@ -105,7 +111,12 @@ const generatedMediaRelayContract: WebrpcMediaRelayRoomStatus = {
   mode: WebrpcMediaRelayMode.MEDIA_RELAY,
   serverSideAudioProcessing: false,
   serverSideNoiseCancelling: false,
-  noise: { provider: WebrpcNoiseProvider.OFF, intensity: 0.5, voiceActivityThreshold: 0.35 },
+  noise: {
+    provider: WebrpcNoiseProvider.OFF,
+    intensity: 0.5,
+    voiceActivityThreshold: 0.35,
+    dpdfnet: defaultNoiseConfig.dpdfnet
+  },
   participants: [{ userID: "user_a", tracks: [{ trackID: "audio-main", kind: WebrpcMediaTrackKind.AUDIO }] }]
 };
 void generatedMediaRelayContract;
@@ -212,7 +223,12 @@ describe("api", () => {
   });
 
   it("serializes join request body", async () => {
-    const noise = { provider: "rnnoise" as const, intensity: 0.8, voice_activity_threshold: 0.15 };
+    const noise = {
+      provider: "rnnoise" as const,
+      intensity: 0.8,
+      voice_activity_threshold: 0.15,
+      dpdfnet: defaultNoiseConfig.dpdfnet
+    };
     await joinRoom("DEFAULT", { nickname: "Ada", noise });
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/join", {
@@ -269,7 +285,12 @@ describe("api", () => {
   });
 
   it("serializes media relay start request body", async () => {
-    const noise = { provider: "rnnoise" as const, intensity: 0.8, voice_activity_threshold: 0.2 };
+    const noise = {
+      provider: "rnnoise" as const,
+      intensity: 0.8,
+      voice_activity_threshold: 0.2,
+      dpdfnet: defaultNoiseConfig.dpdfnet
+    };
     await startMediaRelay("DEFAULT", noise, "token_a");
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/start", {

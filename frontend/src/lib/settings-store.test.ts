@@ -58,4 +58,28 @@ describe("settings store", () => {
       }
     });
   });
+
+  it("hydrates legacy noise settings with DPDFNet defaults", async () => {
+    localStorage.setItem(
+      "lyre.settings",
+      JSON.stringify({
+        state: {
+          noise: {
+            provider: "dpdfnet",
+            intensity: 0.6,
+            voice_activity_threshold: 0.2
+          }
+        }
+      })
+    );
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(readSettingsSnapshot().noise).toEqual({
+      provider: "dpdfnet",
+      intensity: 0.6,
+      voice_activity_threshold: 0.2,
+      dpdfnet: defaultNoiseConfig.dpdfnet
+    });
+  });
 });
