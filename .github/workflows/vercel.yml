@@ -18,10 +18,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
     steps:
@@ -31,13 +29,18 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Validate Vercel configuration
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$VERCEL_ORG_ID"
+          test -n "$VERCEL_PROJECT_ID"
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefix frontend
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
       - name: Pull Vercel environment
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel --cwd frontend pull --yes --environment=production --token="$VERCEL_TOKEN"
       - name: Build frontend
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel --cwd frontend build --prod --token="$VERCEL_TOKEN"
       - name: Deploy frontend
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel --cwd frontend deploy --prebuilt --prod --token="$VERCEL_TOKEN"
