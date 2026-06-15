@@ -33,7 +33,7 @@ describe("storage", () => {
   it("stores nickname and noise config", () => {
     writeNickname("Ada");
     writeNoiseConfig({ provider: "rnnoise", intensity: 0.6, voice_activity_threshold: 0.2 });
-    writeAudioProcessingConfig({ echoCancellation: false, autoGainControl: true });
+    writeAudioProcessingConfig({ echoCancellation: false, autoGainControl: true, noiseSuppression: true });
 
     expect(readNickname()).toBe("Ada");
     expect(readNoiseConfig()).toEqual({
@@ -43,7 +43,20 @@ describe("storage", () => {
     });
     expect(readAudioProcessingConfig()).toEqual({
       echoCancellation: false,
-      autoGainControl: true
+      autoGainControl: true,
+      noiseSuppression: true
+    });
+  });
+
+  it("fills missing browser audio processing fields from defaults", () => {
+    writeAudioProcessingConfig({ echoCancellation: false, autoGainControl: true } as ReturnType<
+      typeof readAudioProcessingConfig
+    >);
+
+    expect(readAudioProcessingConfig()).toEqual({
+      echoCancellation: false,
+      autoGainControl: true,
+      noiseSuppression: false
     });
   });
 });

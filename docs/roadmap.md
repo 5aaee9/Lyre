@@ -35,7 +35,7 @@
 - Frontend server-media audio mode with browser-to-server WebRTC negotiation and playback of remote processed server audio.
 - Removed peer mesh audio mode so room audio runs through server relay only.
 - Zustand-backed frontend settings store with persisted nickname, room preference, noise settings, and browser audio processing controls.
-- Browser microphone capture now exposes persisted echo cancellation and auto gain control settings, both enabled by default.
+- Browser microphone capture now exposes persisted echo cancellation, auto gain control, and browser noise suppression settings; echo cancellation and auto gain control default on while browser noise suppression defaults off.
 - Per-user server-media cleanup endpoint and frontend Leave/startup-failure cleanup flow.
 - Room-scoped access tokens for mutating room, signalling, media relay, and server-media routes.
 - Optional JSON file persistence for anonymous room/user/session access state.

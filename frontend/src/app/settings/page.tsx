@@ -103,6 +103,18 @@ export default function SettingsPage() {
         />
         Auto gain control
       </label>
+      <label className="flex items-center gap-2 text-sm">
+        <Switch
+          checked={audioProcessing.noiseSuppression}
+          onChange={(event) =>
+            setAudioProcessing({
+              ...audioProcessing,
+              noiseSuppression: event.target.checked
+            })
+          }
+        />
+        Browser noise suppression
+      </label>
       <Button onClick={save}>Save</Button>
       {saved ? <p className="text-sm text-[#1f6f50]">Saved</p> : null}
     </section>

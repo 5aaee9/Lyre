@@ -36,7 +36,8 @@ describe("webrtc", () => {
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
       audio: {
         echoCancellation: true,
-        autoGainControl: true
+        autoGainControl: true,
+        noiseSuppression: false
       }
     });
   });
@@ -44,7 +45,8 @@ describe("webrtc", () => {
   it("uses stored browser audio processing constraints", async () => {
     useSettingsStore.getState().setAudioProcessing({
       echoCancellation: false,
-      autoGainControl: true
+      autoGainControl: true,
+      noiseSuppression: true
     });
 
     await expect(openLocalAudioStream()).resolves.toBe(stream);
@@ -52,7 +54,8 @@ describe("webrtc", () => {
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
       audio: {
         echoCancellation: false,
-        autoGainControl: true
+        autoGainControl: true,
+        noiseSuppression: true
       }
     });
   });
@@ -72,7 +75,8 @@ describe("webrtc", () => {
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
       audio: {
         echoCancellation: true,
-        autoGainControl: true
+        autoGainControl: true,
+        noiseSuppression: false
       }
     });
     expect(peerConstructor).toHaveBeenCalledOnce();

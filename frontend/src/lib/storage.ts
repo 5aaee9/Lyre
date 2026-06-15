@@ -1,5 +1,6 @@
 import type { NoiseCancellationConfig } from "./api";
 import {
+  defaultAudioProcessingConfig,
   readSettingsSnapshot,
   type AudioProcessingConfig,
   useSettingsStore
@@ -38,7 +39,10 @@ export function writeNoiseConfig(config: NoiseCancellationConfig): void {
 }
 
 export function readAudioProcessingConfig(): AudioProcessingConfig {
-  return readSettingsSnapshot().audioProcessing;
+  return {
+    ...defaultAudioProcessingConfig,
+    ...readSettingsSnapshot().audioProcessing
+  };
 }
 
 export function writeAudioProcessingConfig(config: AudioProcessingConfig): void {

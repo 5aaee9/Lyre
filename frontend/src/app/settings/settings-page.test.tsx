@@ -28,7 +28,8 @@ describe("SettingsPage", () => {
     });
     expect(readSettingsSnapshot().audioProcessing).toEqual({
       echoCancellation: false,
-      autoGainControl: true
+      autoGainControl: true,
+      noiseSuppression: false
     });
   });
 });

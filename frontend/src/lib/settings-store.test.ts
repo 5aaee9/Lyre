@@ -34,7 +34,8 @@ describe("settings store", () => {
     });
     useSettingsStore.getState().setAudioProcessing({
       echoCancellation: false,
-      autoGainControl: true
+      autoGainControl: true,
+      noiseSuppression: true
     });
 
     expect(JSON.parse(localStorage.getItem("lyre.settings") ?? "{}")).toMatchObject({
@@ -49,7 +50,8 @@ describe("settings store", () => {
         },
         audioProcessing: {
           echoCancellation: false,
-          autoGainControl: true
+          autoGainControl: true,
+          noiseSuppression: true
         }
       }
     });

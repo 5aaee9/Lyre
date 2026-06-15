@@ -6,7 +6,8 @@ export async function openLocalAudioStream(): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: audioProcessing.echoCancellation,
-      autoGainControl: audioProcessing.autoGainControl
+      autoGainControl: audioProcessing.autoGainControl,
+      noiseSuppression: audioProcessing.noiseSuppression
     }
   });
 }

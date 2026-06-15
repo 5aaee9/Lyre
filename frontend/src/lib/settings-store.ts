@@ -5,6 +5,7 @@ import type { NoiseCancellationConfig } from "./api";
 export type AudioProcessingConfig = {
   echoCancellation: boolean;
   autoGainControl: boolean;
+  noiseSuppression: boolean;
 };
 
 type SettingsState = {
@@ -28,7 +29,8 @@ export const defaultNoiseConfig: NoiseCancellationConfig = {
 
 export const defaultAudioProcessingConfig: AudioProcessingConfig = {
   echoCancellation: true,
-  autoGainControl: true
+  autoGainControl: true,
+  noiseSuppression: false
 };
 
 export const defaultSettingsState = {
