@@ -34,24 +34,32 @@ pub enum ServerMediaDecodeError {
 
 pub struct ServerMediaOpusDecoder {
     decoder: OpusDecoder,
+    next_rtp_timestamp: Option<u32>,
 }
 
 impl ServerMediaOpusDecoder {
     pub fn new() -> Result<Self, ServerMediaDecodeError> {
-        let decoder = OpusDecoder::new(
-            SERVER_MEDIA_OPUS_SAMPLE_RATE_HZ as i32,
-            SERVER_MEDIA_OPUS_CHANNELS as usize,
-        )
-        .map_err(|source| ServerMediaDecodeError::InvalidDecoderConfig {
-            message: source.to_owned(),
-        })?;
-        Ok(Self { decoder })
+        Ok(Self {
+            decoder: new_opus_decoder()?,
+            next_rtp_timestamp: None,
+        })
+    }
+
+    fn reset(&mut self) -> Result<(), ServerMediaDecodeError> {
+        self.decoder = new_opus_decoder()?;
+        Ok(())
     }
 
     pub fn decode_packet(
         &mut self,
         packet: &ServerMediaRtpPacket,
     ) -> Result<ServerMediaPcmFrame, ServerMediaDecodeError> {
+        if self
+            .next_rtp_timestamp
+            .is_some_and(|next| next != packet.timestamp)
+        {
+            self.reset()?;
+        }
         let mut samples =
             vec![0.0_f32; SERVER_MEDIA_OPUS_FRAME_SIZE * SERVER_MEDIA_OPUS_CHANNELS as usize];
         self.decoder
@@ -59,6 +67,11 @@ impl ServerMediaOpusDecoder {
             .map_err(|source| ServerMediaDecodeError::Decode {
                 message: source.to_owned(),
             })?;
+        self.next_rtp_timestamp = Some(
+            packet
+                .timestamp
+                .wrapping_add(SERVER_MEDIA_OPUS_FRAME_SIZE as u32),
+        );
         Ok(ServerMediaPcmFrame {
             track_id: packet.track_id.clone(),
             sequence_number: packet.sequence_number,
@@ -68,6 +81,17 @@ impl ServerMediaOpusDecoder {
             samples,
         })
     }
+}
+
+fn new_opus_decoder() -> Result<OpusDecoder, ServerMediaDecodeError> {
+    let decoder = OpusDecoder::new(
+        SERVER_MEDIA_OPUS_SAMPLE_RATE_HZ as i32,
+        SERVER_MEDIA_OPUS_CHANNELS as usize,
+    )
+    .map_err(|source| ServerMediaDecodeError::InvalidDecoderConfig {
+        message: source.to_owned(),
+    })?;
+    Ok(decoder)
 }
 
 #[cfg(test)]
@@ -102,6 +126,13 @@ mod tests {
         }
     }
 
+    fn packet_with_timestamp(timestamp: u32) -> ServerMediaRtpPacket {
+        ServerMediaRtpPacket {
+            timestamp,
+            ..valid_packet()
+        }
+    }
+
     #[test]
     fn decoder_decodes_valid_opus_payload_to_pcm_frame() {
         let mut decoder = ServerMediaOpusDecoder::new().unwrap();
@@ -115,6 +146,24 @@ mod tests {
         assert_eq!(frame.channels, 1);
         assert_eq!(frame.samples.len(), SERVER_MEDIA_OPUS_FRAME_SIZE);
         assert!(frame.samples.iter().any(|sample| sample.abs() > 0.0));
+    }
+
+    #[test]
+    fn decoder_resets_after_rtp_timestamp_discontinuity() {
+        let mut discontinuous = ServerMediaOpusDecoder::new().unwrap();
+        discontinuous
+            .decode_packet(&packet_with_timestamp(9_600))
+            .unwrap();
+
+        let after_gap = discontinuous
+            .decode_packet(&packet_with_timestamp(96_000))
+            .unwrap();
+        let fresh = ServerMediaOpusDecoder::new()
+            .unwrap()
+            .decode_packet(&packet_with_timestamp(96_000))
+            .unwrap();
+
+        assert_eq!(after_gap.samples, fresh.samples);
     }
 
     #[test]
