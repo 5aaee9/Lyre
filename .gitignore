@@ -1,0 +1,7 @@
+/target
+/.omx
+/result
+/result-*
+
+/frontend/.next
+/frontend/node_modules

@@ -46,9 +46,12 @@
 - Aggregate Prometheus-compatible `/metrics` endpoint for process-local API observability.
 - Rust WebRPC runtime routes at `POST /rpc/Lyre/<Method>` compatible with the generated TypeScript client while preserving REST routes.
 - Concise README with detailed setup, configuration, API, media, development, and deployment documentation split under `docs/`.
+- Nix flake packaging for the Rust API binary with crane, fenix, flake-utils, and a Rust development shell.
+- GitHub Actions CI for Nix flake check, API package build, clippy, rustfmt, and Hestia-backed Nix cache maintenance.
 
 ## Next
 
+- Add Nix packaging for the Next.js frontend if Nix becomes a deployment target.
 - Add full DeepFilterNet neural model inference/configuration for decoded WebRTC tracks.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Add production Helm values for TLS, real hostnames, secrets, persistence, and scaling policy.

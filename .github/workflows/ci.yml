@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+env:
+  NIX_CONFIG: |
+    allow-import-from-derivation = true
+
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: NixOS/nix-installer-action@main
+      - uses: Mic92/hestia/action@main
+      - name: Nix flake check
+        run: nix flake check
+      - name: Build API package
+        run: nix build .#lyre-api
+      - name: Clippy
+        run: nix develop --command cargo clippy --workspace --all-targets -- --deny warnings
+      - name: Rustfmt
+        run: nix develop --command cargo fmt --check
