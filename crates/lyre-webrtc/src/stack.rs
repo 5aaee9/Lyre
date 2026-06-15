@@ -10,7 +10,7 @@ use crate::{
     ServerMediaDecodeFailure, ServerMediaEgressError, ServerMediaJitterBuffer,
     ServerMediaOpusDecoder, ServerMediaPcmConcealer, ServerMediaPcmFrame,
     ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
-    ServerMediaTrackKind,
+    ServerMediaSessionKey, ServerMediaTrackKind,
 };
 use rtc::{
     peer_connection::configuration::{
@@ -51,6 +51,7 @@ impl WebRtcStack {
     ) -> Result<WebRtcPeerConnectionHandle, WebRtcStackError> {
         let local_ice_candidates = Arc::new(Mutex::new(Vec::new()));
         let connection_state = ServerMediaConnectionState::default();
+        let session_key = Arc::new(Mutex::new(None));
         let media_ingress = MediaIngressRecorder::default();
         let media_egress =
             ServerMediaEgress::new().map_err(|source| WebRtcStackError::CreatePeerConnection {
@@ -58,6 +59,7 @@ impl WebRtcStack {
             })?;
         let handler = Arc::new(PeerConnectionHandler {
             local_ice_candidates: Arc::clone(&local_ice_candidates),
+            session_key: Arc::clone(&session_key),
             connection_state: connection_state.clone(),
             media_ingress: media_ingress.clone(),
         });
@@ -104,6 +106,7 @@ impl WebRtcStack {
         Ok(WebRtcPeerConnectionHandle {
             _peer_connection: Arc::from(peer_connection),
             local_ice_candidates,
+            session_key,
             server_media_public_ip: self.server_media_public_ip,
             connection_state,
             media_ingress,
@@ -137,6 +140,7 @@ fn server_media_udp_addr() -> String {
 #[derive(Clone)]
 struct PeerConnectionHandler {
     local_ice_candidates: Arc<Mutex<Vec<ServerMediaIceCandidateInit>>>,
+    session_key: Arc<Mutex<Option<ServerMediaSessionKey>>>,
     connection_state: ServerMediaConnectionState,
     media_ingress: MediaIngressRecorder,
 }
@@ -173,10 +177,24 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
         state: webrtc::peer_connection::RTCIceConnectionState,
     ) {
         self.connection_state.set_ice_connection_state(state);
-        info!(
-            ice_connection_state = ?state,
-            "server media ICE connection state changed"
-        );
+        if let Some(key) = self
+            .session_key
+            .lock()
+            .expect("server media session key lock must not be poisoned")
+            .clone()
+        {
+            info!(
+                room_id = %key.room_id,
+                user_id = %key.user_id,
+                ice_connection_state = ?state,
+                "server media ICE connection state changed"
+            );
+        } else {
+            info!(
+                ice_connection_state = ?state,
+                "server media ICE connection state changed"
+            );
+        }
     }
 
     async fn on_connection_state_change(
@@ -184,10 +202,24 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
         state: webrtc::peer_connection::RTCPeerConnectionState,
     ) {
         self.connection_state.set_peer_connection_state(state);
-        info!(
-            peer_connection_state = ?state,
-            "server media peer connection state changed"
-        );
+        if let Some(key) = self
+            .session_key
+            .lock()
+            .expect("server media session key lock must not be poisoned")
+            .clone()
+        {
+            info!(
+                room_id = %key.room_id,
+                user_id = %key.user_id,
+                peer_connection_state = ?state,
+                "server media peer connection state changed"
+            );
+        } else {
+            info!(
+                peer_connection_state = ?state,
+                "server media peer connection state changed"
+            );
+        }
     }
 
     async fn on_track(&self, track: Arc<dyn TrackRemote>) {
@@ -305,6 +337,7 @@ impl From<ServerMediaIceCandidateInit> for RTCIceCandidateInit {
 pub struct WebRtcPeerConnectionHandle {
     _peer_connection: Arc<dyn PeerConnection>,
     local_ice_candidates: Arc<Mutex<Vec<ServerMediaIceCandidateInit>>>,
+    session_key: Arc<Mutex<Option<ServerMediaSessionKey>>>,
     server_media_public_ip: Option<IpAddr>,
     connection_state: ServerMediaConnectionState,
     media_ingress: MediaIngressRecorder,
@@ -320,6 +353,13 @@ impl std::fmt::Debug for WebRtcPeerConnectionHandle {
 }
 
 impl WebRtcPeerConnectionHandle {
+    pub fn set_session_key(&self, key: ServerMediaSessionKey) {
+        *self
+            .session_key
+            .lock()
+            .expect("server media session key lock must not be poisoned") = Some(key);
+    }
+
     pub async fn add_remote_ice_candidate(
         &self,
         candidate: ServerMediaIceCandidateInit,

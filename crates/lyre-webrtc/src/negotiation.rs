@@ -114,6 +114,7 @@ impl ServerMediaNegotiator {
             room_id: offer.room_id.clone(),
             user_id: offer.user_id.clone(),
         };
+        peer_connection.set_session_key(key.clone());
         self.sessions.start(ServerMediaSessionConfig {
             room_id: offer.room_id.clone(),
             user_id: offer.user_id.clone(),

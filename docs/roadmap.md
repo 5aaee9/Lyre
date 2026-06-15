@@ -62,6 +62,7 @@
 - RNNoise server-side processing now converts Lyre's normalized decoded Opus PCM to the 16-bit PCM amplitude expected by `nnnoiseless`, then scales processed output back for WebRTC egress.
 - Server relay e2e tests now verify RNNoise and DeepFilterNet RTP payloads decode to audible PCM, and DeepFilterNet DSP output keeps stream audio after warmup.
 - Server-media ICE REST boundaries now log sanitized candidate summaries so production relay failures can distinguish signalling, NAT reachability, and connection-state problems.
+- Server-media WebRTC state transition logs now include room and user IDs so production failures can identify which peer moved to Connected or Failed.
 
 ## Next
 
