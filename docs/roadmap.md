@@ -58,6 +58,7 @@
 - Server-media egress now has end-to-end relay coverage plus first-send/no-recipient logs, and browser playback is primed during the user-initiated audio connection.
 - Server-media egress isolates recipient RTP backpressure with bounded per-recipient workers, preserving lower-level write errors in logs without stalling room fanout.
 - Server-media egress logs WebRTC peer and ICE connection state with RTP write failures to diagnose production relay stalls after successful ICE checks.
+- Patched vendored `webrtc` 0.20.0-alpha.1 so trickled remote ICE candidates wake the peer-connection driver immediately instead of waiting for connectivity checks to time out.
 - RNNoise server-side processing now converts Lyre's normalized decoded Opus PCM to the 16-bit PCM amplitude expected by `nnnoiseless`, then scales processed output back for WebRTC egress.
 - Server relay e2e tests now verify RNNoise and DeepFilterNet RTP payloads decode to audible PCM, and DeepFilterNet DSP output keeps stream audio after warmup.
 
