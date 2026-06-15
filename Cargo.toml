@@ -44,6 +44,3 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 turn-server = { version = "4.1.2", default-features = false, features = ["udp"] }
 ulid = "1"
 webrtc = "0.20.0-alpha.1"
-
-[patch.crates-io]
-webrtc = { path = "vendor/webrtc-0.20.0-alpha.1" }

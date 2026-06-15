@@ -3434,6 +3434,8 @@ dependencies = [
 [[package]]
 name = "webrtc"
 version = "0.20.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c747ddba952c11f0847312a6c56fdcec9b89258937e5b5a35c20110d2670304"
 dependencies = [
  "async-trait",
  "bytes",
