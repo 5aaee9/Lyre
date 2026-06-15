@@ -206,3 +206,10 @@
 - Kept metrics aggregate and process-local: no room IDs, user IDs, access tokens, nicknames, SDP, ICE candidates, RTP payloads, or persistence paths appear in metrics output.
 - Used read-only registry aggregate snapshots so scraping metrics does not create room or media relay state.
 - Counted joins/leaves only after successful in-memory or persisted mutations; failed persistence writes increment a separate process-local counter after rollback.
+
+## 2026-06-15 WebRPC Rust Runtime
+
+- Added Axum WebRPC runtime routes at `POST /rpc/Lyre/<Method>` aligned with `proto/lyre.ridl` and the committed generated TypeScript client.
+- Kept the existing REST and WebSocket routes stable; the frontend helper layer can continue using REST while generated WebRPC clients can call the Rust API directly.
+- WebRPC public error envelopes are sanitized and do not expose access tokens, SDP bodies, ICE candidate strings, RTP/media payloads, persistence paths, or lower-level cause chains.
+- Promoted `chrono` to a normal `lyre-web` dependency because WebRPC DTOs expose joined timestamps from non-test library code.

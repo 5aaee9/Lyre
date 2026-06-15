@@ -11,6 +11,7 @@ pub mod server_media_runtime;
 pub mod server_media_runtime_pump;
 pub mod signalling;
 pub mod state_persistence;
+pub mod webrpc;
 
 #[cfg(test)]
 mod api_media_broadcast_tests;
@@ -38,6 +39,8 @@ mod server_media_runtime_tests;
 mod signalling_tests;
 #[cfg(test)]
 mod state_persistence_tests;
+#[cfg(test)]
+mod webrpc_tests;
 
 pub use api::{router, AppState};
 pub use server::{serve, ServeConfig};

@@ -66,7 +66,7 @@ cd frontend
 npm run generate:webrpc
 ```
 
-This uses `go run github.com/webrpc/webrpc/cmd/webrpc-gen@v0.36.0`; the first run needs network access for Go module download. The current runtime still uses the Axum REST routes, with WebRPC acting as the checked-in contract and generated TypeScript type source.
+This uses `go run github.com/webrpc/webrpc/cmd/webrpc-gen@v0.36.0`; the first run needs network access for Go module download. The Rust API serves generated-client-compatible WebRPC calls at `POST /rpc/Lyre/<Method>` while the existing REST routes remain supported and continue to back the current frontend helper layer.
 
 ## Media Topology
 
@@ -107,4 +107,4 @@ The `lyre-api` image serves REST/WebSocket on port `8080`. The `lyre-web` image 
 
 ## MVP Scope
 
-This milestone uses peer-to-peer WebRTC signalling with optional TURN relay. Server-side audio decode, RNNoise inference, DeepFilterNet inference, authentication, persistence, horizontal scaling, and generated WebRPC Rust server integration are follow-up work.
+This milestone uses peer-to-peer WebRTC signalling with optional TURN relay and an optional server-media relay mode. Full DeepFilterNet neural model inference, horizontal scaling, production database/session management, and optional Rust WASM client-side denoise are follow-up work.

@@ -256,6 +256,7 @@ pub fn router(state: AppState) -> Router {
             post(register_media_track),
         )
         .merge(crate::api_server_media::router())
+        .merge(crate::webrpc::router())
         .route("/api/rooms/{room_id}/ws", get(room_ws))
         .layer(CorsLayer::permissive())
         .layer(
@@ -306,7 +307,7 @@ pub(crate) fn authorize_room_user(
         .map_err(|_| ApiError::Unauthorized)
 }
 
-fn authorize_room_member(
+pub(crate) fn authorize_room_member(
     state: &AppState,
     room_id: &RoomId,
     headers: &HeaderMap,
