@@ -27,6 +27,7 @@
 - Server audio RTP ingress boundary with Opus receive negotiation, remote track snapshots, and internal RTP packet capture.
 - Decoded incoming Opus RTP into 48 kHz mono PCM frames and fed them into the existing server media runtime.
 - Server-side RNNoise processing for real decoded 20 ms Opus PCM frames.
+- DeepFilterNet provider wiring through Rust libDF DSP frame reconstruction.
 - Automatic server-media draining and processing for negotiated WebRTC tracks.
 - Internal WebRTC egress path that encodes processed server audio to Opus RTP and writes it to recipient server-media peers.
 - Frontend server-media audio mode with browser-to-server WebRTC negotiation and playback of remote processed server audio.
@@ -36,9 +37,8 @@
 
 ## Next
 
-- Wire DeepFilterNet provider to real decoded WebRTC tracks.
+- Add full DeepFilterNet neural model inference/configuration for decoded WebRTC tracks.
 - Add jitter buffering and packet loss concealment for server media ingress.
-- Add DeepFilterNet binding and processing implementation.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Add authentication and room access control.
 - Add persistent room/user/session state.

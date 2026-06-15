@@ -40,18 +40,6 @@ fn factory_builds_off_passthrough() {
 }
 
 #[test]
-fn factory_rejects_deepfilternet_until_real_backend_exists() {
-    let result = build_noise_canceller(config(NoiseProvider::Deepfilternet));
-
-    assert!(matches!(
-        result,
-        Err(NoiseCancellationError::UnsupportedProvider {
-            provider: NoiseProvider::Deepfilternet,
-        })
-    ));
-}
-
-#[test]
 fn rnnoise_rejects_wrong_sample_rate_channels_and_frame_size() {
     let mut canceller = build_noise_canceller(config(NoiseProvider::Rnnoise)).unwrap();
 
@@ -73,6 +61,91 @@ fn rnnoise_rejects_wrong_sample_rate_channels_and_frame_size() {
             expected_samples: RNNOISE_FRAME_SIZE,
         }
     );
+}
+
+#[test]
+fn factory_builds_deepfilternet_dsp_runtime() {
+    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
+
+    let output = canceller
+        .process_frame(NoiseFrame {
+            sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+            channels: DEEPFILTERNET_CHANNELS,
+            samples: &[0.25; DEEPFILTERNET_FRAME_SIZE],
+        })
+        .unwrap();
+
+    assert_eq!(output.samples.len(), DEEPFILTERNET_FRAME_SIZE);
+    assert!(output.samples.iter().all(|sample| sample.is_finite()));
+    assert_eq!(output.voice_activity_probability, None);
+}
+
+#[test]
+fn deepfilternet_rejects_wrong_sample_rate_channels_and_frame_size() {
+    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
+
+    assert_eq!(
+        canceller
+            .process_frame(NoiseFrame {
+                sample_rate_hz: 44_100,
+                channels: 2,
+                samples: &[0.0; 32],
+            })
+            .unwrap_err(),
+        NoiseCancellationError::InvalidFrameShape {
+            provider: NoiseProvider::Deepfilternet,
+            sample_rate_hz: 44_100,
+            channels: 2,
+            samples: 32,
+            expected_sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+            expected_channels: DEEPFILTERNET_CHANNELS,
+            expected_samples: DEEPFILTERNET_FRAME_SIZE,
+        }
+    );
+}
+
+#[test]
+fn deepfilternet_rejects_empty_or_non_multiple_frame_size() {
+    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
+
+    for samples in [Vec::new(), vec![0.0; DEEPFILTERNET_FRAME_SIZE + 1]] {
+        assert_eq!(
+            canceller
+                .process_frame(NoiseFrame {
+                    sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+                    channels: DEEPFILTERNET_CHANNELS,
+                    samples: &samples,
+                })
+                .unwrap_err(),
+            NoiseCancellationError::InvalidFrameShape {
+                provider: NoiseProvider::Deepfilternet,
+                sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+                channels: DEEPFILTERNET_CHANNELS,
+                samples: samples.len(),
+                expected_sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+                expected_channels: DEEPFILTERNET_CHANNELS,
+                expected_samples: DEEPFILTERNET_FRAME_SIZE,
+            }
+        );
+    }
+}
+
+#[test]
+fn deepfilternet_processes_960_sample_mono_frame_in_chunks() {
+    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
+    let input = decoded_opus_frame_samples();
+
+    let output = canceller
+        .process_frame(NoiseFrame {
+            sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+            channels: DEEPFILTERNET_CHANNELS,
+            samples: &input,
+        })
+        .unwrap();
+
+    assert_eq!(output.samples.len(), DEEPFILTERNET_FRAME_SIZE * 2);
+    assert!(output.samples.iter().all(|sample| sample.is_finite()));
+    assert_eq!(output.voice_activity_probability, None);
 }
 
 #[test]
@@ -171,6 +244,26 @@ fn audio_frame_processor_adapter_uses_rnnoise_for_decoded_opus_frame() {
 
     assert_eq!(output.len(), RNNOISE_FRAME_SIZE * 2);
     assert_ne!(output, input);
+}
+
+#[test]
+fn audio_frame_processor_adapter_uses_deepfilternet_for_valid_audio() {
+    let processor = NoiseCancellingAudioFrameProcessor::default();
+    let input = decoded_opus_frame_samples();
+    let frame = AudioFrame {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+        track_id: "audio-main".to_owned(),
+        sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+        channels: DEEPFILTERNET_CHANNELS,
+        sequence: 1,
+        samples: input,
+    };
+
+    let output = processor.process(&frame, &config(NoiseProvider::Deepfilternet));
+
+    assert_eq!(output.len(), DEEPFILTERNET_FRAME_SIZE * 2);
+    assert!(output.iter().all(|sample| sample.is_finite()));
 }
 
 #[test]

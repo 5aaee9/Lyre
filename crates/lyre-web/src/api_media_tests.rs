@@ -279,6 +279,27 @@ fn app_state_process_media_frame_runs_rnnoise_for_valid_audio() {
 }
 
 #[test]
+fn app_state_process_media_frame_runs_deepfilternet_for_valid_audio() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let user_id = UserId::from_external("user_01");
+    start_relay_with_track(
+        &state,
+        room_id.clone(),
+        user_id.clone(),
+        NoiseProvider::Deepfilternet,
+    );
+
+    process_samples(&state, &room_id, &user_id, vec![120.0; 960]);
+
+    let frames = state.processed_media_frames(&room_id);
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].samples.len(), 960);
+    assert!(frames[0].samples.iter().all(|sample| sample.is_finite()));
+    assert_eq!(frames[0].noise.provider, NoiseProvider::Deepfilternet);
+}
+
+#[test]
 fn app_state_process_media_frame_stop_relay_prevents_future_processing() {
     let state = AppState::default();
     let room_id = RoomId::default_room();

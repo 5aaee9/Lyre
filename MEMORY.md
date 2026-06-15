@@ -166,3 +166,10 @@
 - Server relay startup failures after relay creation call the cleanup endpoint while preserving the original startup error if cleanup itself fails.
 - Component unmount remains local-only and does not call server mutation endpoints.
 - The WebRPC payload struct is named `ClosedServerMediaSession` to avoid a generated TypeScript name collision with the service method response wrapper; the REST wrapper still exposes `CloseServerMediaSessionResponse`.
+
+## 2026-06-15 DeepFilterNet libDF Runtime
+
+- Wired `NoiseProvider::Deepfilternet` to a Rust libDF DSP runtime using the `deep_filter` package's `df::DFState`.
+- The runtime keeps one persistent `DFState` per noise config and processes 48 kHz mono PCM in 480-sample chunks through `DFState::process_frame`.
+- This is STFT/ISTFT frame reconstruction and provider plumbing only; it does not include pretrained DeepFilterNet neural model inference, post-filtering, model configuration, or proven noise attenuation.
+- Full DeepFilterNet model inference remains future work.

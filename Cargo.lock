@@ -684,6 +684,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 
 [[package]]
+name = "deep_filter"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42b1265b3b92c132c7452ed463c5bc57a6609323eabff4d7d387955495f3805c"
+dependencies = [
+ "num-complex",
+ "realfft",
+ "rustfft",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1470,6 +1481,7 @@ dependencies = [
 name = "lyre-noise-cancelling"
 version = "0.1.0"
 dependencies = [
+ "deep_filter",
  "lyre-core",
  "nnnoiseless",
  "thiserror 2.0.18",
