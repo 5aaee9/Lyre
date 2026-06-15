@@ -4,10 +4,11 @@ use std::{
 };
 
 use crate::{
-    egress::ServerMediaEgress, media_ingress::MediaIngressRecorder, ServerMediaDecodeError,
-    ServerMediaDecodeFailure, ServerMediaEgressError, ServerMediaEgressRtpPacket,
-    ServerMediaOpusDecoder, ServerMediaPcmFrame, ServerMediaProcessedAudioFrame,
-    ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaTrackKind,
+    egress::ServerMediaEgress, media_ingress::MediaIngressRecorder,
+    stack_audio_ingress::handle_audio_rtp_packet, ServerMediaDecodeFailure, ServerMediaEgressError,
+    ServerMediaJitterBuffer, ServerMediaOpusDecoder, ServerMediaPcmFrame,
+    ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
+    ServerMediaTrackKind,
 };
 use rtc::{
     peer_connection::configuration::{
@@ -158,6 +159,7 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
                     return;
                 }
             };
+            let mut jitter_buffer = ServerMediaJitterBuffer::default();
             while let Some(event) = track.poll().await {
                 if let TrackRemoteEvent::OnRtpPacket(packet) = event {
                     let packet = ServerMediaRtpPacket {
@@ -168,23 +170,12 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
                         payload_type: packet.header.payload_type,
                         payload: packet.payload.to_vec(),
                     };
-                    media_ingress.record_rtp_packet(packet.clone());
-                    match decoder.decode_packet(&packet) {
-                        Ok(frame) => media_ingress.record_pcm_frame(frame),
-                        Err(error) => {
-                            let message = match &error {
-                                ServerMediaDecodeError::InvalidDecoderConfig { message }
-                                | ServerMediaDecodeError::Decode { message } => message.clone(),
-                            };
-                            warn!(error = %error, "failed to decode server media Opus RTP packet");
-                            media_ingress.record_decode_failure(ServerMediaDecodeFailure {
-                                track_id: packet.track_id,
-                                sequence_number: packet.sequence_number,
-                                rtp_timestamp: packet.timestamp,
-                                error: message,
-                            });
-                        }
-                    }
+                    handle_audio_rtp_packet(
+                        &media_ingress,
+                        &mut decoder,
+                        &mut jitter_buffer,
+                        packet,
+                    );
                 }
             }
         });
@@ -291,7 +282,7 @@ impl WebRtcPeerConnectionHandle {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn sent_egress_rtp_packets_for_test(&self) -> Vec<ServerMediaEgressRtpPacket> {
+    pub fn sent_egress_rtp_packets_for_test(&self) -> Vec<crate::ServerMediaEgressRtpPacket> {
         self.media_egress.sent_packets_for_test()
     }
 

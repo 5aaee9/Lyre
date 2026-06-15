@@ -140,6 +140,10 @@ pub struct ServerMediaConnectedOffer {
 }
 
 impl ServerMediaConnectedOffer {
+    pub fn track(&self) -> Arc<TrackLocalStaticRTP> {
+        Arc::clone(&self.track)
+    }
+
     pub async fn send_valid_opus_packets(&self, count: usize) {
         let payload = encoded_opus_payload();
         for _ in 0..count {
@@ -321,7 +325,7 @@ fn to_webrtc_candidate(candidate: ServerMediaIceCandidateInit) -> RTCIceCandidat
     }
 }
 
-fn encoded_opus_payload() -> Vec<u8> {
+pub fn encoded_opus_payload_for_test() -> Vec<u8> {
     let mut encoder = OpusEncoder::new(48_000, 1, Application::Voip).unwrap();
     let samples = (0..SERVER_MEDIA_OPUS_FRAME_SIZE)
         .map(|index| ((index as f32) / 24.0).sin() * 0.1)
@@ -334,12 +338,20 @@ fn encoded_opus_payload() -> Vec<u8> {
     payload
 }
 
-fn test_rtp_packet(payload: Vec<u8>) -> rtc::rtp::Packet {
+fn encoded_opus_payload() -> Vec<u8> {
+    encoded_opus_payload_for_test()
+}
+
+pub fn opus_rtp_packet_for_test(
+    sequence_number: u16,
+    timestamp: u32,
+    payload: Vec<u8>,
+) -> rtc::rtp::Packet {
     rtc::rtp::Packet {
         header: rtc::rtp::Header {
             version: 2,
-            sequence_number: 42,
-            timestamp: 1234,
+            sequence_number,
+            timestamp,
             marker: true,
             payload_type: 111,
             ssrc: 1234,
@@ -347,4 +359,8 @@ fn test_rtp_packet(payload: Vec<u8>) -> rtc::rtp::Packet {
         },
         payload: Bytes::from(payload),
     }
+}
+
+fn test_rtp_packet(payload: Vec<u8>) -> rtc::rtp::Packet {
+    opus_rtp_packet_for_test(42, 1234, payload)
 }

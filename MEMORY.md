@@ -173,3 +173,10 @@
 - The runtime keeps one persistent `DFState` per noise config and processes 48 kHz mono PCM in 480-sample chunks through `DFState::process_frame`.
 - This is STFT/ISTFT frame reconstruction and provider plumbing only; it does not include pretrained DeepFilterNet neural model inference, post-filtering, model configuration, or proven noise attenuation.
 - Full DeepFilterNet model inference remains future work.
+
+## 2026-06-15 Server Media Jitter Buffer
+
+- Added a bounded server-media RTP jitter buffer in `lyre-webrtc` before Opus decode.
+- The buffer reorders audio RTP by 16-bit sequence number, drops duplicate/stale packets, and emits deterministic loss events after a depth of three pending packets.
+- Loss events are recorded as internal decode failures with expected RTP timestamps; Lyre still does not synthesize packet loss concealment PCM.
+- Real PCM packet loss concealment remains future work unless the Opus decoder path exposes PLC/FEC or Lyre adds a dedicated concealment synthesizer.

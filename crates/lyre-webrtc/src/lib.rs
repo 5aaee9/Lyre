@@ -1,9 +1,11 @@
 pub mod egress;
+mod jitter_buffer;
 pub mod media_ingress;
 pub mod negotiation;
 pub mod opus_decode;
 pub mod session;
 pub mod stack;
+mod stack_audio_ingress;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
@@ -12,6 +14,8 @@ mod negotiation_tests;
 #[cfg(test)]
 mod stack_egress_tests;
 #[cfg(test)]
+mod stack_jitter_buffer_tests;
+#[cfg(test)]
 mod stack_media_tests;
 #[cfg(test)]
 mod stack_tests;
@@ -19,6 +23,7 @@ mod stack_tests;
 pub use egress::{
     ServerMediaEgressError, ServerMediaEgressRtpPacket, ServerMediaProcessedAudioFrame,
 };
+pub(crate) use jitter_buffer::{ServerMediaJitterBuffer, ServerMediaJitterBufferOutput};
 pub use media_ingress::{ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaTrackKind};
 pub use negotiation::{
     ServerMediaAnswer, ServerMediaIceCandidate, ServerMediaNegotiationError, ServerMediaNegotiator,
