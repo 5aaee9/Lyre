@@ -50,6 +50,7 @@ const providerFromGenerated: NoiseProvider = generatedNoiseProviderToRest(Webrpc
 void providerFromGenerated;
 
 const joinResponseFromGeneratedDerivedShape: JoinRoomResponse = {
+  access_token: "token_a",
   user: {
     id: "user_a",
     nickname: "Ada",
@@ -64,6 +65,7 @@ const joinResponseFromGeneratedDerivedShape: JoinRoomResponse = {
 void joinResponseFromGeneratedDerivedShape;
 
 const generatedJoinRoomResponseContract: WebrpcJoinRoomResponse = {
+  accessToken: "token_a",
   user: {
     id: "user_a",
     nickname: "Ada",
@@ -241,11 +243,11 @@ describe("api", () => {
   });
 
   it("serializes leave request body", async () => {
-    await leaveRoom("DEFAULT", "user_a");
+    await leaveRoom("DEFAULT", "user_a", "token_a");
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/leave", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
       body: JSON.stringify({ user_id: "user_a" })
     });
   });
@@ -270,57 +272,61 @@ describe("api", () => {
 
   it("serializes media relay start request body", async () => {
     const noise = { provider: "rnnoise" as const, intensity: 0.8, voice_activity_threshold: 0.2 };
-    await startMediaRelay("DEFAULT", noise);
+    await startMediaRelay("DEFAULT", noise, "token_a");
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/start", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
       body: JSON.stringify({ noise })
     });
   });
 
   it("serializes media relay stop request body", async () => {
-    await stopMediaRelay("DEFAULT", "user_a");
+    await stopMediaRelay("DEFAULT", "user_a", "token_a");
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/stop", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
       body: JSON.stringify({ user_id: "user_a" })
     });
   });
 
   it("serializes media relay track registration request body", async () => {
-    await registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio");
+    await registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio", "token_a");
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/tracks", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
       body: JSON.stringify({ user_id: "user_a", track_id: "audio-main", kind: "audio" })
     });
   });
 
   it("serializes server media offer request body", async () => {
-    await answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0");
+    await answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0", "token_a");
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/server-media/offer", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
       body: JSON.stringify({ user_id: "user_a", audio_track_id: "audio-main", sdp: "v=0" })
     });
   });
 
   it("serializes server media ICE candidate request body", async () => {
-    await addServerMediaIceCandidate("DEFAULT", {
-      user_id: "user_a",
-      candidate: "candidate:1",
-      sdp_mid: "0",
-      sdp_mline_index: 0,
-      username_fragment: null
-    });
+    await addServerMediaIceCandidate(
+      "DEFAULT",
+      {
+        user_id: "user_a",
+        candidate: "candidate:1",
+        sdp_mid: "0",
+        sdp_mline_index: 0,
+        username_fragment: null
+      },
+      "token_a"
+    );
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/server-media/candidates", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
       body: JSON.stringify({
         user_id: "user_a",
         candidate: "candidate:1",
@@ -332,19 +338,19 @@ describe("api", () => {
   });
 
   it("fetches server media ICE candidates with encoded user id", async () => {
-    await getServerMediaIceCandidates("DEFAULT", "user a");
+    await getServerMediaIceCandidates("DEFAULT", "user a", "token_a");
 
-    expect(fetch).toHaveBeenCalledWith(
-      "https://api.example.test/api/rooms/DEFAULT/server-media/candidates?user_id=user+a"
-    );
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/server-media/candidates?user_id=user+a", {
+      headers: { authorization: "Bearer token_a" }
+    });
   });
 
   it("serializes server media close request body", async () => {
-    await closeServerMediaSession("DEFAULT", "user_a");
+    await closeServerMediaSession("DEFAULT", "user_a", "token_a");
 
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/server-media/close", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
       body: JSON.stringify({ user_id: "user_a" })
     });
   });
@@ -352,26 +358,30 @@ describe("api", () => {
   it("throws useful errors for failed server media flow responses", async () => {
     global.fetch = vi.fn(async () => new Response(JSON.stringify({ error: "nope" }), { status: 503 })) as typeof fetch;
 
-    await expect(startMediaRelay("DEFAULT")).rejects.toThrow("failed to start media relay: 503");
-    await expect(registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio")).rejects.toThrow(
+    await expect(startMediaRelay("DEFAULT", undefined, "token_a")).rejects.toThrow("failed to start media relay: 503");
+    await expect(registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio", "token_a")).rejects.toThrow(
       "failed to register media track: 503"
     );
-    await expect(answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0")).rejects.toThrow(
+    await expect(answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0", "token_a")).rejects.toThrow(
       "failed to negotiate server media offer: 503"
     );
     await expect(
-      addServerMediaIceCandidate("DEFAULT", {
-        user_id: "user_a",
-        candidate: "candidate:1",
-        sdp_mid: "0",
-        sdp_mline_index: 0,
-        username_fragment: null
-      })
+      addServerMediaIceCandidate(
+        "DEFAULT",
+        {
+          user_id: "user_a",
+          candidate: "candidate:1",
+          sdp_mid: "0",
+          sdp_mline_index: 0,
+          username_fragment: null
+        },
+        "token_a"
+      )
     ).rejects.toThrow("failed to add server media ICE candidate: 503");
-    await expect(getServerMediaIceCandidates("DEFAULT", "user_a")).rejects.toThrow(
+    await expect(getServerMediaIceCandidates("DEFAULT", "user_a", "token_a")).rejects.toThrow(
       "failed to load server media ICE candidates: 503"
     );
-    await expect(closeServerMediaSession("DEFAULT", "user_a")).rejects.toThrow(
+    await expect(closeServerMediaSession("DEFAULT", "user_a", "token_a")).rejects.toThrow(
       "failed to close server media session: 503"
     );
   });

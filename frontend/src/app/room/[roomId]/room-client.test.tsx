@@ -86,6 +86,7 @@ vi.mock("@/lib/api", async () => {
   return {
     ...actual,
     joinRoom: vi.fn(async () => ({
+      access_token: "token_a",
       user: users[0],
       room: { room_id: "DEFAULT", users }
     })),
@@ -189,6 +190,30 @@ describe("RoomClient", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("rejoins when stored room session belongs to another room", async () => {
+    sessionStorage.setItem(
+      "lyre.roomSession",
+      JSON.stringify({ roomId: "OTHER", accessToken: "old_token", user: makeUser("old_user") })
+    );
+
+    render(<RoomClient roomId="DEFAULT" />);
+
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+    expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
+  });
+
+  it("rejoins when stored room session is malformed", async () => {
+    sessionStorage.setItem(
+      "lyre.roomSession",
+      JSON.stringify({ roomId: "DEFAULT", accessToken: "old_token", user: {} })
+    );
+
+    render(<RoomClient roomId="DEFAULT" />);
+
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+    expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
+  });
+
   it("ignores webrtc signals before audio is started", async () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
@@ -226,12 +251,18 @@ describe("RoomClient", () => {
       getUserMedia.mock.invocationCallOrder[0]
     );
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
-    expect(apiMocks.startMediaRelay).toHaveBeenCalledWith("DEFAULT", noise);
-    expect(apiMocks.registerMediaTrack).toHaveBeenCalledWith("DEFAULT", "user_a", "audio-main", "audio");
+    expect(apiMocks.startMediaRelay).toHaveBeenCalledWith("DEFAULT", noise, "token_a");
+    expect(apiMocks.registerMediaTrack).toHaveBeenCalledWith("DEFAULT", "user_a", "audio-main", "audio", "token_a");
     expect(peerConnections).toHaveLength(1);
     expect(peerConnections[0].setLocalDescription).toHaveBeenCalledWith({ type: "offer", sdp: "local-offer-0" });
     expect(peerConnections[0].setRemoteDescription).toHaveBeenCalledWith({ type: "answer", sdp: "server-answer" });
-    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledWith("DEFAULT", "user_a", "audio-main", "local-offer-0");
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledWith(
+      "DEFAULT",
+      "user_a",
+      "audio-main",
+      "local-offer-0",
+      "token_a"
+    );
     expect(send).not.toHaveBeenCalled();
     expect(screen.getByText("Server relay audio connected")).toBeInTheDocument();
     expect(screen.getByLabelText("Audio mode")).toBeDisabled();
@@ -263,8 +294,8 @@ describe("RoomClient", () => {
 
     fireEvent.click(screen.getByText("Leave"));
 
-    await waitFor(() => expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a"));
-    await waitFor(() => expect(apiMocks.leaveRoom).toHaveBeenCalledWith("DEFAULT", "user_a"));
+    await waitFor(() => expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a"));
+    await waitFor(() => expect(apiMocks.leaveRoom).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a"));
     expect(apiMocks.closeServerMediaSession.mock.invocationCallOrder[0]).toBeLessThan(
       apiMocks.leaveRoom.mock.invocationCallOrder[0]
     );
@@ -299,7 +330,7 @@ describe("RoomClient", () => {
     fireEvent.click(screen.getByText("Connect audio"));
 
     await waitFor(() => expect(screen.getByText("track registration failed")).toBeInTheDocument());
-    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a");
+    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(stopTrack).toHaveBeenCalledOnce();
   });
@@ -314,7 +345,7 @@ describe("RoomClient", () => {
 
     await waitFor(() => expect(screen.getByText("track registration failed")).toBeInTheDocument());
     expect(screen.queryByText("cleanup failed")).not.toBeInTheDocument();
-    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a");
+    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
   });
 
@@ -328,7 +359,7 @@ describe("RoomClient", () => {
     await waitFor(() => expect(screen.getByText("candidate fetch failed")).toBeInTheDocument());
     expect(screen.queryByText("Server relay audio connected")).not.toBeInTheDocument();
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
-    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a");
+    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
   });

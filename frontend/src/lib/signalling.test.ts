@@ -10,8 +10,8 @@ describe("signalling", () => {
   });
 
   it("derives websocket url from APP_API_URL", () => {
-    expect(roomSocketUrl("Team A", "user_a")).toBe(
-      "wss://api.example.test/api/rooms/Team%20A/ws?user_id=user_a"
+    expect(roomSocketUrl("Team A", "user_a", "token a")).toBe(
+      "wss://api.example.test/api/rooms/Team%20A/ws?user_id=user_a&access_token=token+a"
     );
   });
 

@@ -186,3 +186,10 @@
 - Added deterministic Lyre-owned PCM packet loss concealment for server-media ingress.
 - Missing RTP packets after a decoded baseline now produce 48 kHz mono 960-sample synthetic PCM fallback frames using a faded copy of the previous frame.
 - This is not Opus-native PLC or FEC; missing packets before a usable baseline still record an internal decode failure.
+
+## 2026-06-15 Room Access Tokens
+
+- `join` now returns a room-scoped opaque access token stored only in server-private room state.
+- Mutating room, signalling, media relay, and server-media routes validate bearer tokens; public discovery routes remain unauthenticated.
+- WebSocket signalling uses an `access_token` query parameter because browser WebSockets cannot set `Authorization`; request tracing records only redacted paths.
+- TURN remains NAT traversal only. Server-side denoise still requires the server-media decode/process/broadcast path. Future client-side denoise should use Rust WASM.

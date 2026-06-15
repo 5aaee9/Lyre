@@ -26,6 +26,7 @@ describe("Home", () => {
     sessionStorage.clear();
     navigation.push.mockClear();
     vi.mocked(joinRoom).mockResolvedValue({
+      access_token: "token_a",
       user: {
         id: "user_a",
         nickname: "User A",
@@ -52,6 +53,11 @@ describe("Home", () => {
         nickname: "",
         noise: { provider: "deepfilternet", intensity: 0.8, voice_activity_threshold: 0.15 }
       });
+    });
+    expect(JSON.parse(sessionStorage.getItem("lyre.roomSession") ?? "{}")).toMatchObject({
+      roomId: "DEFAULT",
+      accessToken: "token_a",
+      user: { id: "user_a" }
     });
   });
 });

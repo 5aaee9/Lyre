@@ -20,7 +20,8 @@ pub use media_runtime::{
 };
 pub use noise::{supported_noise_providers, NoiseCancellationConfig, NoiseProvider};
 pub use room::{
-    JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, RoomRegistry, RoomSnapshot, UserProfile,
+    JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, RoomAccessError, RoomAccessToken,
+    RoomRegistry, RoomSnapshot, UserProfile,
 };
 pub use webrtc::{
     current_media_topology, default_ice_servers, generate_turn_rest_credentials,

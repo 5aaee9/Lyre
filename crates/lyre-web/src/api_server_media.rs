@@ -1,6 +1,10 @@
-use crate::{api::AppState, error::ApiError};
+use crate::{
+    api::{authorize_room_user, AppState},
+    error::ApiError,
+};
 use axum::{
     extract::{Path, Query, State},
+    http::HeaderMap,
     response::IntoResponse,
     routing::post,
     Json, Router,
@@ -54,9 +58,11 @@ pub fn router() -> Router<AppState> {
 async fn answer_server_media_offer(
     State(state): State<AppState>,
     Path(room_id): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<ServerMediaOfferRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     let answer = state
         .answer_server_media_offer(ServerMediaOffer {
             room_id,
@@ -71,9 +77,11 @@ async fn answer_server_media_offer(
 async fn add_server_media_ice_candidate(
     State(state): State<AppState>,
     Path(room_id): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<ServerMediaCandidateRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     let candidate = ServerMediaIceCandidate {
         room_id,
         user_id: request.user_id,
@@ -91,9 +99,11 @@ async fn add_server_media_ice_candidate(
 async fn server_media_ice_candidates(
     State(state): State<AppState>,
     Path(room_id): Path<String>,
+    headers: HeaderMap,
     Query(query): Query<ServerMediaCandidatesQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &query.user_id, &headers)?;
     Ok(Json(state.server_media_ice_candidates(
         &ServerMediaSessionKey {
             room_id,
@@ -105,9 +115,11 @@ async fn server_media_ice_candidates(
 async fn close_server_media_session(
     State(state): State<AppState>,
     Path(room_id): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<CloseServerMediaSessionRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     Ok(Json(state.close_server_media_session_for_user(
         room_id,
         request.user_id,

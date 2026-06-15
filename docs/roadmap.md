@@ -34,6 +34,7 @@
 - Internal WebRTC egress path that encodes processed server audio to Opus RTP and writes it to recipient server-media peers.
 - Frontend server-media audio mode with browser-to-server WebRTC negotiation and playback of remote processed server audio.
 - Per-user server-media cleanup endpoint and frontend Leave/startup-failure cleanup flow.
+- Room-scoped access tokens for mutating room, signalling, media relay, and server-media routes.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
@@ -41,7 +42,6 @@
 
 - Add full DeepFilterNet neural model inference/configuration for decoded WebRTC tracks.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
-- Add authentication and room access control.
 - Add persistent room/user/session state.
 - Add production observability and metrics.
 - Integrate a generated WebRPC Rust server/runtime path.

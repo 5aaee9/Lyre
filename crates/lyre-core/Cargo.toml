@@ -9,6 +9,7 @@ base64.workspace = true
 chrono.workspace = true
 dashmap.workspace = true
 hmac.workspace = true
+rand.workspace = true
 serde.workspace = true
 sha1.workspace = true
 thiserror.workspace = true

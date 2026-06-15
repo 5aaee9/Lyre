@@ -23,16 +23,16 @@ export type PresenceState = {
   error?: string;
 };
 
-export function roomSocketUrl(roomId: string, userId: string): string {
+export function roomSocketUrl(roomId: string, userId: string, accessToken: string): string {
   const url = new URL(apiBaseUrl());
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = `/api/rooms/${encodeURIComponent(roomId)}/ws`;
-  url.search = new URLSearchParams({ user_id: userId }).toString();
+  url.search = new URLSearchParams({ user_id: userId, access_token: accessToken }).toString();
   return url.toString();
 }
 
-export function createRoomSocket(roomId: string, userId: string): WebSocket {
-  return new WebSocket(roomSocketUrl(roomId, userId));
+export function createRoomSocket(roomId: string, userId: string, accessToken: string): WebSocket {
+  return new WebSocket(roomSocketUrl(roomId, userId, accessToken));
 }
 
 export function encodeOffer(roomId: string, senderId: string, sdp: string, recipientId?: string): SignalMessage {

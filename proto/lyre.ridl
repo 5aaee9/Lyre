@@ -123,12 +123,13 @@ struct RoomSnapshot
 struct JoinRoomResponse
   - user: UserProfile
   - room: RoomSnapshot
+  - accessToken: string
 
 service Lyre
   # Documents GET /api/rooms/{room_id}; REST fetch remains the runtime transport in this increment.
   - GetRoom(roomID: string) => (room: RoomSnapshot)
   # Documents POST /api/rooms/{room_id}/join; REST fetch remains the runtime transport in this increment.
-  - JoinRoom(roomID: string, nickname?: string, noise?: NoiseCancellationConfig) => (user: UserProfile, room: RoomSnapshot)
+  - JoinRoom(roomID: string, nickname?: string, noise?: NoiseCancellationConfig) => (user: UserProfile, room: RoomSnapshot, accessToken: string)
   # Documents POST /api/rooms/{room_id}/leave; REST fetch remains the runtime transport in this increment.
   - LeaveRoom(roomID: string, userID: string) => (room: RoomSnapshot)
   # Documents GET /api/noise/providers; REST fetch remains the runtime transport in this increment.

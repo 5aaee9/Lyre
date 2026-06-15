@@ -51,6 +51,7 @@ function makeSession() {
   return new ServerMediaAudioSession({
     roomId: "DEFAULT",
     userId: "user_a",
+    accessToken: "token_a",
     iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
     stream,
     pollIntervalMs: 10
@@ -120,13 +121,14 @@ describe("ServerMediaAudioSession", () => {
       "DEFAULT",
       "user_a",
       "audio-main",
-      "local-offer"
+      "local-offer",
+      "token_a"
     );
     expect(peerConnections[0].setRemoteDescription).toHaveBeenCalledWith({
       type: "answer",
       sdp: "server-answer"
     });
-    expect(apiMocks.getServerMediaIceCandidates).toHaveBeenCalledOnce();
+    expect(apiMocks.getServerMediaIceCandidates).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
 
     await vi.advanceTimersByTimeAsync(10);
 
@@ -155,7 +157,7 @@ describe("ServerMediaAudioSession", () => {
         sdp_mid: "0",
         sdp_mline_index: 0,
         username_fragment: "ufrag"
-      })
+      }, "token_a")
     );
   });
 

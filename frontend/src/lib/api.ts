@@ -187,7 +187,8 @@ export type RoomSnapshot = Omit<WebrpcRoomSnapshot, "roomID" | "users"> & {
   users: UserProfile[];
 };
 
-export type JoinRoomResponse = Omit<WebrpcJoinRoomResponse, "user" | "room"> & {
+export type JoinRoomResponse = Omit<WebrpcJoinRoomResponse, "user" | "room" | "accessToken"> & {
+  access_token: string;
   user: UserProfile;
   room: RoomSnapshot;
 };
@@ -234,10 +235,14 @@ export async function joinRoom(roomId: string, input: JoinRoomInput): Promise<Jo
   return response.json();
 }
 
-export async function leaveRoom(roomId: string, userId: string): Promise<RoomSnapshot> {
+function bearerHeaders(accessToken: string): Record<string, string> {
+  return { authorization: `Bearer ${accessToken}` };
+}
+
+export async function leaveRoom(roomId: string, userId: string, accessToken: string): Promise<RoomSnapshot> {
   const response = await fetch(`${roomUrl(roomId)}/leave`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId })
   });
   return response.json();
@@ -250,20 +255,25 @@ export async function getMediaRelay(roomId: string): Promise<MediaRelayRoomStatu
 
 export async function startMediaRelay(
   roomId: string,
-  noise?: NoiseCancellationConfig
+  noise: NoiseCancellationConfig | undefined,
+  accessToken: string
 ): Promise<MediaRelayRoomStatus> {
   const response = await fetch(`${mediaRelayUrl(roomId)}/start`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
     body: JSON.stringify({ noise })
   });
   return jsonOrThrow(response, "failed to start media relay");
 }
 
-export async function stopMediaRelay(roomId: string, userId: string): Promise<MediaRelayRoomStatus> {
+export async function stopMediaRelay(
+  roomId: string,
+  userId: string,
+  accessToken: string
+): Promise<MediaRelayRoomStatus> {
   const response = await fetch(`${mediaRelayUrl(roomId)}/stop`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId })
   });
   return jsonOrThrow(response, "failed to stop media relay");
@@ -273,11 +283,12 @@ export async function registerMediaTrack(
   roomId: string,
   userId: string,
   trackId: string,
-  kind: MediaTrackKind
+  kind: MediaTrackKind,
+  accessToken: string
 ): Promise<MediaRelayRoomStatus> {
   const response = await fetch(`${mediaRelayUrl(roomId)}/tracks`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId, track_id: trackId, kind })
   });
   return jsonOrThrow(response, "failed to register media track");
@@ -287,11 +298,12 @@ export async function answerServerMediaOffer(
   roomId: string,
   userId: string,
   audioTrackId: string,
-  sdp: string
+  sdp: string,
+  accessToken: string
 ): Promise<ServerMediaAnswer> {
   const response = await fetch(serverMediaOfferUrl(roomId), {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId, audio_track_id: audioTrackId, sdp })
   });
   return jsonOrThrow(response, "failed to negotiate server media offer");
@@ -299,11 +311,12 @@ export async function answerServerMediaOffer(
 
 export async function addServerMediaIceCandidate(
   roomId: string,
-  candidate: Omit<ServerMediaIceCandidate, "room_id">
+  candidate: Omit<ServerMediaIceCandidate, "room_id">,
+  accessToken: string
 ): Promise<ServerMediaIceCandidate> {
   const response = await fetch(serverMediaCandidatesUrl(roomId), {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
     body: JSON.stringify(candidate)
   });
   return jsonOrThrow(response, "failed to add server media ICE candidate");
@@ -311,20 +324,24 @@ export async function addServerMediaIceCandidate(
 
 export async function getServerMediaIceCandidates(
   roomId: string,
-  userId: string
+  userId: string,
+  accessToken: string
 ): Promise<ServerMediaIceCandidate[]> {
   const query = new URLSearchParams({ user_id: userId });
-  const response = await fetch(`${serverMediaCandidatesUrl(roomId)}?${query.toString()}`);
+  const response = await fetch(`${serverMediaCandidatesUrl(roomId)}?${query.toString()}`, {
+    headers: bearerHeaders(accessToken)
+  });
   return jsonOrThrow(response, "failed to load server media ICE candidates");
 }
 
 export async function closeServerMediaSession(
   roomId: string,
-  userId: string
+  userId: string,
+  accessToken: string
 ): Promise<CloseServerMediaSessionResponse> {
   const response = await fetch(serverMediaCloseUrl(roomId), {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId })
   });
   return jsonOrThrow(response, "failed to close server media session");

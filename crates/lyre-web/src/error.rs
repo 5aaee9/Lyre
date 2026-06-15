@@ -11,6 +11,7 @@ pub enum ApiError {
     MediaRelay(MediaRelayError),
     ServerMediaNegotiation(ServerMediaNegotiationError),
     TurnRestCredentials(TurnRestCredentialsError),
+    Unauthorized,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,6 +48,10 @@ impl IntoResponse for ApiError {
         let (status, error) = match self {
             Self::BadRoomId(error) => (StatusCode::BAD_REQUEST, error.to_string()),
             Self::MediaRelay(error) => (StatusCode::CONFLICT, error.to_string()),
+            Self::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "room access token is invalid".to_owned(),
+            ),
             Self::ServerMediaNegotiation(error) => {
                 let status = match &error {
                     ServerMediaNegotiationError::WebRtc {

@@ -13,6 +13,12 @@ async fn body_json(response: axum::response::Response) -> serde_json::Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
+#[derive(Debug)]
+struct JoinedForTest {
+    user_id: String,
+    access_token: String,
+}
+
 fn post_json(uri: &str, body: String) -> Request<Body> {
     Request::builder()
         .method("POST")
@@ -22,32 +28,60 @@ fn post_json(uri: &str, body: String) -> Request<Body> {
         .unwrap()
 }
 
+fn post_json_with_auth(uri: &str, body: String, access_token: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {access_token}"))
+        .body(Body::from(body))
+        .unwrap()
+}
+
+async fn join_for_test(app: axum::Router, nickname: &str) -> JoinedForTest {
+    let response = app
+        .oneshot(post_json(
+            "/api/rooms/DEFAULT/join",
+            serde_json::json!({ "nickname": nickname }).to_string(),
+        ))
+        .await
+        .unwrap();
+    let body = body_json(response).await;
+    JoinedForTest {
+        user_id: body["user"]["id"].as_str().unwrap().to_owned(),
+        access_token: body["access_token"].as_str().unwrap().to_owned(),
+    }
+}
+
 async fn offer_sdp() -> String {
     let offerer = WebRtcStack::new().create_peer_connection().await.unwrap();
     offerer.create_local_offer_for_test().await.unwrap()
 }
 
-async fn negotiate_server_media(state: &AppState) {
+async fn negotiate_server_media(state: &AppState) -> JoinedForTest {
     let app = router(state.clone());
+    let joined = join_for_test(app.clone(), "Alice").await;
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/offer",
             serde_json::json!({
-                "user_id": "user_01",
+                "user_id": joined.user_id,
                 "audio_track_id": "audio-main",
                 "sdp": offer_sdp().await,
             })
             .to_string(),
+            &joined.access_token,
         ))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    joined
 }
 
-fn candidate_body() -> String {
+fn candidate_body(user_id: &str) -> String {
     serde_json::json!({
         "room_id": "IGNORED",
-        "user_id": "user_01",
+        "user_id": user_id,
         "candidate": "candidate:1 1 UDP 2130706431 192.168.1.100 54321 typ host",
         "sdp_mid": "0",
         "sdp_mline_index": 0,
@@ -60,16 +94,18 @@ fn candidate_body() -> String {
 async fn server_media_offer_route_returns_answer_and_updates_shared_sessions() {
     let state = AppState::default();
     let app = router(state.clone());
+    let joined = join_for_test(app.clone(), "Alice").await;
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/offer",
             serde_json::json!({
                 "room_id": "IGNORED",
-                "user_id": "user_01",
+                "user_id": joined.user_id,
                 "audio_track_id": "audio-main",
                 "sdp": offer_sdp().await,
             })
             .to_string(),
+            &joined.access_token,
         ))
         .await
         .unwrap();
@@ -77,7 +113,7 @@ async fn server_media_offer_route_returns_answer_and_updates_shared_sessions() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_json(response).await;
     assert_eq!(body["room_id"], "DEFAULT");
-    assert_eq!(body["user_id"], "user_01");
+    assert_eq!(body["user_id"], joined.user_id);
     assert_eq!(body["audio_track_id"], "audio-main");
     assert_eq!(body["state"], "negotiating");
     assert!(body["sdp"].as_str().unwrap().starts_with("v=0"));
@@ -92,15 +128,17 @@ async fn server_media_offer_route_returns_answer_and_updates_shared_sessions() {
 async fn server_media_offer_route_rejects_invalid_sdp_without_session() {
     let state = AppState::default();
     let app = router(state.clone());
+    let joined = join_for_test(app.clone(), "Alice").await;
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/offer",
             serde_json::json!({
-                "user_id": "user_01",
+                "user_id": joined.user_id,
                 "audio_track_id": "audio-main",
                 "sdp": "not sdp",
             })
             .to_string(),
+            &joined.access_token,
         ))
         .await
         .unwrap();
@@ -118,16 +156,18 @@ async fn server_media_offer_route_rejects_invalid_sdp_without_session() {
 async fn stopping_media_relay_removes_server_media_peer_handle() {
     let state = AppState::default();
     let app = router(state.clone());
+    let joined = join_for_test(app.clone(), "Alice").await;
     let response = app
         .clone()
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/offer",
             serde_json::json!({
-                "user_id": "user_01",
+                "user_id": joined.user_id,
                 "audio_track_id": "audio-main",
                 "sdp": offer_sdp().await,
             })
             .to_string(),
+            &joined.access_token,
         ))
         .await
         .unwrap();
@@ -135,9 +175,10 @@ async fn stopping_media_relay_removes_server_media_peer_handle() {
     assert_eq!(state.server_media_peer_connection_count(), 1);
 
     let stop = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/media-relay/stop",
-            serde_json::json!({ "user_id": "user_01" }).to_string(),
+            serde_json::json!({ "user_id": joined.user_id }).to_string(),
+            &joined.access_token,
         ))
         .await
         .unwrap();
@@ -149,13 +190,14 @@ async fn stopping_media_relay_removes_server_media_peer_handle() {
 #[tokio::test]
 async fn server_media_candidate_route_accepts_existing_peer_candidate() {
     let state = AppState::default();
-    negotiate_server_media(&state).await;
+    let joined = negotiate_server_media(&state).await;
     let app = router(state);
 
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/candidates",
-            candidate_body(),
+            candidate_body(&joined.user_id),
+            &joined.access_token,
         ))
         .await
         .unwrap();
@@ -163,7 +205,7 @@ async fn server_media_candidate_route_accepts_existing_peer_candidate() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_json(response).await;
     assert_eq!(body["room_id"], "DEFAULT");
-    assert_eq!(body["user_id"], "user_01");
+    assert_eq!(body["user_id"], joined.user_id);
     assert_eq!(
         body["candidate"],
         "candidate:1 1 UDP 2130706431 192.168.1.100 54321 typ host"
@@ -174,11 +216,13 @@ async fn server_media_candidate_route_accepts_existing_peer_candidate() {
 async fn server_media_candidate_route_rejects_missing_peer() {
     let state = AppState::default();
     let app = router(state.clone());
+    let joined = join_for_test(app.clone(), "Alice").await;
 
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/candidates",
-            candidate_body(),
+            candidate_body(&joined.user_id),
+            &joined.access_token,
         ))
         .await
         .unwrap();
@@ -190,7 +234,7 @@ async fn server_media_candidate_route_rejects_missing_peer() {
 #[tokio::test]
 async fn server_media_candidates_route_lists_server_candidates() {
     let state = AppState::default();
-    negotiate_server_media(&state).await;
+    let joined = negotiate_server_media(&state).await;
     let app = router(state);
 
     let mut body = serde_json::Value::Null;
@@ -200,7 +244,11 @@ async fn server_media_candidates_route_lists_server_candidates() {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/api/rooms/DEFAULT/server-media/candidates?user_id=user_01")
+                    .uri(format!(
+                        "/api/rooms/DEFAULT/server-media/candidates?user_id={}",
+                        joined.user_id
+                    ))
+                    .header("authorization", format!("Bearer {}", joined.access_token))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -224,7 +272,7 @@ async fn server_media_candidates_route_lists_server_candidates() {
     }
     assert!(body.as_array().unwrap().iter().any(|candidate| {
         candidate["room_id"] == "DEFAULT"
-            && candidate["user_id"] == "user_01"
+            && candidate["user_id"] == joined.user_id
             && candidate["candidate"]
                 .as_str()
                 .unwrap()
@@ -232,9 +280,55 @@ async fn server_media_candidates_route_lists_server_candidates() {
     }));
     assert!(body.as_array().unwrap().iter().any(|candidate| {
         candidate["room_id"] == "DEFAULT"
-            && candidate["user_id"] == "user_01"
+            && candidate["user_id"] == joined.user_id
             && candidate["candidate"] == ""
     }));
+}
+
+#[tokio::test]
+async fn server_media_offer_requires_bearer_token() {
+    let state = AppState::default();
+    let app = router(state);
+
+    let response = app
+        .oneshot(post_json(
+            "/api/rooms/DEFAULT/server-media/offer",
+            serde_json::json!({
+                "user_id": "user_01",
+                "audio_track_id": "audio-main",
+                "sdp": offer_sdp().await,
+            })
+            .to_string(),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn server_media_candidates_reject_token_for_different_user() {
+    let state = AppState::default();
+    let app = router(state);
+    let first = join_for_test(app.clone(), "Alice").await;
+    let second = join_for_test(app.clone(), "Bob").await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/api/rooms/DEFAULT/server-media/candidates?user_id={}",
+                    second.user_id
+                ))
+                .header("authorization", format!("Bearer {}", first.access_token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

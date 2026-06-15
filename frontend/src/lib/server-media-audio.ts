@@ -10,6 +10,7 @@ import { createPeerConnection } from "./webrtc";
 type ServerMediaAudioSessionInput = {
   roomId: string;
   userId: string;
+  accessToken: string;
   audioTrackId?: string;
   iceServers: IceServerConfig[];
   stream: MediaStream;
@@ -57,7 +58,8 @@ export class ServerMediaAudioSession {
       this.input.roomId,
       this.input.userId,
       this.audioTrackId,
-      offer.sdp ?? ""
+      offer.sdp ?? "",
+      this.input.accessToken
     );
     await this.peer.setRemoteDescription({ type: "answer", sdp: answer.sdp });
     await this.fetchServerCandidates({ report: false });
@@ -81,13 +83,17 @@ export class ServerMediaAudioSession {
 
   private async addLocalCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     try {
-      await addServerMediaIceCandidate(this.input.roomId, {
-        user_id: this.input.userId,
-        candidate: candidate.candidate ?? "",
-        sdp_mid: candidate.sdpMid ?? null,
-        sdp_mline_index: candidate.sdpMLineIndex ?? null,
-        username_fragment: candidate.usernameFragment ?? null
-      });
+      await addServerMediaIceCandidate(
+        this.input.roomId,
+        {
+          user_id: this.input.userId,
+          candidate: candidate.candidate ?? "",
+          sdp_mid: candidate.sdpMid ?? null,
+          sdp_mline_index: candidate.sdpMLineIndex ?? null,
+          username_fragment: candidate.usernameFragment ?? null
+        },
+        this.input.accessToken
+      );
     } catch (error) {
       this.reportError(error);
     }
@@ -95,7 +101,11 @@ export class ServerMediaAudioSession {
 
   private async fetchServerCandidates({ report = true }: { report?: boolean } = {}): Promise<void> {
     try {
-      const candidates = await getServerMediaIceCandidates(this.input.roomId, this.input.userId);
+      const candidates = await getServerMediaIceCandidates(
+        this.input.roomId,
+        this.input.userId,
+        this.input.accessToken
+      );
       for (const candidate of candidates) {
         await this.addServerCandidate(candidate);
       }

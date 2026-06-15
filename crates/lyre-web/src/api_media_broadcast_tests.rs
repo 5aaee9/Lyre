@@ -10,11 +10,12 @@ use lyre_core::{
 use tokio::time::{timeout, Duration};
 use tower::ServiceExt;
 
-fn post_json(uri: &str, body: &'static str) -> Request<Body> {
+fn post_json_with_auth(uri: &str, body: String, access_token: &str) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri(uri)
         .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {access_token}"))
         .body(Body::from(body))
         .unwrap()
 }
@@ -155,16 +156,20 @@ async fn processed_media_late_subscriber_only_receives_future_frames() {
 async fn media_relay_stop_route_clears_processed_frames() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
-    let user_id = UserId::from_external("user_01");
+    let joined = state
+        .registry
+        .join(room_id.clone(), lyre_core::JoinRoomRequest::default());
+    let user_id = joined.user.id.clone();
     start_relay_with_track(&state, room_id.clone(), user_id.clone(), NoiseProvider::Off);
     process_samples(&state, &room_id, &user_id, vec![1.0]);
     assert_eq!(state.processed_media_frames(&room_id).len(), 1);
     let app = router(state.clone());
 
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/media-relay/stop",
-            r#"{"user_id":"user_01"}"#,
+            serde_json::json!({ "user_id": user_id }).to_string(),
+            joined.access_token.as_str(),
         ))
         .await
         .unwrap();

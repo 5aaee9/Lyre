@@ -11,7 +11,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, Query, State,
     },
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode, Uri},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -29,7 +29,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{broadcast, mpsc};
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    trace::{DefaultOnResponse, TraceLayer},
+};
+use tracing::Level;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -146,6 +150,7 @@ struct HealthResponse {
 #[derive(Debug, Deserialize)]
 struct WsQuery {
     user_id: String,
+    access_token: Option<String>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -173,8 +178,64 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::api_server_media::router())
         .route("/api/rooms/{room_id}/ws", get(room_ws))
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(make_request_span)
+                .on_response(DefaultOnResponse::new()),
+        )
         .with_state(state)
+}
+
+fn make_request_span<B>(request: &axum::http::Request<B>) -> tracing::Span {
+    tracing::span!(
+        Level::INFO,
+        "request",
+        method = %request.method(),
+        path = redacted_trace_path(request.uri()),
+    )
+}
+
+pub(crate) fn redacted_trace_path(uri: &Uri) -> &str {
+    uri.path()
+}
+
+fn bearer_token(headers: &HeaderMap) -> Result<lyre_core::RoomAccessToken, ApiError> {
+    let Some(value) = headers.get(header::AUTHORIZATION) else {
+        return Err(ApiError::Unauthorized);
+    };
+    let value = value.to_str().map_err(|_| ApiError::Unauthorized)?;
+    let Some(token) = value.strip_prefix("Bearer ") else {
+        return Err(ApiError::Unauthorized);
+    };
+    if token.is_empty() {
+        return Err(ApiError::Unauthorized);
+    }
+    Ok(lyre_core::RoomAccessToken::from_external(token))
+}
+
+pub(crate) fn authorize_room_user(
+    state: &AppState,
+    room_id: &RoomId,
+    user_id: &lyre_core::UserId,
+    headers: &HeaderMap,
+) -> Result<(), ApiError> {
+    let token = bearer_token(headers)?;
+    state
+        .registry
+        .validate_access_token(room_id, user_id, &token)
+        .map_err(|_| ApiError::Unauthorized)
+}
+
+fn authorize_room_member(
+    state: &AppState,
+    room_id: &RoomId,
+    headers: &HeaderMap,
+) -> Result<(), ApiError> {
+    let token = bearer_token(headers)?;
+    state
+        .registry
+        .validate_any_access_token(room_id, &token)
+        .map_err(|_| ApiError::Unauthorized)
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -226,9 +287,11 @@ async fn join_room(
 async fn leave_room(
     State(state): State<AppState>,
     Path(room_id): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<LeaveRoomRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     let snapshot = state.registry.leave(&room_id, &request.user_id);
     state.peers.user_left(&room_id, &request.user_id);
     Ok(Json(snapshot))
@@ -245,27 +308,33 @@ async fn media_relay_status(
 async fn start_media_relay(
     State(state): State<AppState>,
     Path(room_id): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<lyre_core::StartMediaRelayRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_member(&state, &room_id, &headers)?;
     Ok(Json(state.start_media_relay(room_id, request)))
 }
 
 async fn stop_media_relay(
     State(state): State<AppState>,
     Path(room_id): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<lyre_core::StopMediaRelayRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     Ok(Json(state.stop_media_relay(room_id, request)))
 }
 
 async fn register_media_track(
     State(state): State<AppState>,
     Path(room_id): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<lyre_core::RegisterMediaTrackRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     Ok(Json(state.media_relays.register_track(room_id, request)?))
 }
 
@@ -277,6 +346,14 @@ async fn room_ws(
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
     let user_id = lyre_core::UserId::from_external(query.user_id);
+    let Some(access_token) = query.access_token else {
+        return Err(ApiError::Unauthorized);
+    };
+    let token = lyre_core::RoomAccessToken::from_external(access_token);
+    state
+        .registry
+        .validate_access_token(&room_id, &user_id, &token)
+        .map_err(|_| ApiError::Unauthorized)?;
     Ok(ws.on_upgrade(move |socket| handle_socket(state, room_id, user_id, socket)))
 }
 

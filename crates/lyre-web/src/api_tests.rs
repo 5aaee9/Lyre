@@ -2,14 +2,59 @@ use crate::api::{router, AppState};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
+    Router,
 };
 use http_body_util::BodyExt;
 use lyre_core::IceServerConfig;
+use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
+
+#[derive(Debug)]
+struct JoinedForTest {
+    user_id: String,
+    access_token: String,
+}
+
+#[derive(Clone)]
+struct CapturedWriter(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 async fn body_json(response: axum::response::Response) -> serde_json::Value {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+async fn join_for_test(app: Router, nickname: &str) -> JoinedForTest {
+    join_room_for_test(app, "DEFAULT", nickname).await
+}
+
+async fn join_room_for_test(app: Router, room_id: &str, nickname: &str) -> JoinedForTest {
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/rooms/{room_id}/join"))
+                .header("content-type", "application/json")
+                .body(Body::from(format!(r#"{{"nickname":"{nickname}"}}"#)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = body_json(response).await;
+    JoinedForTest {
+        user_id: body["user"]["id"].as_str().unwrap().to_owned(),
+        access_token: body["access_token"].as_str().unwrap().to_owned(),
+    }
 }
 
 #[tokio::test]
@@ -47,6 +92,7 @@ async fn room_routes_join_snapshot_and_leave() {
     assert_eq!(join.status(), StatusCode::CREATED);
     let join_body = body_json(join).await;
     let user_id = join_body["user"]["id"].as_str().unwrap();
+    let access_token = join_body["access_token"].as_str().unwrap();
 
     let snapshot = app
         .clone()
@@ -69,12 +115,91 @@ async fn room_routes_join_snapshot_and_leave() {
                 .method("POST")
                 .uri("/api/rooms/DEFAULT/leave")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {access_token}"))
                 .body(Body::from(format!(r#"{{"user_id":"{user_id}"}}"#)))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(body_json(leave).await["users"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn protected_room_leave_requires_bearer_token() {
+    let app = router(AppState::default());
+    let joined = join_for_test(app.clone(), "Alice").await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/rooms/DEFAULT/leave")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(r#"{{"user_id":"{}"}}"#, joined.user_id)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_ne!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+}
+
+#[tokio::test]
+async fn protected_room_leave_rejects_token_for_different_user() {
+    let app = router(AppState::default());
+    let first = join_for_test(app.clone(), "Alice").await;
+    let second = join_for_test(app.clone(), "Bob").await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/rooms/DEFAULT/leave")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", first.access_token))
+                .body(Body::from(format!(r#"{{"user_id":"{}"}}"#, second.user_id)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_ne!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+}
+
+#[tokio::test]
+async fn protected_room_leave_rejects_malformed_unknown_and_room_mismatched_tokens() {
+    let app = router(AppState::default());
+    let default = join_for_test(app.clone(), "Alice").await;
+    let other = join_room_for_test(app.clone(), "OTHER", "Bob").await;
+
+    for authorization in [
+        "Token not-bearer".to_owned(),
+        "Bearer unknown-token".to_owned(),
+        format!("Bearer {}", other.access_token),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rooms/DEFAULT/leave")
+                    .header("content-type", "application/json")
+                    .header("authorization", authorization)
+                    .body(Body::from(format!(
+                        r#"{{"user_id":"{}"}}"#,
+                        default.user_id
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            body_json(response).await["error"],
+            "room access token is invalid"
+        );
+    }
 }
 
 #[tokio::test]
@@ -222,4 +347,67 @@ async fn malformed_leave_body_is_client_error() {
         .unwrap();
 
     assert!(response.status().is_client_error());
+}
+
+#[test]
+fn request_trace_path_redacts_query_tokens() {
+    let uri: axum::http::Uri = "/api/rooms/DEFAULT/ws?user_id=user_01&access_token=secret"
+        .parse()
+        .unwrap();
+    assert_eq!(
+        crate::api::redacted_trace_path(&uri),
+        "/api/rooms/DEFAULT/ws"
+    );
+}
+
+#[tokio::test]
+async fn websocket_route_requires_access_token_query() {
+    let app = router(AppState::default());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/rooms/DEFAULT/ws?user_id=user_01")
+                .header("connection", "upgrade")
+                .header("upgrade", "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_ne!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+}
+
+#[tokio::test]
+async fn websocket_request_trace_does_not_log_access_token_query() {
+    let logs = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let writer = CapturedWriter(Arc::clone(&logs));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_ansi(false)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let app = router(AppState::default());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/rooms/DEFAULT/ws?user_id=user_01&access_token=secret-token")
+                .header("connection", "upgrade")
+                .header("upgrade", "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_ne!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+    let output = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+    assert!(!output.contains("secret-token"));
+    assert!(!output.contains("access_token"));
 }

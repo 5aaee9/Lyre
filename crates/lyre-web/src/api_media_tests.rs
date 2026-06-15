@@ -28,6 +28,35 @@ fn post_json(uri: &str, body: &'static str) -> Request<Body> {
         .unwrap()
 }
 
+fn post_json_with_auth(uri: &str, body: String, access_token: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {access_token}"))
+        .body(Body::from(body))
+        .unwrap()
+}
+
+async fn join_for_test(app: axum::Router, nickname: &str) -> (String, String) {
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/rooms/DEFAULT/join")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(r#"{{"nickname":"{nickname}"}}"#)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = body_json(response).await;
+    (
+        body["user"]["id"].as_str().unwrap().to_owned(),
+        body["access_token"].as_str().unwrap().to_owned(),
+    )
+}
+
 fn audio_frame(room_id: RoomId, user_id: UserId, samples: Vec<f32>) -> AudioFrame {
     AudioFrame {
         room_id,
@@ -111,10 +140,17 @@ async fn media_relay_status_defaults_to_inactive() {
 #[tokio::test]
 async fn media_relay_register_track_requires_active_relay() {
     let app = router(AppState::default());
+    let (user_id, access_token) = join_for_test(app.clone(), "Alice").await;
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/media-relay/tracks",
-            r#"{"user_id":"user_01","track_id":"audio-main","kind":"audio"}"#,
+            serde_json::json!({
+                "user_id": user_id,
+                "track_id": "audio-main",
+                "kind": "audio",
+            })
+            .to_string(),
+            &access_token,
         ))
         .await
         .unwrap();
@@ -129,11 +165,14 @@ async fn media_relay_register_track_requires_active_relay() {
 #[tokio::test]
 async fn media_relay_start_registers_track_and_stop_clears_state() {
     let app = router(AppState::default());
+    let (user_id, access_token) = join_for_test(app.clone(), "Alice").await;
     let start = app
         .clone()
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/media-relay/start",
-            r#"{"noise":{"provider":"rnnoise","intensity":0.8,"voice_activity_threshold":0.2}}"#,
+            r#"{"noise":{"provider":"rnnoise","intensity":0.8,"voice_activity_threshold":0.2}}"#
+                .to_owned(),
+            &access_token,
         ))
         .await
         .unwrap();
@@ -147,16 +186,22 @@ async fn media_relay_start_registers_track_and_stop_clears_state() {
 
     let register = app
         .clone()
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/media-relay/tracks",
-            r#"{"user_id":"user_01","track_id":"audio-main","kind":"audio"}"#,
+            serde_json::json!({
+                "user_id": user_id,
+                "track_id": "audio-main",
+                "kind": "audio",
+            })
+            .to_string(),
+            &access_token,
         ))
         .await
         .unwrap();
 
     assert_eq!(register.status(), StatusCode::OK);
     let register_body = body_json(register).await;
-    assert_eq!(register_body["participants"][0]["user_id"], "user_01");
+    assert_eq!(register_body["participants"][0]["user_id"], user_id);
     assert_eq!(
         register_body["participants"][0]["tracks"][0]["track_id"],
         "audio-main"
@@ -167,9 +212,10 @@ async fn media_relay_start_registers_track_and_stop_clears_state() {
     );
 
     let stop = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/media-relay/stop",
-            r#"{"user_id":"user_01"}"#,
+            serde_json::json!({ "user_id": user_id }).to_string(),
+            &access_token,
         ))
         .await
         .unwrap();
@@ -178,6 +224,25 @@ async fn media_relay_start_registers_track_and_stop_clears_state() {
     let stop_body = body_json(stop).await;
     assert_eq!(stop_body["status"], "inactive");
     assert!(stop_body["participants"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn media_relay_start_requires_bearer_token() {
+    let app = router(AppState::default());
+
+    let response = app
+        .oneshot(post_json(
+            "/api/rooms/DEFAULT/media-relay/start",
+            r#"{"noise":{"provider":"off","intensity":0.5,"voice_activity_threshold":0.35}}"#,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        body_json(response).await["error"],
+        "room access token is invalid"
+    );
 }
 
 #[test]

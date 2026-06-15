@@ -27,7 +27,10 @@ export default function Home() {
     writeNickname(nickname);
     writeNoiseConfig(noise);
     const response = await joinRoom(targetRoom, { nickname, noise });
-    sessionStorage.setItem("lyre.currentUser", JSON.stringify(response.user));
+    sessionStorage.setItem(
+      "lyre.roomSession",
+      JSON.stringify({ roomId: targetRoom, user: response.user, accessToken: response.access_token })
+    );
     router.push(`/room/${encodeURIComponent(targetRoom)}`);
   }
 

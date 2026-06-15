@@ -25,6 +25,16 @@ fn post_json(uri: &str, body: String) -> Request<Body> {
         .unwrap()
 }
 
+fn post_json_with_auth(uri: &str, body: String, access_token: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {access_token}"))
+        .body(Body::from(body))
+        .unwrap()
+}
+
 async fn offer_sdp() -> String {
     let offerer = WebRtcStack::new().create_peer_connection().await.unwrap();
     offerer.create_local_offer_for_test().await.unwrap()
@@ -91,17 +101,23 @@ async fn close_server_media_session_for_user_keeps_room_relay_and_other_peers() 
 #[tokio::test]
 async fn server_media_close_route_returns_status_and_closed_session() {
     let state = AppState::default();
+    let joined = state.registry.join(
+        RoomId::default_room(),
+        lyre_core::JoinRoomRequest::default(),
+    );
+    let user_id = joined.user.id.as_str();
     state
         .media_relays
         .start(RoomId::default_room(), StartMediaRelayRequest::default());
-    register_audio_track(&state, "user_01");
-    negotiate_server_media_for(&state, "user_01").await;
+    register_audio_track(&state, user_id);
+    negotiate_server_media_for(&state, user_id).await;
     let app = router(state.clone());
 
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/close",
-            serde_json::json!({ "user_id": "user_01" }).to_string(),
+            serde_json::json!({ "user_id": user_id }).to_string(),
+            joined.access_token.as_str(),
         ))
         .await
         .unwrap();
@@ -113,7 +129,7 @@ async fn server_media_close_route_returns_status_and_closed_session() {
         .as_array()
         .unwrap()
         .is_empty());
-    assert_eq!(body["session"]["user_id"], "user_01");
+    assert_eq!(body["session"]["user_id"], user_id);
     assert_eq!(body["session"]["state"], "closed");
     assert_eq!(state.server_media_peer_connection_count(), 0);
 }
@@ -121,16 +137,22 @@ async fn server_media_close_route_returns_status_and_closed_session() {
 #[tokio::test]
 async fn server_media_close_route_is_idempotent_for_missing_session() {
     let state = AppState::default();
+    let joined = state.registry.join(
+        RoomId::default_room(),
+        lyre_core::JoinRoomRequest::default(),
+    );
+    let user_id = joined.user.id.as_str();
     state
         .media_relays
         .start(RoomId::default_room(), StartMediaRelayRequest::default());
-    register_audio_track(&state, "user_01");
+    register_audio_track(&state, user_id);
     let app = router(state);
 
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/close",
-            serde_json::json!({ "user_id": "user_01" }).to_string(),
+            serde_json::json!({ "user_id": user_id }).to_string(),
+            joined.access_token.as_str(),
         ))
         .await
         .unwrap();
@@ -158,10 +180,6 @@ async fn server_media_close_route_requires_active_relay_without_creating_room() 
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::CONFLICT);
-    assert!(body_json(response).await["error"]
-        .as_str()
-        .unwrap()
-        .contains("media relay is not active"));
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(!state.media_relays.contains_room(&room_id));
 }

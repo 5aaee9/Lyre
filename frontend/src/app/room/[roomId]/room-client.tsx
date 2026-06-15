@@ -27,8 +27,48 @@ import { openLocalAudioStream } from "@/lib/webrtc";
 
 type AudioMode = "server_relay" | "peer_mesh";
 
+type RoomSession = {
+  roomId: string;
+  user: UserProfile;
+  accessToken: string;
+};
+
+function isStoredRoomSession(input: unknown, roomId: string): input is RoomSession {
+  if (!input || typeof input !== "object") {
+    return false;
+  }
+  const session = input as Partial<RoomSession>;
+  return (
+    session.roomId === roomId &&
+    typeof session.accessToken === "string" &&
+    session.accessToken.length > 0 &&
+    !!session.user &&
+    typeof session.user.id === "string" &&
+    session.user.id.length > 0 &&
+    typeof session.user.nickname === "string" &&
+    typeof session.user.joined_at === "string"
+  );
+}
+
+function readRoomSession(roomId: string): RoomSession | null {
+  const stored = sessionStorage.getItem("lyre.roomSession");
+  if (!stored) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(stored) as unknown;
+    if (!isStoredRoomSession(parsed, roomId)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function RoomClient({ roomId }: { roomId: string }) {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState("Joining");
   const [audioMode, setAudioMode] = useState<AudioMode>("server_relay");
@@ -79,19 +119,19 @@ export function RoomClient({ roomId }: { roomId: string }) {
     let cancelled = false;
 
     async function enterRoom() {
-      const stored = sessionStorage.getItem("lyre.currentUser");
-      let user = stored ? (JSON.parse(stored) as UserProfile) : null;
-      if (!user) {
+      let session = readRoomSession(roomId);
+      if (!session) {
         const response = await joinRoom(roomId, { nickname: readNickname(), noise: readNoiseConfig() });
-        user = response.user;
+        session = { roomId, user: response.user, accessToken: response.access_token };
         setRoom(response.room);
-        sessionStorage.setItem("lyre.currentUser", JSON.stringify(user));
+        sessionStorage.setItem("lyre.roomSession", JSON.stringify(session));
       }
       if (cancelled) {
         return;
       }
-      setCurrentUser(user);
-      const socket = createRoomSocket(roomId, user.id);
+      setCurrentUser(session.user);
+      setAccessToken(session.accessToken);
+      const socket = createRoomSocket(roomId, session.user.id, session.accessToken);
       socketRef.current = socket;
       socket.onopen = () => setStatus("Connected");
       socket.onmessage = (event) => {
@@ -130,7 +170,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }
 
   async function connectServerRelayAudio() {
-    if (!currentUser) {
+    if (!currentUser || !accessToken) {
       return;
     }
     if (audioStartedRef.current) {
@@ -144,13 +184,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
       const iceServers = await getIceServers();
       stream = await openLocalAudioStream();
       const noise = readNoiseConfig();
-      await startMediaRelay(roomId, noise);
+      await startMediaRelay(roomId, noise, accessToken);
       cleanupNeeded = true;
       serverMediaCleanupNeededRef.current = true;
-      await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio");
+      await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio", accessToken);
       const session = new ServerMediaAudioSession({
         roomId,
         userId: currentUser.id,
+        accessToken,
         iceServers,
         stream,
         onError: setStatus
@@ -171,7 +212,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       }
       if (cleanupNeeded) {
         try {
-          await closeServerMediaSession(roomId, currentUser.id);
+          await closeServerMediaSession(roomId, currentUser.id, accessToken);
         } catch {
           // Keep the original startup error visible.
         }
@@ -223,14 +264,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
     setAudioStarted(false);
     socketRef.current?.close();
     socketRef.current = null;
-    if (currentUser) {
+    if (currentUser && accessToken) {
       if (shouldCloseServerMedia) {
-        await closeServerMediaSession(roomId, currentUser.id);
+        await closeServerMediaSession(roomId, currentUser.id, accessToken);
         serverMediaCleanupNeededRef.current = false;
       }
-      await leaveRoom(roomId, currentUser.id);
+      await leaveRoom(roomId, currentUser.id, accessToken);
     }
-    sessionStorage.removeItem("lyre.currentUser");
+    sessionStorage.removeItem("lyre.roomSession");
     window.location.href = "/";
   }
 

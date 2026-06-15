@@ -13,11 +13,12 @@ async fn body_json(response: axum::response::Response) -> serde_json::Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-fn post_json(uri: &str, body: &'static str) -> Request<Body> {
+fn post_json_with_auth(uri: &str, body: String, access_token: &str) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri(uri)
         .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {access_token}"))
         .body(Body::from(body))
         .unwrap()
 }
@@ -73,14 +74,18 @@ fn stop_media_relay_closes_webrtc_sessions_for_room() {
 async fn media_relay_stop_route_closes_webrtc_sessions_for_room() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
-    let user_id = UserId::from_external("user_01");
-    state.start_server_media_session(session_config(room_id, user_id));
+    let joined = state
+        .registry
+        .join(room_id.clone(), lyre_core::JoinRoomRequest::default());
+    let user_id = joined.user.id.clone();
+    state.start_server_media_session(session_config(room_id, user_id.clone()));
     let app = router(state.clone());
 
     let response = app
-        .oneshot(post_json(
+        .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/media-relay/stop",
-            r#"{"user_id":"user_01"}"#,
+            serde_json::json!({ "user_id": user_id }).to_string(),
+            joined.access_token.as_str(),
         ))
         .await
         .unwrap();
