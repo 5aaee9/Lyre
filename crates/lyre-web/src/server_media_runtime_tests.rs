@@ -60,6 +60,7 @@ fn app_state_processes_server_media_pcm_frame_into_runtime() {
     assert_eq!(frames[0].sequence, 7);
     assert_eq!(frames[0].sample_rate_hz, 48_000);
     assert_eq!(frames[0].channels, 1);
+    assert_eq!(frames[0].rtp_timestamp, Some(48_000));
     assert_eq!(frames[0].samples.len(), 960);
     assert_eq!(frames[0].noise.provider, NoiseProvider::Off);
 }

@@ -64,6 +64,7 @@ async fn processed_audio_frame_writes_server_egress_rtp() {
     let sent = server
         .send_processed_audio_frame(ServerMediaProcessedAudioFrame {
             sequence: 7,
+            rtp_timestamp: None,
             sample_rate_hz: 48_000,
             channels: 1,
             samples: vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE],
@@ -87,6 +88,7 @@ async fn processed_audio_egress_rejects_invalid_pcm_shape() {
     let error = server
         .send_processed_audio_frame(ServerMediaProcessedAudioFrame {
             sequence: 7,
+            rtp_timestamp: None,
             sample_rate_hz: 44_100,
             channels: 1,
             samples: vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE],

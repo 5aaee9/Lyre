@@ -40,6 +40,7 @@ fn process_pcm_frame_as_track(
         sample_rate_hz: frame.sample_rate_hz,
         channels: frame.channels,
         sequence: u64::from(frame.sequence_number),
+        rtp_timestamp: Some(frame.rtp_timestamp),
         samples: frame.samples,
     })
 }

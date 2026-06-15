@@ -130,6 +130,7 @@ where
                                 };
                                 let frame = ServerMediaProcessedAudioFrame {
                                     sequence: egress.frame.sequence,
+                                    rtp_timestamp: egress.frame.rtp_timestamp,
                                     sample_rate_hz: egress.frame.sample_rate_hz,
                                     channels: egress.frame.channels,
                                     samples: egress.frame.samples,

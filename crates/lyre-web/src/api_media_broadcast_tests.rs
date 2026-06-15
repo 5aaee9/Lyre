@@ -28,6 +28,7 @@ fn audio_frame(room_id: RoomId, user_id: UserId, samples: Vec<f32>) -> AudioFram
         sample_rate_hz: 48_000,
         channels: 1,
         sequence: 1,
+        rtp_timestamp: None,
         samples,
     }
 }

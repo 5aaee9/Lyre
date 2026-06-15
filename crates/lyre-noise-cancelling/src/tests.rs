@@ -167,6 +167,7 @@ fn audio_frame_processor_adapter_uses_rnnoise_for_valid_audio() {
         sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
         channels: RNNOISE_CHANNELS,
         sequence: 1,
+        rtp_timestamp: None,
         samples: vec![0.1; RNNOISE_FRAME_SIZE],
     };
 
@@ -186,6 +187,7 @@ fn audio_frame_processor_adapter_uses_rnnoise_for_decoded_opus_frame() {
         sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
         channels: RNNOISE_CHANNELS,
         sequence: 1,
+        rtp_timestamp: None,
         samples: input.clone(),
     };
 
@@ -207,6 +209,7 @@ fn audio_frame_processor_adapter_keeps_rnnoise_state_per_audio_source() {
         sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
         channels: RNNOISE_CHANNELS,
         sequence: 1,
+        rtp_timestamp: None,
         samples: input.clone(),
     };
     let user_02_frame = AudioFrame {
@@ -232,6 +235,7 @@ fn audio_frame_processor_adapter_uses_deepfilternet_for_valid_audio() {
         sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
         channels: DEEPFILTERNET_CHANNELS,
         sequence: 1,
+        rtp_timestamp: None,
         samples: input,
     };
 
@@ -251,6 +255,7 @@ fn audio_frame_processor_adapter_passthroughs_invalid_or_unsupported_frames() {
         sample_rate_hz: 44_100,
         channels: 2,
         sequence: 1,
+        rtp_timestamp: None,
         samples: vec![0.1, -0.2, 0.3],
     };
 
@@ -273,6 +278,7 @@ fn audio_frame_processor_adapter_preserves_state_per_config_key() {
         sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
         channels: RNNOISE_CHANNELS,
         sequence: 1,
+        rtp_timestamp: None,
         samples: vec![0.1; RNNOISE_FRAME_SIZE],
     };
     let first = NoiseConfigKey::new(
@@ -316,6 +322,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
         sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
         channels: DEEPFILTERNET_CHANNELS,
         sequence: 1,
+        rtp_timestamp: None,
         samples: vec![0.1; DEEPFILTERNET_FRAME_SIZE],
     };
     let default = NoiseConfigKey::new(

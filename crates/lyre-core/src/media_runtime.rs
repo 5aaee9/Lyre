@@ -11,6 +11,7 @@ pub struct AudioFrame {
     pub sample_rate_hz: u32,
     pub channels: u16,
     pub sequence: u64,
+    pub rtp_timestamp: Option<u32>,
     pub samples: Vec<f32>,
 }
 
@@ -22,6 +23,7 @@ pub struct ProcessedAudioFrame {
     pub sample_rate_hz: u32,
     pub channels: u16,
     pub sequence: u64,
+    pub rtp_timestamp: Option<u32>,
     pub samples: Vec<f32>,
     pub noise: NoiseCancellationConfig,
 }
@@ -83,6 +85,7 @@ where
             sample_rate_hz: frame.sample_rate_hz,
             channels: frame.channels,
             sequence: frame.sequence,
+            rtp_timestamp: frame.rtp_timestamp,
             samples,
             noise: lookup.noise,
         });
@@ -137,6 +140,7 @@ mod tests {
             sample_rate_hz: 48_000,
             channels: 1,
             sequence: 7,
+            rtp_timestamp: None,
             samples: vec![0.1, -0.2, 0.3],
         }
     }
@@ -275,6 +279,7 @@ mod tests {
                 sample_rate_hz: 48_000,
                 channels: 1,
                 sequence: 7,
+                rtp_timestamp: None,
                 samples: vec![0.2, -0.4, 0.6],
                 noise: NoiseCancellationConfig {
                     provider: NoiseProvider::Rnnoise,

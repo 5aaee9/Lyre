@@ -350,6 +350,7 @@ async fn send_processed_audio_frame_routes_to_existing_peer() {
             &key,
             ServerMediaProcessedAudioFrame {
                 sequence: 7,
+                rtp_timestamp: None,
                 sample_rate_hz: 48_000,
                 channels: 1,
                 samples: vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE],
@@ -375,6 +376,7 @@ async fn send_processed_audio_frame_missing_peer_returns_context() {
             &key,
             ServerMediaProcessedAudioFrame {
                 sequence: 7,
+                rtp_timestamp: None,
                 sample_rate_hz: 48_000,
                 channels: 1,
                 samples: vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE],

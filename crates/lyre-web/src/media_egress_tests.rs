@@ -14,6 +14,7 @@ fn frame(room_id: RoomId, user_id: UserId, track_id: impl Into<String>) -> Proce
         sample_rate_hz: 48_000,
         channels: 1,
         sequence: 7,
+        rtp_timestamp: None,
         samples: vec![0.1, -0.2, 0.3],
         noise: NoiseCancellationConfig::default(),
     }

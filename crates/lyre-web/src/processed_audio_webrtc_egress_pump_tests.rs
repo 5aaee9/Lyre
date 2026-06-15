@@ -34,6 +34,7 @@ struct BlockingSender {
     blocked_user_id: UserId,
     blocked_sequences: Mutex<Vec<u64>>,
     fast_sequences: Mutex<Vec<u64>>,
+    fast_rtp_timestamps: Mutex<Vec<Option<u32>>>,
     notify: Notify,
 }
 
@@ -57,6 +58,10 @@ impl ProcessedAudioWebRtcEgressSender for BlockingSender {
             .lock()
             .expect("test sender sequence lock must not be poisoned")
             .push(frame.sequence);
+        self.fast_rtp_timestamps
+            .lock()
+            .expect("test sender RTP timestamp lock must not be poisoned")
+            .push(frame.rtp_timestamp);
         self.notify.notify_waiters();
         Ok(1)
     }
@@ -132,6 +137,7 @@ fn audio_frame(room_id: RoomId, user_id: UserId) -> AudioFrame {
         sample_rate_hz: 48_000,
         channels: 1,
         sequence: 1,
+        rtp_timestamp: None,
         samples: vec![0.1; lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE],
     }
 }
@@ -144,6 +150,7 @@ fn sequenced_audio_frame(sequence: u64) -> AudioFrame {
         sample_rate_hz: 48_000,
         channels: 1,
         sequence,
+        rtp_timestamp: None,
         samples: vec![0.1; lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE],
     }
 }
@@ -195,6 +202,7 @@ async fn recipient_send_backpressure_does_not_block_other_recipients() {
         blocked_user_id: UserId::from_external("blocked"),
         blocked_sequences: Mutex::new(Vec::new()),
         fast_sequences: Mutex::new(Vec::new()),
+        fast_rtp_timestamps: Mutex::new(Vec::new()),
         notify: Notify::new(),
     });
     let pump =
@@ -230,6 +238,46 @@ async fn recipient_send_backpressure_does_not_block_other_recipients() {
 
     pump.stop_and_wait_for_test(&room_id).await;
     panic!("recipient egress backpressure blocked other recipients");
+}
+
+#[tokio::test]
+async fn egress_pump_forwards_source_rtp_timestamp_metadata() {
+    let (_relays, runtime, fanout) = relay_context();
+    let sender = Arc::new(BlockingSender {
+        blocked_user_id: UserId::from_external("unused"),
+        blocked_sequences: Mutex::new(Vec::new()),
+        fast_sequences: Mutex::new(Vec::new()),
+        fast_rtp_timestamps: Mutex::new(Vec::new()),
+        notify: Notify::new(),
+    });
+    let pump =
+        ProcessedAudioWebRtcEgressPump::new(Arc::clone(&runtime), fanout, Arc::clone(&sender));
+    let room_id = RoomId::default_room();
+    pump.start(room_id.clone());
+
+    runtime
+        .process_frame(AudioFrame {
+            rtp_timestamp: Some(48_000),
+            ..sequenced_audio_frame(7)
+        })
+        .unwrap();
+
+    for _ in 0..100 {
+        let timestamps = sender
+            .fast_rtp_timestamps
+            .lock()
+            .expect("test sender RTP timestamp lock must not be poisoned")
+            .clone();
+        if timestamps.len() >= 2 {
+            pump.stop_and_wait_for_test(&room_id).await;
+            assert_eq!(timestamps, vec![Some(48_000), Some(48_000)]);
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    pump.stop_and_wait_for_test(&room_id).await;
+    panic!("recipient egress did not receive source RTP timestamp metadata");
 }
 
 fn register_audio_track(state: &AppState, room_id: &RoomId, user_id: &str) {
