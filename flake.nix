@@ -47,8 +47,16 @@
         commonArgs = {
           inherit src;
           strictDeps = true;
+          nativeBuildInputs = [
+            pkgs.autoPatchelfHook
+          ];
           buildInputs = [
             pkgs.libopus
+            pkgs.stdenv.cc.cc.lib
+          ];
+          runtimeDependencies = [
+            pkgs.libopus
+            pkgs.stdenv.cc.cc.lib
           ];
         };
 

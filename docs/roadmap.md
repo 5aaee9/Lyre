@@ -76,6 +76,7 @@
 - Server-media WebRTC can now dump inbound and outbound RTP payload records with `LYRE_DEBUG_DUMP_PAYLOAD` for diagnosing browser-sourced audio artifacts.
 - Server-media processed Opus egress now uses libopus for browser-compatible RTP payloads instead of the pure Rust encoder that produced libopus-decoder artifacts.
 - Server-media Opus ingress now uses libopus for decoded browser RTP as well, keeping inbound and outbound codec behavior on the same implementation family.
+- Nix `lyre-api` packaging now carries libopus and GCC runtime libraries in the runtime closure so the libopus-backed WebRTC codec path starts without host library dependencies.
 
 ## Next
 
