@@ -15,13 +15,13 @@ fn rnnoise_frame() -> NoiseFrame<'static> {
     NoiseFrame {
         sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
         channels: RNNOISE_CHANNELS,
-        samples: &[120.0; RNNOISE_FRAME_SIZE],
+        samples: &[0.1; RNNOISE_FRAME_SIZE],
     }
 }
 
 fn decoded_opus_frame_samples() -> Vec<f32> {
     (0..RNNOISE_FRAME_SIZE * 2)
-        .map(|index| ((index as f32) / 12.0).sin() * 120.0)
+        .map(|index| ((index as f32) / 12.0).sin() * 0.1)
         .collect()
 }
 
@@ -96,6 +96,38 @@ fn rnnoise_processes_960_sample_mono_frame_in_chunks_and_reports_average_vad() {
 }
 
 #[test]
+fn rnnoise_matches_16_bit_pcm_contract_for_decoded_opus_pcm() {
+    let mut canceller = build_noise_canceller(config(NoiseProvider::Rnnoise)).unwrap();
+    let mut reference_state = DenoiseState::new();
+    let input = (0..RNNOISE_FRAME_SIZE)
+        .map(|index| ((index as f32) / 24.0).sin() * 0.1)
+        .collect::<Vec<_>>();
+
+    let output = canceller
+        .process_frame(NoiseFrame {
+            sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
+            channels: RNNOISE_CHANNELS,
+            samples: &input,
+        })
+        .unwrap();
+
+    let reference_input = input
+        .iter()
+        .map(|sample| sample * PCM_F32_TO_I16_SCALE)
+        .collect::<Vec<_>>();
+    let mut reference_output = vec![0.0; RNNOISE_FRAME_SIZE];
+    reference_state.process_frame(&mut reference_output, &reference_input);
+
+    let max_delta = output
+        .samples
+        .iter()
+        .zip(reference_output.iter())
+        .map(|(actual, expected)| (actual - expected / PCM_F32_TO_I16_SCALE).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(max_delta < 0.000001, "max_delta={max_delta}");
+}
+
+#[test]
 fn rnnoise_rejects_empty_or_non_multiple_frame_size() {
     let mut canceller = build_noise_canceller(config(NoiseProvider::Rnnoise)).unwrap();
 
@@ -135,7 +167,7 @@ fn audio_frame_processor_adapter_uses_rnnoise_for_valid_audio() {
         sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
         channels: RNNOISE_CHANNELS,
         sequence: 1,
-        samples: vec![120.0; RNNOISE_FRAME_SIZE],
+        samples: vec![0.1; RNNOISE_FRAME_SIZE],
     };
 
     let output = processor.process(&frame, &config(NoiseProvider::Rnnoise));

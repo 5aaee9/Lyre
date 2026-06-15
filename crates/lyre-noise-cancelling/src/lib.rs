@@ -16,6 +16,7 @@ use thiserror::Error;
 pub const RNNOISE_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const RNNOISE_CHANNELS: u16 = 1;
 pub const RNNOISE_FRAME_SIZE: usize = DenoiseState::FRAME_SIZE;
+const PCM_F32_TO_I16_SCALE: f32 = i16::MAX as f32;
 
 #[derive(Debug, Clone, Copy)]
 pub struct NoiseFrame<'a> {
@@ -149,8 +150,16 @@ impl NoiseCanceller for RnnoiseNoiseCanceller {
 
         for chunk in frame.samples.chunks_exact(RNNOISE_FRAME_SIZE) {
             let mut output = vec![0.0; RNNOISE_FRAME_SIZE];
-            vad_total += self.state.process_frame(&mut output, chunk);
-            samples.extend(output);
+            let scaled_input = chunk
+                .iter()
+                .map(|sample| sample * PCM_F32_TO_I16_SCALE)
+                .collect::<Vec<_>>();
+            vad_total += self.state.process_frame(&mut output, &scaled_input);
+            samples.extend(
+                output
+                    .into_iter()
+                    .map(|sample| sample / PCM_F32_TO_I16_SCALE),
+            );
             chunks += 1;
         }
 

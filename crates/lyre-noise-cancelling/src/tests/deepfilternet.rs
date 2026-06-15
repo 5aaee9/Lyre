@@ -86,6 +86,32 @@ fn deepfilternet_processes_960_sample_mono_frame_in_chunks() {
 }
 
 #[test]
+fn deepfilternet_preserves_decoded_opus_pcm_amplitude_after_dsp_delay() {
+    let mut canceller = build_noise_canceller(config(NoiseProvider::Deepfilternet)).unwrap();
+    let input = (0..DEEPFILTERNET_FRAME_SIZE * 2)
+        .map(|index| ((index as f32) / 24.0).sin() * 0.1)
+        .collect::<Vec<_>>();
+
+    let output = canceller
+        .process_frame(NoiseFrame {
+            sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+            channels: DEEPFILTERNET_CHANNELS,
+            samples: &input,
+        })
+        .unwrap();
+
+    let shifted_max_delta = input[..DEEPFILTERNET_FRAME_SIZE]
+        .iter()
+        .zip(output.samples[DEEPFILTERNET_FRAME_SIZE..].iter())
+        .map(|(input, output)| (input - output).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        shifted_max_delta < 0.001,
+        "shifted_max_delta={shifted_max_delta}"
+    );
+}
+
+#[test]
 fn deepfilternet_custom_runtime_accepts_configured_hop_size() {
     let runtime = DeepFilterNetRuntimeConfig {
         fft_size: 1920,
