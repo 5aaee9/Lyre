@@ -1,12 +1,90 @@
-use crate::api::AppState;
+use crate::{
+    api::AppState,
+    media_egress::ProcessedAudioEgressFanout,
+    media_runtime::WebMediaRuntime,
+    processed_audio_webrtc_egress_pump::{
+        ProcessedAudioWebRtcEgressPump, ProcessedAudioWebRtcEgressSender,
+    },
+};
+use async_trait::async_trait;
 use lyre_core::{
     AudioFrame, MediaTrackKind, NoiseCancellationConfig, NoiseProvider, RegisterMediaTrackRequest,
     RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
 use lyre_webrtc::{
-    ServerMediaIceCandidate, ServerMediaOffer, ServerMediaOpusDecoder, ServerMediaRtpPacket,
-    ServerMediaSessionKey, WebRtcStack,
+    ServerMediaEgressError, ServerMediaIceCandidate, ServerMediaNegotiator, ServerMediaOffer,
+    ServerMediaOpusDecoder, ServerMediaProcessedAudioFrame, ServerMediaRtpPacket,
+    ServerMediaSessionKey, ServerMediaSessionRegistry, WebRtcStack,
 };
+use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
+
+fn egress_pump() -> ProcessedAudioWebRtcEgressPump {
+    let relays = Arc::new(lyre_core::MediaRelayRegistry::new());
+    let runtime = Arc::new(WebMediaRuntime::new(Arc::clone(&relays)));
+    let fanout = Arc::new(ProcessedAudioEgressFanout::new(relays));
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = Arc::new(ServerMediaNegotiator::new(WebRtcStack::new(), sessions));
+    ProcessedAudioWebRtcEgressPump::new(runtime, fanout, negotiator)
+}
+
+#[derive(Debug)]
+struct BlockingSender {
+    blocked_user_id: UserId,
+    blocked_sequences: Mutex<Vec<u64>>,
+    fast_sequences: Mutex<Vec<u64>>,
+    notify: Notify,
+}
+
+#[async_trait]
+impl ProcessedAudioWebRtcEgressSender for BlockingSender {
+    async fn send_processed_audio_frame(
+        &self,
+        key: &ServerMediaSessionKey,
+        frame: ServerMediaProcessedAudioFrame,
+    ) -> Result<usize, ServerMediaEgressError> {
+        if key.user_id == self.blocked_user_id {
+            self.blocked_sequences
+                .lock()
+                .expect("test sender sequence lock must not be poisoned")
+                .push(frame.sequence);
+            self.notify.notify_waiters();
+            std::future::pending::<()>().await;
+            unreachable!("test sender intentionally never completes");
+        }
+        self.fast_sequences
+            .lock()
+            .expect("test sender sequence lock must not be poisoned")
+            .push(frame.sequence);
+        self.notify.notify_waiters();
+        Ok(1)
+    }
+}
+
+fn relay_context() -> (
+    Arc<lyre_core::MediaRelayRegistry>,
+    Arc<WebMediaRuntime>,
+    Arc<ProcessedAudioEgressFanout>,
+) {
+    let relays = Arc::new(lyre_core::MediaRelayRegistry::new());
+    let room_id = RoomId::default_room();
+    relays.start(room_id.clone(), StartMediaRelayRequest::default());
+    for user_id in ["source", "blocked", "fast"] {
+        relays
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: UserId::from_external(user_id),
+                    track_id: "audio-main".to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+    }
+    let runtime = Arc::new(WebMediaRuntime::new(Arc::clone(&relays)));
+    let fanout = Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&relays)));
+    (relays, runtime, fanout)
+}
 
 #[tokio::test]
 async fn app_state_start_and_stop_manage_egress_pump() {
@@ -48,6 +126,102 @@ fn audio_frame(room_id: RoomId, user_id: UserId) -> AudioFrame {
         sequence: 1,
         samples: vec![0.1; lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE],
     }
+}
+
+fn sequenced_audio_frame(sequence: u64) -> AudioFrame {
+    AudioFrame {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("source"),
+        track_id: "audio-main".to_owned(),
+        sample_rate_hz: 48_000,
+        channels: 1,
+        sequence,
+        samples: vec![0.1; lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE],
+    }
+}
+
+#[tokio::test]
+async fn egress_pump_start_replaces_existing_room_task() {
+    let pump = egress_pump();
+    let room_id = RoomId::default_room();
+
+    pump.start(room_id.clone());
+    assert_eq!(pump.task_count(), 1);
+    pump.start(room_id.clone());
+    assert_eq!(pump.task_count(), 1);
+
+    pump.stop_and_wait_for_test(&room_id).await;
+    assert_eq!(pump.task_count(), 0);
+}
+
+#[tokio::test]
+async fn egress_pump_stop_removes_only_matching_room_task() {
+    let pump = egress_pump();
+    let room_id = RoomId::default_room();
+    let other_room_id = RoomId::parse_boundary("OTHER").unwrap();
+
+    pump.start(room_id.clone());
+    pump.start(other_room_id.clone());
+    pump.stop(&room_id);
+
+    assert_eq!(pump.task_count(), 1);
+    pump.stop_and_wait_for_test(&other_room_id).await;
+    assert_eq!(pump.task_count(), 0);
+}
+
+#[tokio::test]
+async fn egress_pump_stop_waits_for_cancelled_task_to_exit_for_tests() {
+    let pump = egress_pump();
+    let room_id = RoomId::default_room();
+
+    pump.start(room_id.clone());
+    pump.stop_and_wait_for_test(&room_id).await;
+
+    assert_eq!(pump.task_count(), 0);
+}
+
+#[tokio::test]
+async fn recipient_send_backpressure_does_not_block_other_recipients() {
+    let (_relays, runtime, fanout) = relay_context();
+    let sender = Arc::new(BlockingSender {
+        blocked_user_id: UserId::from_external("blocked"),
+        blocked_sequences: Mutex::new(Vec::new()),
+        fast_sequences: Mutex::new(Vec::new()),
+        notify: Notify::new(),
+    });
+    let pump =
+        ProcessedAudioWebRtcEgressPump::new(Arc::clone(&runtime), fanout, Arc::clone(&sender));
+    let room_id = RoomId::default_room();
+    pump.start(room_id.clone());
+
+    for sequence in 1..=300 {
+        runtime
+            .process_frame(sequenced_audio_frame(sequence))
+            .unwrap();
+    }
+
+    for _ in 0..100 {
+        let fast_sequences = sender
+            .fast_sequences
+            .lock()
+            .expect("test sender sequence lock must not be poisoned")
+            .clone();
+        if fast_sequences.len() >= 2 {
+            pump.stop_and_wait_for_test(&room_id).await;
+            let blocked_sequences = sender
+                .blocked_sequences
+                .lock()
+                .expect("test sender sequence lock must not be poisoned")
+                .clone();
+            assert_eq!(blocked_sequences.len(), 1);
+            assert!(fast_sequences[1] > 1, "fast_sequences={fast_sequences:?}");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    pump.stop_and_wait_for_test(&room_id).await;
+    panic!("recipient egress backpressure blocked other recipients");
 }
 
 fn register_audio_track(state: &AppState, room_id: &RoomId, user_id: &str) {

@@ -1,17 +1,26 @@
 use crate::{media_egress::ProcessedAudioEgressFanout, media_runtime::WebMediaRuntime};
+use async_trait::async_trait;
 use dashmap::DashMap;
 use lyre_core::{RoomId, UserId};
-use lyre_webrtc::{ServerMediaNegotiator, ServerMediaProcessedAudioFrame, ServerMediaSessionKey};
+use lyre_webrtc::{
+    ServerMediaEgressError, ServerMediaNegotiator, ServerMediaProcessedAudioFrame,
+    ServerMediaSessionKey,
+};
 use std::{collections::HashSet, error::Error, sync::Arc};
-use tokio::{sync::broadcast, task::JoinHandle};
+use tokio::{
+    sync::{broadcast, mpsc},
+    task::JoinHandle,
+};
 use tokio_util::sync::CancellationToken;
 
+const PER_RECIPIENT_EGRESS_QUEUE_CAPACITY: usize = 1;
+
 #[derive(Debug)]
-pub struct ProcessedAudioWebRtcEgressPump {
+pub struct ProcessedAudioWebRtcEgressPump<S = ServerMediaNegotiator> {
     tasks: DashMap<RoomId, ProcessedAudioWebRtcEgressPumpTask>,
     runtime: Arc<WebMediaRuntime>,
     fanout: Arc<ProcessedAudioEgressFanout>,
-    negotiator: Arc<ServerMediaNegotiator>,
+    sender: Arc<S>,
 }
 
 #[derive(Debug)]
@@ -20,17 +29,46 @@ struct ProcessedAudioWebRtcEgressPumpTask {
     handle: JoinHandle<()>,
 }
 
-impl ProcessedAudioWebRtcEgressPump {
+struct EgressDelivery {
+    key: ServerMediaSessionKey,
+    source_user_id: UserId,
+    frame: ServerMediaProcessedAudioFrame,
+}
+
+#[async_trait]
+pub trait ProcessedAudioWebRtcEgressSender: Send + Sync + 'static {
+    async fn send_processed_audio_frame(
+        &self,
+        key: &ServerMediaSessionKey,
+        frame: ServerMediaProcessedAudioFrame,
+    ) -> Result<usize, ServerMediaEgressError>;
+}
+
+#[async_trait]
+impl ProcessedAudioWebRtcEgressSender for ServerMediaNegotiator {
+    async fn send_processed_audio_frame(
+        &self,
+        key: &ServerMediaSessionKey,
+        frame: ServerMediaProcessedAudioFrame,
+    ) -> Result<usize, ServerMediaEgressError> {
+        ServerMediaNegotiator::send_processed_audio_frame(self, key, frame).await
+    }
+}
+
+impl<S> ProcessedAudioWebRtcEgressPump<S>
+where
+    S: ProcessedAudioWebRtcEgressSender,
+{
     pub fn new(
         runtime: Arc<WebMediaRuntime>,
         fanout: Arc<ProcessedAudioEgressFanout>,
-        negotiator: Arc<ServerMediaNegotiator>,
+        sender: Arc<S>,
     ) -> Self {
         Self {
             tasks: DashMap::new(),
             runtime,
             fanout,
-            negotiator,
+            sender,
         }
     }
 
@@ -38,13 +76,13 @@ impl ProcessedAudioWebRtcEgressPump {
         self.stop(&room_id);
         let mut frames = self.runtime.subscribe(&room_id);
         let fanout = Arc::clone(&self.fanout);
-        let negotiator = Arc::clone(&self.negotiator);
+        let sender = Arc::clone(&self.sender);
         let token = CancellationToken::new();
         let task_token = token.clone();
         let task_room_id = room_id.clone();
         let handle = tokio::spawn(async move {
             let mut logged_empty_fanout = HashSet::<UserId>::new();
-            let mut logged_egress_started = HashSet::<(UserId, UserId)>::new();
+            let recipient_workers = DashMap::<UserId, mpsc::Sender<EgressDelivery>>::new();
             loop {
                 tokio::select! {
                     () = task_token.cancelled() => break,
@@ -84,30 +122,26 @@ impl ProcessedAudioWebRtcEgressPump {
                                     channels: egress.frame.channels,
                                     samples: egress.frame.samples,
                                 };
-                                match negotiator.send_processed_audio_frame(&key, frame).await {
-                                    Ok(packet_count) => {
-                                        if logged_egress_started.insert((
-                                            egress.frame.user_id.clone(),
+                                let delivery = EgressDelivery {
+                                    key,
+                                    source_user_id: egress.frame.user_id,
+                                    frame,
+                                };
+                                let worker = recipient_workers
+                                    .entry(recipient_id.clone())
+                                    .or_insert_with(|| {
+                                        spawn_recipient_worker(
+                                            Arc::clone(&sender),
+                                            task_token.clone(),
                                             recipient_id.clone(),
-                                        )) {
-                                            tracing::info!(
-                                                packet_count,
-                                                room_id = %key.room_id,
-                                                source_user_id = %egress.frame.user_id,
-                                                recipient_user_id = %recipient_id,
-                                                "processed audio WebRTC egress send started"
-                                            );
-                                        }
-                                    }
-                                    Err(error) => {
-                                        tracing::warn!(
-                                            error = format_args!("{error:#}"),
-                                            error_source = ?error.source().map(|source| source.to_string()),
-                                            room_id = %key.room_id,
-                                            source_user_id = %egress.frame.user_id,
-                                            recipient_user_id = %recipient_id,
-                                            "processed audio WebRTC egress send failed"
-                                        );
+                                        )
+                                    })
+                                    .clone();
+                                match worker.try_send(delivery) {
+                                    Ok(()) => {}
+                                    Err(mpsc::error::TrySendError::Full(_)) => {}
+                                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                                        recipient_workers.remove(&recipient_id);
                                     }
                                 }
                             }
@@ -149,7 +183,7 @@ impl ProcessedAudioWebRtcEgressPump {
     }
 
     #[cfg(test)]
-    pub async fn stop_and_wait_for_test(&self, room_id: &RoomId) {
+    pub(crate) async fn stop_and_wait_for_test(&self, room_id: &RoomId) {
         let Some((_, task)) = self.tasks.remove(room_id) else {
             return;
         };
@@ -158,58 +192,53 @@ impl ProcessedAudioWebRtcEgressPump {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use lyre_core::MediaRelayRegistry;
-    use lyre_webrtc::{ServerMediaSessionRegistry, WebRtcStack};
-
-    fn pump() -> ProcessedAudioWebRtcEgressPump {
-        let relays = Arc::new(MediaRelayRegistry::new());
-        let runtime = Arc::new(WebMediaRuntime::new(Arc::clone(&relays)));
-        let fanout = Arc::new(ProcessedAudioEgressFanout::new(relays));
-        let sessions = Arc::new(ServerMediaSessionRegistry::new());
-        let negotiator = Arc::new(ServerMediaNegotiator::new(WebRtcStack::new(), sessions));
-        ProcessedAudioWebRtcEgressPump::new(runtime, fanout, negotiator)
-    }
-
-    #[tokio::test]
-    async fn start_replaces_existing_room_task() {
-        let pump = pump();
-        let room_id = RoomId::default_room();
-
-        pump.start(room_id.clone());
-        assert_eq!(pump.task_count(), 1);
-        pump.start(room_id.clone());
-        assert_eq!(pump.task_count(), 1);
-
-        pump.stop_and_wait_for_test(&room_id).await;
-        assert_eq!(pump.task_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn stop_removes_only_matching_room_task() {
-        let pump = pump();
-        let room_id = RoomId::default_room();
-        let other_room_id = RoomId::parse_boundary("OTHER").unwrap();
-
-        pump.start(room_id.clone());
-        pump.start(other_room_id.clone());
-        pump.stop(&room_id);
-
-        assert_eq!(pump.task_count(), 1);
-        pump.stop_and_wait_for_test(&other_room_id).await;
-        assert_eq!(pump.task_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn stop_waits_for_cancelled_task_to_exit_for_tests() {
-        let pump = pump();
-        let room_id = RoomId::default_room();
-
-        pump.start(room_id.clone());
-        pump.stop_and_wait_for_test(&room_id).await;
-
-        assert_eq!(pump.task_count(), 0);
-    }
+fn spawn_recipient_worker<S>(
+    sender: Arc<S>,
+    token: CancellationToken,
+    recipient_id: UserId,
+) -> mpsc::Sender<EgressDelivery>
+where
+    S: ProcessedAudioWebRtcEgressSender,
+{
+    let (tx, mut rx) = mpsc::channel::<EgressDelivery>(PER_RECIPIENT_EGRESS_QUEUE_CAPACITY);
+    tokio::spawn(async move {
+        let mut logged_egress_started = HashSet::<UserId>::new();
+        loop {
+            tokio::select! {
+                () = token.cancelled() => break,
+                delivery = rx.recv() => {
+                    let Some(delivery) = delivery else {
+                        break;
+                    };
+                    match sender
+                        .send_processed_audio_frame(&delivery.key, delivery.frame)
+                        .await
+                    {
+                        Ok(packet_count) => {
+                            if logged_egress_started.insert(delivery.source_user_id.clone()) {
+                                tracing::info!(
+                                    packet_count,
+                                    room_id = %delivery.key.room_id,
+                                    source_user_id = %delivery.source_user_id,
+                                    recipient_user_id = %recipient_id,
+                                    "processed audio WebRTC egress send started"
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                error = format_args!("{error:#}"),
+                                error_source = ?error.source().map(|source| source.to_string()),
+                                room_id = %delivery.key.room_id,
+                                source_user_id = %delivery.source_user_id,
+                                recipient_user_id = %recipient_id,
+                                "processed audio WebRTC egress send failed"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    });
+    tx
 }

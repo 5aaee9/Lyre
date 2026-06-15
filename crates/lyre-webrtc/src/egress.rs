@@ -7,7 +7,6 @@ use rtc::rtp_transceiver::rtp_sender::{
 use std::{
     error::Error,
     sync::{Arc, Mutex},
-    time::Duration,
 };
 use thiserror::Error;
 use webrtc::media_stream::{
@@ -18,14 +17,6 @@ use webrtc::media_stream::{
 pub const SERVER_MEDIA_EGRESS_PAYLOAD_TYPE: u8 = 111;
 pub const SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const SERVER_MEDIA_EGRESS_CHANNELS: u16 = 1;
-#[cfg(not(test))]
-const SERVER_MEDIA_EGRESS_WRITE_RETRIES: usize = 50;
-#[cfg(test)]
-const SERVER_MEDIA_EGRESS_WRITE_RETRIES: usize = 2;
-#[cfg(not(test))]
-const SERVER_MEDIA_EGRESS_WRITE_RETRY_INTERVAL: Duration = Duration::from_millis(20);
-#[cfg(test)]
-const SERVER_MEDIA_EGRESS_WRITE_RETRY_INTERVAL: Duration = Duration::from_millis(1);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerMediaProcessedAudioFrame {
@@ -124,7 +115,12 @@ impl ServerMediaEgress {
             .expect("server media egress lock must not be poisoned")
             .encode(&frame)?;
         for packet in &packets {
-            write_rtp_with_retry(&self.track, egress_rtp_packet(packet)).await?;
+            self.track
+                .write_rtp(egress_rtp_packet(packet))
+                .await
+                .map_err(|source| ServerMediaEgressError::WriteRtp {
+                    source: Box::new(source),
+                })?;
         }
         self.sent_packets
             .lock()
@@ -140,31 +136,6 @@ impl ServerMediaEgress {
             .expect("server media egress packet snapshots lock must not be poisoned")
             .clone()
     }
-}
-
-async fn write_rtp_with_retry(
-    track: &TrackLocalStaticRTP,
-    packet: rtc::rtp::Packet,
-) -> Result<(), ServerMediaEgressError> {
-    for attempt in 0..=SERVER_MEDIA_EGRESS_WRITE_RETRIES {
-        match track.write_rtp(packet.clone()).await {
-            Ok(()) => return Ok(()),
-            Err(source) if attempt < SERVER_MEDIA_EGRESS_WRITE_RETRIES => {
-                tracing::debug!(
-                    error = %source,
-                    attempt,
-                    "server media egress RTP write not ready; retrying"
-                );
-                tokio::time::sleep(SERVER_MEDIA_EGRESS_WRITE_RETRY_INTERVAL).await;
-            }
-            Err(source) => {
-                return Err(ServerMediaEgressError::WriteRtp {
-                    source: Box::new(source),
-                });
-            }
-        }
-    }
-    unreachable!("egress write retry loop must return on final attempt");
 }
 
 fn egress_rtp_packet(packet: &ServerMediaEgressRtpPacket) -> rtc::rtp::Packet {
@@ -315,7 +286,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unbound_track_write_retries_and_preserves_source_error() {
+    async fn unbound_track_write_preserves_source_error() {
         let egress = ServerMediaEgress::new().unwrap();
 
         let error = egress

@@ -56,7 +56,7 @@
 - Server-media host ICE candidates can advertise a configured public IP for VPC/NAT deployments.
 - Server-media decoded PCM is processed under the negotiated relay audio track ID so browser track IDs do not drop relayed audio.
 - Server-media egress now has end-to-end relay coverage plus first-send/no-recipient logs, and browser playback is primed during the user-initiated audio connection.
-- Server-media egress retries transient RTP write failures while recipient WebRTC tracks bind or the peer-connection driver applies backpressure, preserving the lower-level write error in logs.
+- Server-media egress isolates recipient RTP backpressure with bounded per-recipient workers, preserving lower-level write errors in logs without stalling room fanout.
 - RNNoise server-side processing now converts Lyre's normalized decoded Opus PCM to the 16-bit PCM amplitude expected by `nnnoiseless`, then scales processed output back for WebRTC egress.
 - Server relay e2e tests now verify RNNoise and DeepFilterNet RTP payloads decode to audible PCM, and DeepFilterNet DSP output keeps stream audio after warmup.
 
