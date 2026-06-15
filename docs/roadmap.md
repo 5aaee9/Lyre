@@ -57,6 +57,7 @@
 - Server-media decoded PCM is processed under the negotiated relay audio track ID so browser track IDs do not drop relayed audio.
 - Server-media egress now has end-to-end relay coverage plus first-send/no-recipient logs, and browser playback is primed during the user-initiated audio connection.
 - RNNoise server-side processing now converts Lyre's normalized decoded Opus PCM to the 16-bit PCM amplitude expected by `nnnoiseless`, then scales processed output back for WebRTC egress.
+- Server relay e2e tests now verify RNNoise and DeepFilterNet RTP payloads decode to audible PCM, and DeepFilterNet DSP output keeps stream audio after warmup.
 
 ## Next
 

@@ -220,6 +220,7 @@ fn validate_frame(frame: &ServerMediaProcessedAudioFrame) -> Result<(), ServerMe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use opus_rs::OpusDecoder;
 
     fn frame(samples: Vec<f32>) -> ServerMediaProcessedAudioFrame {
         ServerMediaProcessedAudioFrame {
@@ -249,6 +250,32 @@ mod tests {
             .unwrap();
         assert_eq!(next[0].sequence_number, 1);
         assert_eq!(next[0].timestamp, SERVER_MEDIA_OPUS_FRAME_SIZE as u32);
+    }
+
+    #[test]
+    fn encoded_processed_audio_decodes_to_audible_pcm() {
+        let mut encoder = ServerMediaOpusEgress::new().unwrap();
+        let mut decoder = OpusDecoder::new(
+            SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ as i32,
+            SERVER_MEDIA_EGRESS_CHANNELS as usize,
+        )
+        .unwrap();
+        let input = (0..SERVER_MEDIA_OPUS_FRAME_SIZE)
+            .map(|index| ((index as f32) / 24.0).sin() * 0.1)
+            .collect::<Vec<_>>();
+
+        let packets = encoder.encode(&frame(input)).unwrap();
+        let mut output = vec![0.0; SERVER_MEDIA_OPUS_FRAME_SIZE];
+        decoder
+            .decode(
+                &packets[0].payload,
+                SERVER_MEDIA_OPUS_FRAME_SIZE,
+                &mut output,
+            )
+            .unwrap();
+
+        let peak = output.iter().map(|sample| sample.abs()).fold(0.0, f32::max);
+        assert!(peak > 0.05, "peak={peak}");
     }
 
     #[test]

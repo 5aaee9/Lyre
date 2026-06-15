@@ -171,9 +171,16 @@ impl ServerMediaConnectedOffer {
     }
 
     pub async fn send_valid_opus_packets(&self, count: usize) {
-        let payload = encoded_opus_payload();
-        for _ in 0..count {
-            let _ = self.track.write_rtp(test_rtp_packet(payload.clone())).await;
+        let payloads = encoded_opus_payloads(count);
+        for (index, payload) in payloads.into_iter().enumerate() {
+            let _ = self
+                .track
+                .write_rtp(opus_rtp_packet_for_test(
+                    42_u16.wrapping_add(index as u16),
+                    1234_u32.wrapping_add((index * SERVER_MEDIA_OPUS_FRAME_SIZE) as u32),
+                    payload,
+                ))
+                .await;
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
     }
@@ -362,18 +369,27 @@ fn to_webrtc_candidate(candidate: ServerMediaIceCandidateInit) -> RTCIceCandidat
 }
 
 pub fn encoded_opus_payload_for_test() -> Vec<u8> {
-    let mut encoder = OpusEncoder::new(48_000, 1, Application::Voip).unwrap();
-    let samples = vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE];
-    let mut payload = vec![0_u8; 512];
-    let payload_len = encoder
-        .encode(&samples, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut payload)
-        .unwrap();
-    payload.truncate(payload_len);
-    payload
+    encoded_opus_payloads(1).remove(0)
 }
 
-fn encoded_opus_payload() -> Vec<u8> {
-    encoded_opus_payload_for_test()
+fn encoded_opus_payloads(count: usize) -> Vec<Vec<u8>> {
+    let mut encoder = OpusEncoder::new(48_000, 1, Application::Voip).unwrap();
+    (0..count)
+        .map(|frame_index| {
+            let samples = (0..SERVER_MEDIA_OPUS_FRAME_SIZE)
+                .map(|sample_index| {
+                    let index = frame_index * SERVER_MEDIA_OPUS_FRAME_SIZE + sample_index;
+                    ((index as f32) / 24.0).sin() * 0.1
+                })
+                .collect::<Vec<_>>();
+            let mut payload = vec![0_u8; 512];
+            let payload_len = encoder
+                .encode(&samples, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut payload)
+                .unwrap();
+            payload.truncate(payload_len);
+            payload
+        })
+        .collect()
 }
 
 pub fn opus_rtp_packet_for_test(
@@ -393,8 +409,4 @@ pub fn opus_rtp_packet_for_test(
         },
         payload: Bytes::from(payload),
     }
-}
-
-fn test_rtp_packet(payload: Vec<u8>) -> rtc::rtp::Packet {
-    opus_rtp_packet_for_test(42, 1234, payload)
 }
