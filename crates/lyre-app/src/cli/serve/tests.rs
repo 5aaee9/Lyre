@@ -61,5 +61,7 @@ fn default_serve_args() -> ServeArgs {
         deepfilternet_erb_bands: 32,
         deepfilternet_min_erb_freqs: 2,
         dpdfnet_model_dir: "dpdfnet/onnx".into(),
+        dpdfnet_intra_threads: None,
+        dpdfnet_inter_threads: lyre_noise_cancelling::DPDFNET_DEFAULT_INTER_THREADS,
     }
 }

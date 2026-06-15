@@ -59,6 +59,7 @@ fn factory_loads_dpdfnet_from_configured_model_directory() {
         NoiseModelRuntimeConfig {
             dpdfnet: DpdfNetRuntimeConfig {
                 model_dir: std::path::PathBuf::from("dpdfnet/onnx"),
+                ..DpdfNetRuntimeConfig::default()
             },
             ..NoiseModelRuntimeConfig::default()
         },

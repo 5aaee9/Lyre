@@ -23,6 +23,8 @@ pub struct DeepFilterNetRuntimeConfigPrint {
 #[derive(Debug, Serialize)]
 pub struct DpdfNetRuntimeConfigPrint {
     pub model_dir: String,
+    pub intra_threads: usize,
+    pub inter_threads: usize,
 }
 
 impl From<lyre_noise_cancelling::DeepFilterNetRuntimeConfig> for DeepFilterNetRuntimeConfigPrint {
@@ -46,6 +48,8 @@ pub fn config_print() -> ConfigPrint {
         deepfilternet_runtime: lyre_noise_cancelling::DeepFilterNetRuntimeConfig::default().into(),
         dpdfnet_runtime: DpdfNetRuntimeConfigPrint {
             model_dir: lyre_noise_cancelling::DPDFNET_DEFAULT_MODEL_DIR.to_owned(),
+            intra_threads: lyre_noise_cancelling::dpdfnet_default_intra_threads(),
+            inter_threads: lyre_noise_cancelling::DPDFNET_DEFAULT_INTER_THREADS,
         },
     }
 }
@@ -70,5 +74,7 @@ mod tests {
         assert_eq!(value["deepfilternet_runtime"]["erb_bands"], 32);
         assert_eq!(value["deepfilternet_runtime"]["min_erb_freqs"], 2);
         assert_eq!(value["dpdfnet_runtime"]["model_dir"], "dpdfnet/onnx");
+        assert!(value["dpdfnet_runtime"]["intra_threads"].as_u64().unwrap() >= 1);
+        assert_eq!(value["dpdfnet_runtime"]["inter_threads"], 1);
     }
 }

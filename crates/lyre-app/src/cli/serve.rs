@@ -138,6 +138,19 @@ pub struct ServeArgs {
         help = "Directory containing DPDFNet ONNX models"
     )]
     pub dpdfnet_model_dir: PathBuf,
+    #[arg(
+        long,
+        env = "LYRE_DPDFNET_INTRA_THREADS",
+        help = "ONNX Runtime intra-op threads for DPDFNet; defaults to the cgroup-aware available CPU count"
+    )]
+    pub dpdfnet_intra_threads: Option<usize>,
+    #[arg(
+        long,
+        default_value_t = lyre_noise_cancelling::DPDFNET_DEFAULT_INTER_THREADS,
+        env = "LYRE_DPDFNET_INTER_THREADS",
+        help = "ONNX Runtime inter-op threads for DPDFNet"
+    )]
+    pub dpdfnet_inter_threads: usize,
 }
 
 impl ServeArgs {
@@ -342,6 +355,10 @@ impl ServeArgs {
             deepfilternet: self.effective_deepfilternet_runtime()?,
             dpdfnet: DpdfNetRuntimeConfig {
                 model_dir: self.dpdfnet_model_dir.clone(),
+                intra_threads: self
+                    .dpdfnet_intra_threads
+                    .unwrap_or_else(lyre_noise_cancelling::dpdfnet_default_intra_threads),
+                inter_threads: self.dpdfnet_inter_threads,
             },
         })
     }

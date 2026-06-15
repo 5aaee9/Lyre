@@ -9,13 +9,18 @@ pub use deepfilternet::{
     DEEPFILTERNET_DEFAULT_MIN_ERB_FREQS, DEEPFILTERNET_FRAME_SIZE, DEEPFILTERNET_SAMPLE_RATE_HZ,
 };
 pub use dpdfnet::{
-    DpdfNetModelSpec, DpdfNetNoiseCanceller, DpdfNetRuntimeConfig, DPDFNET_CHANNELS,
-    DPDFNET_DEFAULT_MODEL, DPDFNET_DEFAULT_MODEL_DIR, DPDFNET_SUPPORTED_MODELS,
+    dpdfnet_default_intra_threads, DpdfNetModelSpec, DpdfNetNoiseCanceller, DpdfNetRuntimeConfig,
+    DPDFNET_CHANNELS, DPDFNET_DEFAULT_INTER_THREADS, DPDFNET_DEFAULT_MODEL,
+    DPDFNET_DEFAULT_MODEL_DIR, DPDFNET_SUPPORTED_MODELS,
 };
 
 use lyre_core::{AudioFrame, AudioFrameProcessor};
 use nnnoiseless::DenoiseState;
-use std::{collections::HashMap, path::PathBuf, sync::Mutex};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use thiserror::Error;
 
 pub const RNNOISE_SAMPLE_RATE_HZ: u32 = 48_000;
@@ -298,9 +303,11 @@ impl NoiseConfigKey {
 }
 
 pub struct NoiseCancellingAudioFrameProcessor {
-    cancellers: Mutex<HashMap<NoiseConfigKey, Box<dyn NoiseCanceller + Send>>>,
+    cancellers: Mutex<HashMap<NoiseConfigKey, SharedNoiseCanceller>>,
     model_runtime: NoiseModelRuntimeConfig,
 }
+
+type SharedNoiseCanceller = Arc<Mutex<Box<dyn NoiseCanceller + Send>>>;
 
 impl NoiseCancellingAudioFrameProcessor {
     pub fn new(deepfilternet_runtime: DeepFilterNetRuntimeConfig) -> Self {
@@ -326,34 +333,43 @@ impl Default for NoiseCancellingAudioFrameProcessor {
 
 impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
     fn process(&self, frame: &AudioFrame, noise: &NoiseCancellationConfig) -> Vec<f32> {
-        let mut cancellers = self
-            .cancellers
-            .lock()
-            .expect("noise canceller mutex poisoned");
         let key = NoiseConfigKey::new(frame, noise, self.model_runtime.deepfilternet);
-        let canceller = match cancellers.get_mut(&key) {
-            Some(canceller) => canceller,
-            None => match build_noise_canceller_with_model_config(
-                noise.clone(),
-                self.model_runtime.clone(),
-            ) {
-                Ok(canceller) => cancellers.entry(key).or_insert(canceller),
-                Err(error) => {
-                    tracing::warn!(
-                        error = format_args!("{error:#}"),
-                        room_id = %frame.room_id,
-                        user_id = %frame.user_id,
-                        track_id = %frame.track_id,
-                        sample_rate_hz = frame.sample_rate_hz,
-                        channels = frame.channels,
-                        samples = frame.samples.len(),
-                        "noise canceller unavailable; passing audio frame through"
-                    );
-                    return frame.samples.clone();
-                }
-            },
+        let canceller = {
+            let mut cancellers = self
+                .cancellers
+                .lock()
+                .expect("noise canceller map mutex poisoned");
+            match cancellers.get(&key) {
+                Some(canceller) => Arc::clone(canceller),
+                None => match build_noise_canceller_with_model_config(
+                    noise.clone(),
+                    self.model_runtime.clone(),
+                ) {
+                    Ok(canceller) => {
+                        let canceller = Arc::new(Mutex::new(canceller));
+                        cancellers.insert(key, Arc::clone(&canceller));
+                        canceller
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            error = format_args!("{error:#}"),
+                            room_id = %frame.room_id,
+                            user_id = %frame.user_id,
+                            track_id = %frame.track_id,
+                            sample_rate_hz = frame.sample_rate_hz,
+                            channels = frame.channels,
+                            samples = frame.samples.len(),
+                            "noise canceller unavailable; passing audio frame through"
+                        );
+                        return frame.samples.clone();
+                    }
+                },
+            }
         };
 
+        let mut canceller = canceller
+            .lock()
+            .expect("noise canceller state mutex poisoned");
         match canceller.process_frame(NoiseFrame {
             sample_rate_hz: frame.sample_rate_hz,
             channels: frame.channels,

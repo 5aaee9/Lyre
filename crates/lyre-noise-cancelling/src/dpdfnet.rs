@@ -15,6 +15,7 @@ mod streaming;
 pub const DPDFNET_CHANNELS: u16 = 1;
 pub const DPDFNET_DEFAULT_MODEL: &str = "dpdfnet2_48khz_hr";
 pub const DPDFNET_DEFAULT_MODEL_DIR: &str = "dpdfnet/onnx";
+pub const DPDFNET_DEFAULT_INTER_THREADS: usize = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DpdfNetModelSpec {
@@ -66,12 +67,16 @@ pub const DPDFNET_SUPPORTED_MODELS: [DpdfNetModelSpec; 6] = [
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DpdfNetRuntimeConfig {
     pub model_dir: PathBuf,
+    pub intra_threads: usize,
+    pub inter_threads: usize,
 }
 
 impl Default for DpdfNetRuntimeConfig {
     fn default() -> Self {
         Self {
             model_dir: PathBuf::from(DPDFNET_DEFAULT_MODEL_DIR),
+            intra_threads: dpdfnet_default_intra_threads(),
+            inter_threads: DPDFNET_DEFAULT_INTER_THREADS,
         }
     }
 }
@@ -80,6 +85,12 @@ impl DpdfNetRuntimeConfig {
     pub fn model_path(&self, model: &str) -> PathBuf {
         self.model_dir.join(format!("{model}.onnx"))
     }
+}
+
+pub fn dpdfnet_default_intra_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
 }
 
 pub struct DpdfNetNoiseCanceller {
@@ -108,9 +119,9 @@ impl DpdfNetNoiseCanceller {
 
         let session = Session::builder()
             .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
-            .with_intra_threads(1)
+            .with_intra_threads(runtime.intra_threads)
             .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
-            .with_inter_threads(1)
+            .with_inter_threads(runtime.inter_threads)
             .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
             .commit_from_file(&model_path)
             .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?;
