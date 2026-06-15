@@ -58,6 +58,7 @@
 - Replaced the single frontend peer connection with a room mesh session keyed by remote user id.
 - Kept microphone capture user-triggered and reused one local audio stream across all peer connections.
 - Kept backend signalling unchanged; frontend-generated offer, answer, and ICE messages are now targeted with `recipient_id`.
+- Room presence now drives the mesh lifecycle after audio starts: newly joined users get targeted offers, leaving users have their peer connection closed, and the visible room roster stays in sync with signalling snapshots/events.
 - Recorded that future client-side noise cancellation should use Rust compiled to WebAssembly instead of a JavaScript DSP path.
 
 ## 2026-06-15 Server Media Runtime Boundary

@@ -15,7 +15,7 @@
 - Formal WebRPC RIDL contract and generated TypeScript client/types for frontend-consumed HTTP DTOs.
 - Media topology boundary API documenting current P2P mesh behavior, TURN relay support, and server-side noise cancellation requirements.
 - Media relay state skeleton, REST endpoints, WebRPC contract, and frontend API wrappers for future server-side audio processing.
-- Frontend multi-peer WebRTC mesh negotiation with per-user peer connections and targeted signalling.
+- Frontend multi-peer WebRTC mesh negotiation with per-user peer connections, targeted offer/answer/ICE signalling, and presence-driven peer add/remove cleanup.
 - Decoded-PCM server media runtime boundary with processor and sink traits.
 - RNNoise-compatible decoded PCM provider runtime in `lyre-noise-cancelling`.
 - Web server decoded-PCM media runtime wiring with internal processed-frame sink.

@@ -501,6 +501,7 @@ describe("RoomClient", () => {
     expect(sentMessages()).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: "offer", recipient_id: "user_d" })])
     );
+    expect(screen.getByText("Dee")).toBeInTheDocument();
   });
 
   it("closes a leaving user's peer connection", async () => {
@@ -525,6 +526,8 @@ describe("RoomClient", () => {
 
     await waitFor(() => expect(peerConnections[0].close).toHaveBeenCalledOnce());
     expect(peerConnections[1].close).not.toHaveBeenCalled();
+    expect(screen.queryByText("Bob")).not.toBeInTheDocument();
+    expect(screen.getByText("Cam")).toBeInTheDocument();
   });
 
   it("closes peer connections and stops local tracks on unmount", async () => {
