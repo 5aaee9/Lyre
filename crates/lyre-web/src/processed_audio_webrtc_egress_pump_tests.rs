@@ -12,10 +12,10 @@ use lyre_core::{
     RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
 use lyre_webrtc::{
-    ServerMediaConnectionStateSnapshot, ServerMediaEgressError, ServerMediaIceCandidate,
-    ServerMediaNegotiator, ServerMediaOffer, ServerMediaOpusDecoder,
-    ServerMediaProcessedAudioFrame, ServerMediaRtpPacket, ServerMediaSessionKey,
-    ServerMediaSessionRegistry, WebRtcStack,
+    test_support::encoded_opus_payload_for_test, ServerMediaConnectionStateSnapshot,
+    ServerMediaEgressError, ServerMediaIceCandidate, ServerMediaNegotiator, ServerMediaOffer,
+    ServerMediaOpusDecoder, ServerMediaProcessedAudioFrame, ServerMediaRtpPacket,
+    ServerMediaSessionKey, ServerMediaSessionRegistry, WebRtcStack,
 };
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
@@ -100,9 +100,9 @@ async fn app_state_start_and_stop_manage_egress_pump() {
     let room_id = RoomId::default_room();
 
     state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
-    assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 1);
+    assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 1);
     state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
-    assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 1);
+    assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 1);
 
     state.stop_media_relay(
         room_id,
@@ -110,7 +110,7 @@ async fn app_state_start_and_stop_manage_egress_pump() {
             user_id: UserId::from_external("user_01"),
         },
     );
-    assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 0);
+    assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 0);
 }
 
 #[tokio::test]
@@ -119,9 +119,9 @@ async fn close_server_media_sessions_stops_egress_pump() {
     let room_id = RoomId::default_room();
 
     state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
-    assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 1);
+    assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 1);
     state.close_server_media_sessions_for_room(&room_id);
-    assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 0);
+    assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 0);
 }
 
 fn audio_frame(room_id: RoomId, user_id: UserId) -> AudioFrame {
@@ -337,7 +337,7 @@ fn decoded_peak_from_rtp_payload(payload: &[u8]) -> f32 {
 async fn processed_audio_frame_is_sent_to_recipient_server_media_peer() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
-    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    start_relay_with_provider(&state, &room_id, NoiseProvider::Rnnoise);
     register_audio_track(&state, &room_id, "source");
     register_audio_track(&state, &room_id, "recipient");
     let source_key = answer_offer(&state, &room_id, "source").await;
@@ -388,6 +388,32 @@ async fn server_relay_audio_reaches_recipient_peer_connection() {
     }
 
     panic!("server relay audio RTP did not reach recipient peer connection");
+}
+
+#[tokio::test]
+async fn server_relay_off_noise_forwards_opus_payload_without_transcoding() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    register_audio_track(&state, &room_id, "source");
+    register_audio_track(&state, &room_id, "recipient");
+    let source = connect_test_offer(&state, &room_id, "source").await;
+    let recipient = connect_test_offer(&state, &room_id, "recipient").await;
+    let expected_payload = encoded_opus_payload_for_test();
+
+    source.send_valid_opus_packets(1).await;
+
+    for _ in 0..150 {
+        let packets = recipient.received_remote_rtp_packets();
+        if let Some(packet) = packets.first() {
+            assert_eq!(packet.payload, expected_payload);
+            assert!(source.received_remote_rtp_packets().is_empty());
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("server relay did not forward source Opus payload");
 }
 
 async fn server_relay_noise_provider_reaches_recipient_with_audible_payload(

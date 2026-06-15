@@ -4,6 +4,7 @@ use crate::{
     media_runtime::WebMediaRuntime,
     metrics::MetricsState,
     processed_audio_webrtc_egress_pump::ProcessedAudioWebRtcEgressPump,
+    raw_opus_webrtc_egress_pump::RawOpusWebRtcEgressPump,
     server_media_runtime_pump::ServerMediaRuntimePump,
     signalling::PeerHub,
     state_persistence::RoomStatePersistence,
@@ -27,6 +28,7 @@ pub struct AppState {
     pub media_runtime: Arc<WebMediaRuntime>,
     pub media_egress: Arc<ProcessedAudioEgressFanout>,
     pub processed_audio_webrtc_egress_pump: Arc<ProcessedAudioWebRtcEgressPump>,
+    pub raw_opus_webrtc_egress_pump: Arc<RawOpusWebRtcEgressPump>,
     pub server_media_sessions: Arc<ServerMediaSessionRegistry>,
     pub server_media_negotiator: Arc<ServerMediaNegotiator>,
     pub server_media_runtime_pump: Arc<ServerMediaRuntimePump>,
@@ -110,11 +112,16 @@ impl AppState {
             Arc::clone(&media_egress),
             Arc::clone(&server_media_negotiator),
         ));
+        let raw_opus_webrtc_egress_pump = Arc::new(RawOpusWebRtcEgressPump::new(
+            Arc::clone(&media_relays),
+            Arc::clone(&server_media_negotiator),
+        ));
         Ok(Self {
             registry: Arc::new(registry),
             media_runtime,
             media_egress,
             processed_audio_webrtc_egress_pump,
+            raw_opus_webrtc_egress_pump,
             server_media_sessions,
             server_media_negotiator,
             server_media_runtime_pump,
@@ -168,6 +175,7 @@ impl AppState {
         request: lyre_core::StopMediaRelayRequest,
     ) -> lyre_core::MediaRelayRoomStatus {
         self.processed_audio_webrtc_egress_pump.stop(&room_id);
+        self.raw_opus_webrtc_egress_pump.stop(&room_id);
         let status = self.media_relays.stop(room_id.clone(), request);
         self.clear_processed_media_room(&room_id);
         self.close_server_media_sessions_for_room(&room_id);
@@ -180,7 +188,13 @@ impl AppState {
         request: lyre_core::StartMediaRelayRequest,
     ) -> lyre_core::MediaRelayRoomStatus {
         let status = self.media_relays.start(room_id.clone(), request);
-        self.processed_audio_webrtc_egress_pump.start(room_id);
+        if status.noise.provider == lyre_core::NoiseProvider::Off {
+            self.processed_audio_webrtc_egress_pump.stop(&room_id);
+            self.raw_opus_webrtc_egress_pump.start(room_id);
+        } else {
+            self.raw_opus_webrtc_egress_pump.stop(&room_id);
+            self.processed_audio_webrtc_egress_pump.start(room_id);
+        }
         status
     }
 

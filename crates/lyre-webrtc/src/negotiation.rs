@@ -7,10 +7,11 @@ use thiserror::Error;
 
 use crate::{
     ServerMediaConnectionStateSnapshot, ServerMediaDecodeFailure, ServerMediaEgressError,
-    ServerMediaIceCandidateInit, ServerMediaPcmFrame, ServerMediaProcessedAudioFrame,
-    ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaSessionConfig, ServerMediaSessionKey,
-    ServerMediaSessionRegistry, ServerMediaSessionState, ServerMediaSessionStatus,
-    WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError,
+    ServerMediaEgressRtpPacket, ServerMediaIceCandidateInit, ServerMediaPcmFrame,
+    ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
+    ServerMediaSessionConfig, ServerMediaSessionKey, ServerMediaSessionRegistry,
+    ServerMediaSessionState, ServerMediaSessionStatus, WebRtcPeerConnectionHandle, WebRtcStack,
+    WebRtcStackError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,6 +227,22 @@ impl ServerMediaNegotiator {
             })?
             .clone();
         peer_connection.send_processed_audio_frame(frame).await
+    }
+
+    pub async fn send_opus_rtp_packet(
+        &self,
+        key: &ServerMediaSessionKey,
+        packet: ServerMediaEgressRtpPacket,
+    ) -> Result<usize, ServerMediaEgressError> {
+        let peer_connection = self
+            .peer_connections
+            .get(key)
+            .ok_or_else(|| ServerMediaEgressError::PeerMissing {
+                room_id: key.room_id.clone(),
+                user_id: key.user_id.clone(),
+            })?
+            .clone();
+        peer_connection.send_opus_rtp_packet(packet).await
     }
 
     pub fn close(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {

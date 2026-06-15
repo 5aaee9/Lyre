@@ -37,6 +37,7 @@ impl AppState {
         room_id: &RoomId,
     ) -> Vec<ServerMediaSessionStatus> {
         self.processed_audio_webrtc_egress_pump.stop(room_id);
+        self.raw_opus_webrtc_egress_pump.stop(room_id);
         self.server_media_runtime_pump.stop_room(room_id);
         self.server_media_negotiator.close_room(room_id);
         self.server_media_sessions.sessions()
@@ -146,6 +147,10 @@ impl AppState {
 
     pub fn processed_audio_webrtc_egress_pump_count(&self) -> usize {
         self.processed_audio_webrtc_egress_pump.task_count()
+    }
+
+    pub fn raw_opus_webrtc_egress_pump_count(&self) -> usize {
+        self.raw_opus_webrtc_egress_pump.task_count()
     }
 
     #[cfg(test)]

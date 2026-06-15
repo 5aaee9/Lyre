@@ -444,6 +444,13 @@ impl WebRtcPeerConnectionHandle {
         self.media_egress.send_processed_audio_frame(frame).await
     }
 
+    pub async fn send_opus_rtp_packet(
+        &self,
+        packet: crate::ServerMediaEgressRtpPacket,
+    ) -> Result<usize, ServerMediaEgressError> {
+        self.media_egress.send_opus_rtp_packet(packet).await
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn sent_egress_rtp_packets_for_test(&self) -> Vec<crate::ServerMediaEgressRtpPacket> {
         self.media_egress.sent_packets_for_test()

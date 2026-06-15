@@ -69,6 +69,7 @@
 - Server-media Opus egress now advertises the same mono channel count that the Rust encoder emits, avoiding a mono payload/stereo track mismatch.
 - Server-media jitter buffering now skips packet-loss concealment across RTP timestamp discontinuities so speech after silence does not get prefixed by synthetic old PCM.
 - Server-media Opus egress now uses the audio encoder application to avoid applying a second VoIP high-pass preprocessing stage to relayed audio.
+- Server-media relay with noise cancellation off now forwards incoming Opus RTP directly to recipients, bypassing Rust decode/process/re-encode.
 
 ## Next
 

@@ -49,6 +49,8 @@ pub enum ServerMediaEgressError {
     EncoderInit { message: String },
     #[error("failed to encode server media Opus egress frame")]
     Encode { message: String },
+    #[error("server media egress requires audio/opus RTP payload type 111, got {payload_type}")]
+    InvalidPayloadType { payload_type: u8 },
     #[error("failed to write server media egress RTP packet")]
     WriteRtp {
         #[source]
@@ -128,6 +130,24 @@ impl ServerMediaEgress {
             .expect("server media egress packet snapshots lock must not be poisoned")
             .extend(packets.iter().cloned());
         Ok(packets.len())
+    }
+
+    pub(crate) async fn send_opus_rtp_packet(
+        &self,
+        packet: ServerMediaEgressRtpPacket,
+    ) -> Result<usize, ServerMediaEgressError> {
+        validate_opus_rtp_packet(&packet)?;
+        self.track
+            .write_rtp(egress_rtp_packet(&packet))
+            .await
+            .map_err(|source| ServerMediaEgressError::WriteRtp {
+                source: Box::new(source),
+            })?;
+        self.sent_packets
+            .lock()
+            .expect("server media egress packet snapshots lock must not be poisoned")
+            .push(packet);
+        Ok(1)
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -225,6 +245,17 @@ fn validate_frame(frame: &ServerMediaProcessedAudioFrame) -> Result<(), ServerMe
     Ok(())
 }
 
+fn validate_opus_rtp_packet(
+    packet: &ServerMediaEgressRtpPacket,
+) -> Result<(), ServerMediaEgressError> {
+    if packet.payload_type != SERVER_MEDIA_EGRESS_PAYLOAD_TYPE {
+        return Err(ServerMediaEgressError::InvalidPayloadType {
+            payload_type: packet.payload_type,
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,6 +333,21 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn rejects_invalid_opus_rtp_payload_type() {
+        let packet = ServerMediaEgressRtpPacket {
+            sequence_number: 7,
+            timestamp: 9_600,
+            payload_type: 96,
+            payload: vec![1, 2, 3],
+        };
+
+        assert!(matches!(
+            validate_opus_rtp_packet(&packet),
+            Err(ServerMediaEgressError::InvalidPayloadType { payload_type: 96 })
+        ));
     }
 
     #[tokio::test]
