@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NoiseCancellationConfig, UserProfile } from "@/lib/api";
+import { resetSettingsStoreForTests, useSettingsStore } from "@/lib/settings-store";
 import { RoomClient } from "./room-client";
 
 const send = vi.fn();
@@ -111,7 +112,9 @@ describe("RoomClient", () => {
   beforeEach(() => {
     sockets.length = 0;
     peerConnections.length = 0;
+    localStorage.clear();
     sessionStorage.clear();
+    resetSettingsStoreForTests();
     send.mockClear();
     getUserMedia.mockReset();
     stopTrack.mockClear();
@@ -239,7 +242,7 @@ describe("RoomClient", () => {
       intensity: 0.8,
       voice_activity_threshold: 0.2
     };
-    localStorage.setItem("lyre.noise", JSON.stringify(noise));
+    useSettingsStore.getState().setNoise(noise);
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
 

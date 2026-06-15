@@ -4,17 +4,20 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { parseNoiseProvider, type NoiseCancellationConfig } from "@/lib/api";
-import { readNickname, readNoiseConfig, writeNickname, writeNoiseConfig } from "@/lib/storage";
+import { Switch } from "@/components/ui/switch";
+import { parseNoiseProvider } from "@/lib/api";
+import { useSettingsStore } from "@/lib/settings-store";
 
 export default function SettingsPage() {
-  const [nickname, setNickname] = useState(() => readNickname());
-  const [noise, setNoise] = useState<NoiseCancellationConfig>(() => readNoiseConfig());
+  const nickname = useSettingsStore((state) => state.nickname);
+  const noise = useSettingsStore((state) => state.noise);
+  const audioProcessing = useSettingsStore((state) => state.audioProcessing);
+  const setNickname = useSettingsStore((state) => state.setNickname);
+  const setNoise = useSettingsStore((state) => state.setNoise);
+  const setAudioProcessing = useSettingsStore((state) => state.setAudioProcessing);
   const [saved, setSaved] = useState(false);
 
   function save() {
-    writeNickname(nickname);
-    writeNoiseConfig(noise);
     setSaved(true);
   }
 
@@ -33,10 +36,10 @@ export default function SettingsPage() {
         <Select
           value={noise.provider}
           onChange={(event) =>
-            setNoise((current) => ({
-              ...current,
+            setNoise({
+              ...noise,
               provider: parseNoiseProvider(event.target.value)
-            }))
+            })
           }
         >
           <option value="off">Off</option>
@@ -53,10 +56,10 @@ export default function SettingsPage() {
           type="number"
           value={noise.intensity}
           onChange={(event) =>
-            setNoise((current) => ({
-              ...current,
+            setNoise({
+              ...noise,
               intensity: Number(event.target.value)
-            }))
+            })
           }
         />
       </label>
@@ -69,12 +72,36 @@ export default function SettingsPage() {
           type="number"
           value={noise.voice_activity_threshold}
           onChange={(event) =>
-            setNoise((current) => ({
-              ...current,
+            setNoise({
+              ...noise,
               voice_activity_threshold: Number(event.target.value)
-            }))
+            })
           }
         />
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <Switch
+          checked={audioProcessing.echoCancellation}
+          onChange={(event) =>
+            setAudioProcessing({
+              ...audioProcessing,
+              echoCancellation: event.target.checked
+            })
+          }
+        />
+        Echo cancellation
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <Switch
+          checked={audioProcessing.autoGainControl}
+          onChange={(event) =>
+            setAudioProcessing({
+              ...audioProcessing,
+              autoGainControl: event.target.checked
+            })
+          }
+        />
+        Auto gain control
       </label>
       <Button onClick={save}>Save</Button>
       {saved ? <p className="text-sm text-[#1f6f50]">Saved</p> : null}

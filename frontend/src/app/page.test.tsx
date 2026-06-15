@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "./page";
 import { joinRoom } from "@/lib/api";
-import { writeNoiseConfig } from "@/lib/storage";
+import { resetSettingsStoreForTests, useSettingsStore } from "@/lib/settings-store";
 
 const navigation = vi.hoisted(() => ({
   push: vi.fn()
@@ -24,6 +24,7 @@ describe("Home", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    resetSettingsStoreForTests();
     navigation.push.mockClear();
     vi.mocked(joinRoom).mockResolvedValue({
       access_token: "token_a",
@@ -41,7 +42,7 @@ describe("Home", () => {
   });
 
   it("keeps stored noise numeric parameters when changing provider before joining", async () => {
-    writeNoiseConfig({ provider: "rnnoise", intensity: 0.8, voice_activity_threshold: 0.15 });
+    useSettingsStore.getState().setNoise({ provider: "rnnoise", intensity: 0.8, voice_activity_threshold: 0.15 });
 
     render(<Home />);
 

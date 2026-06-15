@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resetSettingsStoreForTests, useSettingsStore } from "./settings-store";
 import { createAudioPeerConnection, createPeerConnection, openLocalAudioStream } from "./webrtc";
 
 describe("webrtc", () => {
@@ -17,6 +18,8 @@ describe("webrtc", () => {
   }
 
   beforeEach(() => {
+    localStorage.clear();
+    resetSettingsStoreForTests();
     addTrack.mockClear();
     peerConstructor.mockClear();
     vi.stubGlobal("RTCPeerConnection", MockPeerConnection);
@@ -30,7 +33,28 @@ describe("webrtc", () => {
 
   it("opens one local audio stream", async () => {
     await expect(openLocalAudioStream()).resolves.toBe(stream);
-    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        echoCancellation: true,
+        autoGainControl: true
+      }
+    });
+  });
+
+  it("uses stored browser audio processing constraints", async () => {
+    useSettingsStore.getState().setAudioProcessing({
+      echoCancellation: false,
+      autoGainControl: true
+    });
+
+    await expect(openLocalAudioStream()).resolves.toBe(stream);
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        echoCancellation: false,
+        autoGainControl: true
+      }
+    });
   });
 
   it("constructs peer connection with configured ice servers and local tracks", () => {
@@ -45,7 +69,12 @@ describe("webrtc", () => {
   it("keeps compatibility helper for one-off audio peer connection", async () => {
     await createAudioPeerConnection([{ urls: ["stun:stun.example:3478"], username: null, credential: null }]);
 
-    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        echoCancellation: true,
+        autoGainControl: true
+      }
+    });
     expect(peerConstructor).toHaveBeenCalledOnce();
     expect(addTrack).toHaveBeenCalledWith({ id: "track" }, stream);
   });

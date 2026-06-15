@@ -34,6 +34,8 @@
 - Deterministic PCM packet loss concealment synthesis for server media ingress after jitter-buffer loss detection.
 - Internal WebRTC egress path that encodes processed server audio to Opus RTP and writes it to recipient server-media peers.
 - Frontend server-media audio mode with browser-to-server WebRTC negotiation and playback of remote processed server audio.
+- Zustand-backed frontend settings store with persisted nickname, room preference, noise settings, and browser audio processing controls.
+- Browser microphone capture now exposes persisted echo cancellation and auto gain control settings, both enabled by default.
 - Per-user server-media cleanup endpoint and frontend Leave/startup-failure cleanup flow.
 - Room-scoped access tokens for mutating room, signalling, media relay, and server-media routes.
 - Optional JSON file persistence for anonymous room/user/session access state.

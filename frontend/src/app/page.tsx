@@ -6,26 +6,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { joinRoom, parseNoiseProvider, type NoiseCancellationConfig } from "@/lib/api";
-import { readNickname, readNoiseConfig, readRememberRoom, readRoomId, writeNickname, writeNoiseConfig, writeRememberRoom, writeRoomId } from "@/lib/storage";
+import { joinRoom, parseNoiseProvider } from "@/lib/api";
+import { useSettingsStore } from "@/lib/settings-store";
 
 export default function Home() {
   const router = useRouter();
-  const [remember, setRemember] = useState(() => readRememberRoom());
-  const [roomId, setRoomId] = useState(() => (readRememberRoom() ? readRoomId() : "DEFAULT"));
-  const [nickname, setNickname] = useState(() => readNickname());
-  const [noise, setNoise] = useState<NoiseCancellationConfig>(() => readNoiseConfig());
+  const remember = useSettingsStore((state) => state.rememberRoom);
+  const storedRoomId = useSettingsStore((state) => state.roomId);
+  const nickname = useSettingsStore((state) => state.nickname);
+  const noise = useSettingsStore((state) => state.noise);
+  const setRemember = useSettingsStore((state) => state.setRememberRoom);
+  const setStoredRoomId = useSettingsStore((state) => state.setRoomId);
+  const setNickname = useSettingsStore((state) => state.setNickname);
+  const setNoise = useSettingsStore((state) => state.setNoise);
+  const [roomId, setRoomId] = useState(() => (remember ? storedRoomId : "DEFAULT"));
   const [joining, setJoining] = useState(false);
 
   async function onJoin() {
     setJoining(true);
     const targetRoom = roomId.trim() || "DEFAULT";
     if (remember) {
-      writeRoomId(targetRoom);
+      setStoredRoomId(targetRoom);
     }
-    writeRememberRoom(remember);
-    writeNickname(nickname);
-    writeNoiseConfig(noise);
     const response = await joinRoom(targetRoom, { nickname, noise });
     sessionStorage.setItem(
       "lyre.roomSession",
@@ -54,10 +56,10 @@ export default function Home() {
           <Select
             value={noise.provider}
             onChange={(event) =>
-              setNoise((current) => ({
-                ...current,
+              setNoise({
+                ...noise,
                 provider: parseNoiseProvider(event.target.value)
-              }))
+              })
             }
           >
             <option value="off">Off</option>

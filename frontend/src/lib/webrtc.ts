@@ -1,7 +1,14 @@
 import type { IceServerConfig } from "./api";
+import { readAudioProcessingConfig } from "./storage";
 
 export async function openLocalAudioStream(): Promise<MediaStream> {
-  return navigator.mediaDevices.getUserMedia({ audio: true });
+  const audioProcessing = readAudioProcessingConfig();
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: audioProcessing.echoCancellation,
+      autoGainControl: audioProcessing.autoGainControl
+    }
+  });
 }
 
 export function createPeerConnection(iceServers: IceServerConfig[], stream: MediaStream): RTCPeerConnection {

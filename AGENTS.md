@@ -21,6 +21,7 @@ crates/lyre-noise-cancelling - 噪声消除, 先支持 RNNoise / DeepFilterNet, 
 crates/lyre-turn - optional embedded UDP TURN relay adapter around the MIT `turn-server` crate
 crates/lyre-webrtc - dependency-isolated Rust WebRTC server session boundary around the `webrtc` crate. Direct `webrtc` imports belong only in this crate until the media termination design is complete.
 frontend/ - Next.js + React 前端，使用 Tailwind CSS 和本地 shadcn-style UI primitives。前端运行时使用 `APP_BASE_URL` 表示自身公开 URL，`APP_API_URL` 表示 Rust API URL。
+Frontend browser settings/state must use Zustand stores. Do not manually read or write `localStorage` for user settings; add fields/actions to `frontend/src/lib/settings-store.ts` and consume them through the store. Test setup and Zustand persistence adapters are the only allowed direct `localStorage` uses for settings storage plumbing.
 
 `lyre-core::media` owns the media relay state skeleton and DTOs. It is a control-plane/API boundary only until a real WebRTC media termination and audio processing runtime is added.
 
@@ -39,6 +40,7 @@ frontend/ - Next.js + React 前端，使用 Tailwind CSS 和本地 shadcn-style 
 - **TURN REST credentials**: `hmac`, `sha1`, and `base64` generate short-lived shared-secret TURN credentials for configured TURN/TURNS ICE servers. These are third-party dependencies, not new workspace crates.
 - **Embedded TURN relay**: `turn-server` is the MIT service crate from the `turn-rs` project used by `crates/lyre-turn` for optional UDP TURN relay. The GPL `turn-rs` crate is intentionally not used.
 - **Server WebRTC boundary**: `lyre-webrtc` isolates the `webrtc` crate (`webrtc-rs`) behind Lyre-owned session/control types. Do not import `webrtc` directly from `lyre-core` or `lyre-web`.
+- **Frontend state management**: `zustand` owns frontend user settings and persisted browser state. Settings persistence uses the `persist` middleware under the `lyre.settings` key.
 
 ## Memory Files
 ### docs/roadmap.md
