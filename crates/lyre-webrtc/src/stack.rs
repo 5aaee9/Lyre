@@ -6,9 +6,9 @@ use std::{
 
 use crate::{
     connection_state::ServerMediaConnectionState, egress::ServerMediaEgress,
-    media_ingress::MediaIngressRecorder, stack_audio_ingress::handle_audio_rtp_packet,
-    ServerMediaDecodeFailure, ServerMediaEgressError, ServerMediaJitterBuffer,
-    ServerMediaOpusDecoder, ServerMediaPcmConcealer, ServerMediaPcmFrame,
+    media_ingress::MediaIngressRecorder, payload_dump::PayloadDumper,
+    stack_audio_ingress::handle_audio_rtp_packet, ServerMediaDecodeFailure, ServerMediaEgressError,
+    ServerMediaJitterBuffer, ServerMediaOpusDecoder, ServerMediaPcmConcealer, ServerMediaPcmFrame,
     ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
     ServerMediaSessionKey, ServerMediaTrackKind,
 };
@@ -65,15 +65,18 @@ impl WebRtcStack {
         let connection_state = ServerMediaConnectionState::default();
         let session_key = Arc::new(Mutex::new(None));
         let media_ingress = MediaIngressRecorder::default();
-        let media_egress =
-            ServerMediaEgress::new().map_err(|source| WebRtcStackError::CreatePeerConnection {
+        let payload_dumper = PayloadDumper::from_env();
+        let media_egress = ServerMediaEgress::new(payload_dumper.clone()).map_err(|source| {
+            WebRtcStackError::CreatePeerConnection {
                 source: Box::new(source),
-            })?;
+            }
+        })?;
         let handler = Arc::new(PeerConnectionHandler {
             local_ice_candidates: Arc::clone(&local_ice_candidates),
             session_key: Arc::clone(&session_key),
             connection_state: connection_state.clone(),
             media_ingress: media_ingress.clone(),
+            payload_dumper: payload_dumper.clone(),
         });
         let mut media_engine = MediaEngine::default();
         media_engine
@@ -123,6 +126,7 @@ impl WebRtcStack {
             connection_state,
             media_ingress,
             media_egress,
+            payload_dumper,
         })
     }
 }
@@ -179,6 +183,7 @@ struct PeerConnectionHandler {
     session_key: Arc<Mutex<Option<ServerMediaSessionKey>>>,
     connection_state: ServerMediaConnectionState,
     media_ingress: MediaIngressRecorder,
+    payload_dumper: PayloadDumper,
 }
 
 #[async_trait::async_trait]
@@ -278,6 +283,7 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
         }
 
         let media_ingress = self.media_ingress.clone();
+        let payload_dumper = self.payload_dumper.clone();
         tokio::spawn(async move {
             let mut decoder = match ServerMediaOpusDecoder::new() {
                 Ok(decoder) => decoder,
@@ -298,6 +304,7 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
                         payload_type: packet.header.payload_type,
                         payload: packet.payload.to_vec(),
                     };
+                    payload_dumper.dump_inbound(&packet);
                     handle_audio_rtp_packet(
                         &media_ingress,
                         &mut decoder,
@@ -378,6 +385,7 @@ pub struct WebRtcPeerConnectionHandle {
     connection_state: ServerMediaConnectionState,
     media_ingress: MediaIngressRecorder,
     media_egress: ServerMediaEgress,
+    payload_dumper: PayloadDumper,
 }
 
 impl std::fmt::Debug for WebRtcPeerConnectionHandle {
@@ -390,6 +398,7 @@ impl std::fmt::Debug for WebRtcPeerConnectionHandle {
 
 impl WebRtcPeerConnectionHandle {
     pub fn set_session_key(&self, key: ServerMediaSessionKey) {
+        self.payload_dumper.set_session_key(&key);
         *self
             .session_key
             .lock()

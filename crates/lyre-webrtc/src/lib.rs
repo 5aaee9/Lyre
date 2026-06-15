@@ -4,6 +4,7 @@ mod jitter_buffer;
 pub mod media_ingress;
 pub mod negotiation;
 pub mod opus_decode;
+mod payload_dump;
 mod pcm_concealment;
 pub mod session;
 pub mod stack;

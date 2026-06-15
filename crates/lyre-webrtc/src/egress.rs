@@ -1,4 +1,4 @@
-use crate::SERVER_MEDIA_OPUS_FRAME_SIZE;
+use crate::{payload_dump::PayloadDumper, SERVER_MEDIA_OPUS_FRAME_SIZE};
 use bytes::Bytes;
 use opus_rs::{Application, OpusEncoder};
 use rtc::rtp_transceiver::rtp_sender::{
@@ -77,10 +77,11 @@ pub(crate) struct ServerMediaEgress {
     track: Arc<TrackLocalStaticRTP>,
     encoder: Arc<Mutex<ServerMediaOpusEgress>>,
     sent_packets: Arc<Mutex<Vec<ServerMediaEgressRtpPacket>>>,
+    payload_dumper: PayloadDumper,
 }
 
 impl ServerMediaEgress {
-    pub(crate) fn new() -> Result<Self, ServerMediaEgressError> {
+    pub(crate) fn new(payload_dumper: PayloadDumper) -> Result<Self, ServerMediaEgressError> {
         Ok(Self {
             track: Arc::new(TrackLocalStaticRTP::new(MediaStreamTrack::new(
                 "lyre-server-audio".to_owned(),
@@ -104,6 +105,7 @@ impl ServerMediaEgress {
             ))),
             encoder: Arc::new(Mutex::new(ServerMediaOpusEgress::new()?)),
             sent_packets: Arc::new(Mutex::new(Vec::new())),
+            payload_dumper,
         })
     }
 
@@ -127,6 +129,7 @@ impl ServerMediaEgress {
                 .map_err(|source| ServerMediaEgressError::WriteRtp {
                     source: Box::new(source),
                 })?;
+            self.payload_dumper.dump_outbound(packet);
         }
         self.sent_packets
             .lock()
@@ -146,6 +149,7 @@ impl ServerMediaEgress {
             .map_err(|source| ServerMediaEgressError::WriteRtp {
                 source: Box::new(source),
             })?;
+        self.payload_dumper.dump_outbound(&packet);
         self.sent_packets
             .lock()
             .expect("server media egress packet snapshots lock must not be poisoned")
@@ -296,6 +300,7 @@ fn validate_opus_rtp_packet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::payload_dump::PayloadDumper;
     use opus_rs::OpusDecoder;
     use webrtc::media_stream::Track;
 
@@ -410,7 +415,7 @@ mod tests {
 
     #[tokio::test]
     async fn unbound_track_write_preserves_source_error() {
-        let egress = ServerMediaEgress::new().unwrap();
+        let egress = ServerMediaEgress::new(PayloadDumper::disabled_for_test()).unwrap();
 
         let error = egress
             .send_processed_audio_frame(frame(vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE]))
@@ -442,7 +447,7 @@ mod tests {
 
     #[tokio::test]
     async fn egress_track_advertises_encoded_channel_count() {
-        let egress = ServerMediaEgress::new().unwrap();
+        let egress = ServerMediaEgress::new(PayloadDumper::disabled_for_test()).unwrap();
         let codec = egress.track().codec(5678).await.unwrap();
 
         assert_eq!(codec.channels, SERVER_MEDIA_EGRESS_CHANNELS);
