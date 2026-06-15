@@ -12,6 +12,22 @@ api:
     port: 8080
   env:
     LYRE_API_BIND: 0.0.0.0:8080
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    timeoutSeconds: 3
+    failureThreshold: 3
   resources:
     requests:
       cpu: 100m
@@ -32,6 +48,22 @@ web:
   env:
     APP_BASE_URL: http://lyre.local
     APP_API_URL: http://lyre.local
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    timeoutSeconds: 3
+    failureThreshold: 3
   resources:
     requests:
       cpu: 100m
