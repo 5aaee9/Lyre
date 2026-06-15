@@ -39,3 +39,34 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      - name: Cleanup Untagged Image
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          delete-untagged: true
+
+  helm-chart:
+    runs-on: ubuntu-latest
+    needs: docker
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+      - name: Log in to GHCR for Helm
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Resolve chart version
+        id: chart-version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.1.0-${GITHUB_SHA::7}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: Package Helm chart
+        run: |
+          helm package scripts/kubernetes \
+            --destination dist \
+            --version "${{ steps.chart-version.outputs.version }}" \
+            --app-version "${{ steps.chart-version.outputs.version }}"
+      - name: Push Helm chart to GHCR
+        run: helm push dist/chart-*.tgz oci://ghcr.io/${{ github.repository }}

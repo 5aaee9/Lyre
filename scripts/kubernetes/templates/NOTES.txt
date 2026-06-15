@@ -1,0 +1,19 @@
+Lyre has been installed.
+
+Frontend URL:
+  {{- if .Values.ingress.enabled }}
+  http://{{ .Values.ingress.host }}/
+  {{- else if .Values.gateway.enabled }}
+  Gateway API HTTPRoute hostnames: {{ join ", " .Values.gateway.hostnames }}
+  {{- else }}
+  kubectl port-forward svc/{{ include "lyre.webName" . }} 3000:{{ .Values.web.service.port }}
+  {{- end }}
+
+API health check:
+  {{- if .Values.ingress.enabled }}
+  http://{{ .Values.ingress.host }}/health
+  {{- else if .Values.gateway.enabled }}
+  Gateway API HTTPRoute routes /health to svc/{{ include "lyre.apiName" . }}
+  {{- else }}
+  kubectl port-forward svc/{{ include "lyre.apiName" . }} 8080:{{ .Values.api.service.port }}
+  {{- end }}

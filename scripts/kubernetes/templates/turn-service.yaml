@@ -1,0 +1,19 @@
+{{- if .Values.embeddedTurn.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "lyre.fullname" . }}-turn
+  labels:
+    {{- include "lyre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: turn
+spec:
+  type: {{ .Values.embeddedTurn.service.type }}
+  selector:
+    {{- include "lyre.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  ports:
+    - name: turn-udp
+      protocol: UDP
+      port: {{ .Values.embeddedTurn.service.port }}
+      targetPort: {{ .Values.embeddedTurn.service.port }}
+{{- end }}

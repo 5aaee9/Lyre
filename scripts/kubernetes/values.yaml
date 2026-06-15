@@ -1,0 +1,74 @@
+nameOverride: lyre
+fullnameOverride: ""
+
+api:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/5aaee9/lyre/lyre-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  env:
+    LYRE_API_BIND: 0.0.0.0:8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+web:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/5aaee9/lyre/lyre-web
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  env:
+    APP_BASE_URL: http://lyre.local
+    APP_API_URL: http://lyre.local
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+ingress:
+  enabled: false
+  className: nginx
+  host: lyre.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  tls: []
+
+gateway:
+  enabled: false
+  parentRefs:
+    - name: lyre-gateway
+  hostnames:
+    - lyre.local
+
+embeddedTurn:
+  enabled: false
+  service:
+    type: LoadBalancer
+    port: 3478
+  env:
+    LYRE_EMBEDDED_TURN: "true"
+    LYRE_EMBEDDED_TURN_LISTEN: 0.0.0.0:3478
+    LYRE_EMBEDDED_TURN_EXTERNAL: 127.0.0.1:3478
+    LYRE_EMBEDDED_TURN_REALM: lyre.local
+    LYRE_EMBEDDED_TURN_PORT_RANGE: 49152..65535
+
+imagePullSecrets: []
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}

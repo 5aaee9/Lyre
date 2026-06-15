@@ -39,6 +39,7 @@
 - Optional JSON file persistence for anonymous room/user/session access state.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
+- Helm chart for deploying `lyre-api` and `lyre-web`, with optional Ingress and Gateway API HTTPRoute entry points.
 - Aggregate Prometheus-compatible `/metrics` endpoint for process-local API observability.
 - Rust WebRPC runtime routes at `POST /rpc/Lyre/<Method>` compatible with the generated TypeScript client while preserving REST routes.
 
@@ -46,4 +47,5 @@
 
 - Add full DeepFilterNet neural model inference/configuration for decoded WebRTC tracks.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
+- Add production Helm values for TLS, real hostnames, secrets, persistence, and scaling policy.
 - Add production-grade database/session management if anonymous JSON persistence stops being sufficient.
