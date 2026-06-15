@@ -5,11 +5,15 @@ export async function openLocalAudioStream(): Promise<MediaStream> {
   const audioProcessing = readAudioProcessingConfig();
   return navigator.mediaDevices.getUserMedia({
     audio: {
-      echoCancellation: audioProcessing.echoCancellation,
-      autoGainControl: audioProcessing.autoGainControl,
-      noiseSuppression: audioProcessing.noiseSuppression
+      echoCancellation: audioConstraint(audioProcessing.echoCancellation),
+      autoGainControl: audioConstraint(audioProcessing.autoGainControl),
+      noiseSuppression: audioConstraint(audioProcessing.noiseSuppression)
     }
   });
+}
+
+function audioConstraint(enabled: boolean): boolean | ConstrainBooleanParameters {
+  return enabled ? true : { exact: false };
 }
 
 export function createPeerConnection(iceServers: IceServerConfig[], stream: MediaStream): RTCPeerConnection {

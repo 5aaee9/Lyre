@@ -37,7 +37,7 @@ describe("webrtc", () => {
       audio: {
         echoCancellation: true,
         autoGainControl: true,
-        noiseSuppression: false
+        noiseSuppression: { exact: false }
       }
     });
   });
@@ -53,7 +53,7 @@ describe("webrtc", () => {
 
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
       audio: {
-        echoCancellation: false,
+        echoCancellation: { exact: false },
         autoGainControl: true,
         noiseSuppression: true
       }
@@ -76,7 +76,7 @@ describe("webrtc", () => {
       audio: {
         echoCancellation: true,
         autoGainControl: true,
-        noiseSuppression: false
+        noiseSuppression: { exact: false }
       }
     });
     expect(peerConstructor).toHaveBeenCalledOnce();
