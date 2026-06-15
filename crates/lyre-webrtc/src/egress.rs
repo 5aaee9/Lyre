@@ -5,7 +5,6 @@ use rtc::rtp_transceiver::rtp_sender::{
 };
 use std::{
     error::Error,
-    ffi::{c_int, c_uchar, c_void},
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
@@ -18,8 +17,6 @@ pub const SERVER_MEDIA_EGRESS_PAYLOAD_TYPE: u8 = 111;
 pub const SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const SERVER_MEDIA_EGRESS_CHANNELS: u16 = 1;
 const SERVER_MEDIA_EGRESS_GAP_FADE_SAMPLES: usize = 240;
-const LIBOPUS_APPLICATION_AUDIO: c_int = 2049;
-const LIBOPUS_OK: c_int = 0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerMediaProcessedAudioFrame {
@@ -67,7 +64,7 @@ pub enum ServerMediaEgressError {
 }
 
 pub(crate) struct ServerMediaOpusEgress {
-    encoder: LibOpusEncoder,
+    encoder: crate::libopus::SendOnly<crate::libopus::Encoder>,
     sequence_number: u16,
     timestamp: u32,
     next_source_rtp_timestamp: Option<u32>,
@@ -209,9 +206,11 @@ impl ServerMediaOpusEgress {
         let mut packets = Vec::new();
         for (chunk_index, chunk) in samples.chunks(SERVER_MEDIA_OPUS_FRAME_SIZE).enumerate() {
             let mut payload = vec![0_u8; 512];
-            let payload_len =
-                self.encoder
-                    .encode(chunk, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut payload)?;
+            let payload_len = self
+                .encoder
+                .get_mut()
+                .encode_float(chunk, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut payload)
+                .map_err(|message| ServerMediaEgressError::Encode { message })?;
             payload.truncate(payload_len);
             packets.push(ServerMediaEgressRtpPacket {
                 sequence_number: self.sequence_number,
@@ -249,8 +248,15 @@ fn fade_in_after_gap(samples: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-fn new_opus_encoder() -> Result<LibOpusEncoder, ServerMediaEgressError> {
-    LibOpusEncoder::new()
+fn new_opus_encoder(
+) -> Result<crate::libopus::SendOnly<crate::libopus::Encoder>, ServerMediaEgressError> {
+    crate::libopus::Encoder::new(
+        SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ,
+        SERVER_MEDIA_EGRESS_CHANNELS,
+        crate::libopus::APPLICATION_AUDIO,
+    )
+    .map(crate::libopus::SendOnly::new)
+    .map_err(|message| ServerMediaEgressError::EncoderInit { message })
 }
 
 fn validate_frame(frame: &ServerMediaProcessedAudioFrame) -> Result<(), ServerMediaEgressError> {
@@ -286,93 +292,6 @@ fn validate_opus_rtp_packet(
         });
     }
     Ok(())
-}
-
-struct LibOpusEncoder {
-    ptr: *mut c_void,
-}
-
-unsafe impl Send for LibOpusEncoder {}
-
-impl LibOpusEncoder {
-    fn new() -> Result<Self, ServerMediaEgressError> {
-        let mut error = 0;
-        let ptr = unsafe {
-            opus_encoder_create(
-                SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ as c_int,
-                SERVER_MEDIA_EGRESS_CHANNELS as c_int,
-                LIBOPUS_APPLICATION_AUDIO,
-                &mut error,
-            )
-        };
-        if ptr.is_null() || error != LIBOPUS_OK {
-            return Err(ServerMediaEgressError::EncoderInit {
-                message: opus_error_message(error),
-            });
-        }
-        Ok(Self { ptr })
-    }
-
-    fn encode(
-        &mut self,
-        input: &[f32],
-        frame_size: usize,
-        output: &mut [u8],
-    ) -> Result<usize, ServerMediaEgressError> {
-        let encoded = unsafe {
-            opus_encode_float(
-                self.ptr,
-                input.as_ptr(),
-                frame_size as c_int,
-                output.as_mut_ptr(),
-                output.len() as c_int,
-            )
-        };
-        if encoded < 0 {
-            return Err(ServerMediaEgressError::Encode {
-                message: opus_error_message(encoded),
-            });
-        }
-        Ok(encoded as usize)
-    }
-}
-
-impl Drop for LibOpusEncoder {
-    fn drop(&mut self) {
-        unsafe { opus_encoder_destroy(self.ptr) };
-    }
-}
-
-fn opus_error_message(code: c_int) -> String {
-    let ptr = unsafe { opus_strerror(code) };
-    if ptr.is_null() {
-        return format!("libopus error {code}");
-    }
-    unsafe { std::ffi::CStr::from_ptr(ptr.cast()) }
-        .to_string_lossy()
-        .into_owned()
-}
-
-#[link(name = "opus")]
-extern "C" {
-    fn opus_encoder_create(
-        fs: c_int,
-        channels: c_int,
-        application: c_int,
-        error: *mut c_int,
-    ) -> *mut c_void;
-
-    fn opus_encode_float(
-        st: *mut c_void,
-        pcm: *const f32,
-        frame_size: c_int,
-        data: *mut c_uchar,
-        max_data_bytes: c_int,
-    ) -> c_int;
-
-    fn opus_encoder_destroy(st: *mut c_void);
-
-    fn opus_strerror(error: c_int) -> *const c_uchar;
 }
 
 #[cfg(test)]
@@ -520,7 +439,7 @@ mod tests {
 
     #[test]
     fn egress_encoder_uses_libopus_audio_application_without_voip_preprocessing() {
-        assert_eq!(LIBOPUS_APPLICATION_AUDIO, 2049);
+        assert_eq!(crate::libopus::APPLICATION_AUDIO, 2049);
     }
 
     #[test]
@@ -581,45 +500,16 @@ mod tests {
     }
 
     fn decode_with_libopus(payload: &[u8]) -> Vec<f32> {
-        let mut error = 0;
-        let decoder = unsafe {
-            opus_decoder_create(
-                SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ as c_int,
-                SERVER_MEDIA_EGRESS_CHANNELS as c_int,
-                &mut error,
-            )
-        };
-        assert_eq!(error, LIBOPUS_OK);
-        assert!(!decoder.is_null());
-
+        let mut decoder = crate::libopus::Decoder::new(
+            SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ,
+            SERVER_MEDIA_EGRESS_CHANNELS,
+        )
+        .unwrap();
         let mut output = vec![0.0; SERVER_MEDIA_OPUS_FRAME_SIZE];
-        let decoded = unsafe {
-            opus_decode_float(
-                decoder,
-                payload.as_ptr(),
-                payload.len() as c_int,
-                output.as_mut_ptr(),
-                SERVER_MEDIA_OPUS_FRAME_SIZE as c_int,
-                0,
-            )
-        };
-        unsafe { opus_decoder_destroy(decoder) };
-        assert_eq!(decoded, SERVER_MEDIA_OPUS_FRAME_SIZE as c_int);
+        let decoded = decoder
+            .decode_float(payload, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut output)
+            .unwrap();
+        assert_eq!(decoded, SERVER_MEDIA_OPUS_FRAME_SIZE);
         output
-    }
-
-    extern "C" {
-        fn opus_decoder_create(fs: c_int, channels: c_int, error: *mut c_int) -> *mut c_void;
-
-        fn opus_decode_float(
-            st: *mut c_void,
-            data: *const c_uchar,
-            len: c_int,
-            pcm: *mut f32,
-            frame_size: c_int,
-            decode_fec: c_int,
-        ) -> c_int;
-
-        fn opus_decoder_destroy(st: *mut c_void);
     }
 }

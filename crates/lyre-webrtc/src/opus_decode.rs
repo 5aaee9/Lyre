@@ -1,5 +1,4 @@
 use crate::ServerMediaRtpPacket;
-use opus_rs::OpusDecoder;
 use thiserror::Error;
 
 pub const SERVER_MEDIA_OPUS_SAMPLE_RATE_HZ: u32 = 48_000;
@@ -33,7 +32,7 @@ pub enum ServerMediaDecodeError {
 }
 
 pub struct ServerMediaOpusDecoder {
-    decoder: OpusDecoder,
+    decoder: crate::libopus::SendOnly<crate::libopus::Decoder>,
 }
 
 impl ServerMediaOpusDecoder {
@@ -47,13 +46,17 @@ impl ServerMediaOpusDecoder {
         &mut self,
         packet: &ServerMediaRtpPacket,
     ) -> Result<ServerMediaPcmFrame, ServerMediaDecodeError> {
+        if packet.payload.is_empty() {
+            return Err(ServerMediaDecodeError::Decode {
+                message: "Input packet empty".to_owned(),
+            });
+        }
         let mut samples =
             vec![0.0_f32; SERVER_MEDIA_OPUS_FRAME_SIZE * SERVER_MEDIA_OPUS_CHANNELS as usize];
         self.decoder
-            .decode(&packet.payload, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut samples)
-            .map_err(|source| ServerMediaDecodeError::Decode {
-                message: source.to_owned(),
-            })?;
+            .get_mut()
+            .decode_float(&packet.payload, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut samples)
+            .map_err(|message| ServerMediaDecodeError::Decode { message })?;
         Ok(ServerMediaPcmFrame {
             track_id: packet.track_id.clone(),
             sequence_number: packet.sequence_number,
@@ -65,15 +68,11 @@ impl ServerMediaOpusDecoder {
     }
 }
 
-fn new_opus_decoder() -> Result<OpusDecoder, ServerMediaDecodeError> {
-    let decoder = OpusDecoder::new(
-        SERVER_MEDIA_OPUS_SAMPLE_RATE_HZ as i32,
-        SERVER_MEDIA_OPUS_CHANNELS as usize,
-    )
-    .map_err(|source| ServerMediaDecodeError::InvalidDecoderConfig {
-        message: source.to_owned(),
-    })?;
-    Ok(decoder)
+fn new_opus_decoder(
+) -> Result<crate::libopus::SendOnly<crate::libopus::Decoder>, ServerMediaDecodeError> {
+    crate::libopus::Decoder::new(SERVER_MEDIA_OPUS_SAMPLE_RATE_HZ, SERVER_MEDIA_OPUS_CHANNELS)
+        .map(crate::libopus::SendOnly::new)
+        .map_err(|message| ServerMediaDecodeError::InvalidDecoderConfig { message })
 }
 
 #[cfg(test)]

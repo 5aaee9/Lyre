@@ -1,6 +1,7 @@
 mod connection_state;
 pub mod egress;
 mod jitter_buffer;
+mod libopus;
 pub mod media_ingress;
 pub mod negotiation;
 pub mod opus_decode;

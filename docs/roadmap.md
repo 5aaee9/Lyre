@@ -75,6 +75,7 @@
 - Server-media Opus ingress now records but skips non-Opus RTP payload types before decode, preventing comfort-noise or other audio payloads from being decoded as Opus PCM.
 - Server-media WebRTC can now dump inbound and outbound RTP payload records with `LYRE_DEBUG_DUMP_PAYLOAD` for diagnosing browser-sourced audio artifacts.
 - Server-media processed Opus egress now uses libopus for browser-compatible RTP payloads instead of the pure Rust encoder that produced libopus-decoder artifacts.
+- Server-media Opus ingress now uses libopus for decoded browser RTP as well, keeping inbound and outbound codec behavior on the same implementation family.
 
 ## Next
 
