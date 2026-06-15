@@ -30,6 +30,7 @@
 - DeepFilterNet provider wiring through Rust libDF DSP frame reconstruction.
 - Automatic server-media draining and processing for negotiated WebRTC tracks.
 - Bounded server-media RTP jitter buffering with duplicate/stale packet dropping and deterministic loss detection.
+- Deterministic PCM packet loss concealment synthesis for server media ingress after jitter-buffer loss detection.
 - Internal WebRTC egress path that encodes processed server audio to Opus RTP and writes it to recipient server-media peers.
 - Frontend server-media audio mode with browser-to-server WebRTC negotiation and playback of remote processed server audio.
 - Per-user server-media cleanup endpoint and frontend Leave/startup-failure cleanup flow.
@@ -39,7 +40,6 @@
 ## Next
 
 - Add full DeepFilterNet neural model inference/configuration for decoded WebRTC tracks.
-- Add real PCM packet loss concealment synthesis for server media ingress.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Add authentication and room access control.
 - Add persistent room/user/session state.

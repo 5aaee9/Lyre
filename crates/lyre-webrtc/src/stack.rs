@@ -6,7 +6,7 @@ use std::{
 use crate::{
     egress::ServerMediaEgress, media_ingress::MediaIngressRecorder,
     stack_audio_ingress::handle_audio_rtp_packet, ServerMediaDecodeFailure, ServerMediaEgressError,
-    ServerMediaJitterBuffer, ServerMediaOpusDecoder, ServerMediaPcmFrame,
+    ServerMediaJitterBuffer, ServerMediaOpusDecoder, ServerMediaPcmConcealer, ServerMediaPcmFrame,
     ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
     ServerMediaTrackKind,
 };
@@ -160,6 +160,7 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
                 }
             };
             let mut jitter_buffer = ServerMediaJitterBuffer::default();
+            let mut concealer = ServerMediaPcmConcealer::default();
             while let Some(event) = track.poll().await {
                 if let TrackRemoteEvent::OnRtpPacket(packet) = event {
                     let packet = ServerMediaRtpPacket {
@@ -174,6 +175,7 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
                         &media_ingress,
                         &mut decoder,
                         &mut jitter_buffer,
+                        &mut concealer,
                         packet,
                     );
                 }

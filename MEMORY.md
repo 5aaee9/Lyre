@@ -180,3 +180,9 @@
 - The buffer reorders audio RTP by 16-bit sequence number, drops duplicate/stale packets, and emits deterministic loss events after a depth of three pending packets.
 - Loss events are recorded as internal decode failures with expected RTP timestamps; Lyre still does not synthesize packet loss concealment PCM.
 - Real PCM packet loss concealment remains future work unless the Opus decoder path exposes PLC/FEC or Lyre adds a dedicated concealment synthesizer.
+
+## 2026-06-15 Server Media PCM PLC
+
+- Added deterministic Lyre-owned PCM packet loss concealment for server-media ingress.
+- Missing RTP packets after a decoded baseline now produce 48 kHz mono 960-sample synthetic PCM fallback frames using a faded copy of the previous frame.
+- This is not Opus-native PLC or FEC; missing packets before a usable baseline still record an internal decode failure.
