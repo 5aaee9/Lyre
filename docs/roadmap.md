@@ -61,6 +61,7 @@
 - Patched vendored `webrtc` 0.20.0-alpha.1 so trickled remote ICE candidates wake the peer-connection driver immediately instead of waiting for connectivity checks to time out.
 - RNNoise server-side processing now converts Lyre's normalized decoded Opus PCM to the 16-bit PCM amplitude expected by `nnnoiseless`, then scales processed output back for WebRTC egress.
 - Server relay e2e tests now verify RNNoise and DeepFilterNet RTP payloads decode to audible PCM, and DeepFilterNet DSP output keeps stream audio after warmup.
+- Server-media ICE REST boundaries now log sanitized candidate summaries so production relay failures can distinguish signalling, NAT reachability, and connection-state problems.
 
 ## Next
 

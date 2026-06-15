@@ -1,6 +1,7 @@
 use crate::{
     api::{authorize_room_user, AppState},
     error::ApiError,
+    server_media_ice_diagnostics::{summarize_candidates, ServerMediaIceCandidateSummary},
 };
 use axum::{
     extract::{Path, Query, State},
@@ -65,12 +66,18 @@ async fn answer_server_media_offer(
     authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     let answer = state
         .answer_server_media_offer(ServerMediaOffer {
-            room_id,
+            room_id: room_id.clone(),
             user_id: request.user_id,
             audio_track_id: request.audio_track_id,
             sdp: request.sdp,
         })
         .await?;
+    tracing::info!(
+        room_id = %room_id,
+        user_id = %answer.user_id,
+        audio_track_id = %answer.audio_track_id,
+        "server media offer answered"
+    );
     Ok(Json(answer))
 }
 
@@ -90,9 +97,16 @@ async fn add_server_media_ice_candidate(
         sdp_mline_index: request.sdp_mline_index,
         username_fragment: request.username_fragment,
     };
+    let summary = ServerMediaIceCandidateSummary::from_candidate(&candidate);
     state
         .add_server_media_ice_candidate(candidate.clone())
         .await?;
+    tracing::info!(
+        room_id = %candidate.room_id,
+        user_id = %candidate.user_id,
+        candidate = ?summary,
+        "server media remote ICE candidate accepted"
+    );
     Ok(Json(candidate))
 }
 
@@ -104,12 +118,20 @@ async fn server_media_ice_candidates(
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
     authorize_room_user(&state, &room_id, &query.user_id, &headers)?;
-    Ok(Json(state.server_media_ice_candidates(
-        &ServerMediaSessionKey {
-            room_id,
-            user_id: query.user_id,
-        },
-    )))
+    let key = ServerMediaSessionKey {
+        room_id,
+        user_id: query.user_id,
+    };
+    let candidates = state.server_media_ice_candidates(&key);
+    let candidate_summaries = summarize_candidates(&candidates);
+    tracing::info!(
+        room_id = %key.room_id,
+        user_id = %key.user_id,
+        candidate_count = candidates.len(),
+        candidates = ?candidate_summaries,
+        "server media local ICE candidates returned"
+    );
+    Ok(Json(candidates))
 }
 
 async fn close_server_media_session(
