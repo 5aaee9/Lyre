@@ -66,6 +66,7 @@
 - Server-media WebRTC UDP sockets can now use a configured port range, defaulting to the embedded TURN range when enabled, so VPC deployments advertise firewall-open host candidates.
 - Server-side RNNoise and DeepFilterNet processing now keep state per room/user/track and run off Tokio core workers so relay ICE keepalives are not blocked by denoise DSP work.
 - DeepFilterNet DSP processing now preserves continuous stream state across decoded PCM batches without injecting synthetic silence at every API call boundary.
+- Server-media packet loss concealment now preserves forward PCM sample order while fading synthetic frames, avoiding short high-frequency artifacts from reversed waveform playback.
 
 ## Next
 

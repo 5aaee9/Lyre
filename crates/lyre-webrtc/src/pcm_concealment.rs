@@ -42,7 +42,7 @@ fn is_usable_seed(frame: &ServerMediaPcmFrame) -> bool {
 
 fn synthesize_samples(previous: &[f32]) -> Vec<f32> {
     let start = previous.len().saturating_sub(SERVER_MEDIA_OPUS_FRAME_SIZE);
-    let seed = previous[start..].iter().rev().copied().collect::<Vec<_>>();
+    let seed = &previous[start..];
 
     (0..SERVER_MEDIA_OPUS_FRAME_SIZE)
         .map(|index| {
@@ -100,7 +100,7 @@ mod tests {
         assert_eq!(concealed.sample_rate_hz, SERVER_MEDIA_OPUS_SAMPLE_RATE_HZ);
         assert_eq!(concealed.channels, SERVER_MEDIA_OPUS_CHANNELS);
         assert_eq!(concealed.samples.len(), SERVER_MEDIA_OPUS_FRAME_SIZE);
-        assert!(concealed.samples[0] > concealed.samples[SERVER_MEDIA_OPUS_FRAME_SIZE - 1]);
+        assert!(concealed.samples[SERVER_MEDIA_OPUS_FRAME_SIZE / 2] > 0.0);
         assert_eq!(concealed.samples[SERVER_MEDIA_OPUS_FRAME_SIZE - 1], 0.0);
         assert!(concealed
             .samples
@@ -132,6 +132,19 @@ mod tests {
         assert_eq!(concealed.samples.len(), SERVER_MEDIA_OPUS_FRAME_SIZE);
         assert!(concealed.samples.iter().any(|sample| *sample > 0.0));
         assert!(concealed.samples.iter().any(|sample| *sample < 0.0));
+    }
+
+    #[test]
+    fn synthetic_frame_preserves_forward_sample_order() {
+        let mut concealer = ServerMediaPcmConcealer::default();
+        let samples = (0..SERVER_MEDIA_OPUS_FRAME_SIZE)
+            .map(|index| index as f32 / SERVER_MEDIA_OPUS_FRAME_SIZE as f32)
+            .collect::<Vec<_>>();
+        concealer.observe_decoded(frame(7, 6_720, samples));
+
+        let concealed = concealer.conceal(&event(8, 7_680)).unwrap();
+
+        assert!(concealed.samples[1] > concealed.samples[0]);
     }
 
     #[test]
