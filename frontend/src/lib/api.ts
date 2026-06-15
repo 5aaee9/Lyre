@@ -9,7 +9,9 @@ import type {
   NoiseCancellationConfig as WebrpcNoiseCancellationConfig,
   RoomSnapshot as WebrpcRoomSnapshot,
   ServerMediaAnswer as WebrpcServerMediaAnswer,
+  ClosedServerMediaSession as WebrpcClosedServerMediaSession,
   ServerMediaIceCandidate as WebrpcServerMediaIceCandidate,
+  ServerMediaSessionStatus as WebrpcServerMediaSessionStatus,
   UserProfile as WebrpcUserProfile
 } from "./lyre.gen";
 import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
@@ -146,6 +148,24 @@ export type ServerMediaAnswer = Omit<
   state: ServerMediaSessionState;
 };
 
+export type ServerMediaSessionStatus = Omit<
+  WebrpcServerMediaSessionStatus,
+  "roomID" | "userID" | "audioTrackID" | "state"
+> & {
+  room_id: string;
+  user_id: string;
+  audio_track_id: string;
+  state: ServerMediaSessionState;
+};
+
+export type CloseServerMediaSessionResponse = Omit<
+  WebrpcClosedServerMediaSession,
+  "mediaRelay" | "session"
+> & {
+  media_relay: MediaRelayRoomStatus;
+  session?: ServerMediaSessionStatus | null;
+};
+
 export type ServerMediaIceCandidate = Omit<
   WebrpcServerMediaIceCandidate,
   "roomID" | "userID" | "sdpMid" | "sdpMLineIndex" | "usernameFragment"
@@ -194,6 +214,10 @@ export function serverMediaOfferUrl(roomId: string): string {
 
 export function serverMediaCandidatesUrl(roomId: string): string {
   return `${roomUrl(roomId)}/server-media/candidates`;
+}
+
+export function serverMediaCloseUrl(roomId: string): string {
+  return `${roomUrl(roomId)}/server-media/close`;
 }
 
 export async function getRoom(roomId: string): Promise<RoomSnapshot> {
@@ -292,6 +316,18 @@ export async function getServerMediaIceCandidates(
   const query = new URLSearchParams({ user_id: userId });
   const response = await fetch(`${serverMediaCandidatesUrl(roomId)}?${query.toString()}`);
   return jsonOrThrow(response, "failed to load server media ICE candidates");
+}
+
+export async function closeServerMediaSession(
+  roomId: string,
+  userId: string
+): Promise<CloseServerMediaSessionResponse> {
+  const response = await fetch(serverMediaCloseUrl(roomId), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user_id: userId })
+  });
+  return jsonOrThrow(response, "failed to close server media session");
 }
 
 export async function getNoiseProviders(): Promise<NoiseCancellationConfig[]> {

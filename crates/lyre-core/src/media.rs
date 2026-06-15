@@ -154,6 +154,22 @@ impl MediaRelayRegistry {
         Ok(self.snapshot(room_id))
     }
 
+    pub fn remove_participant(
+        &self,
+        room_id: RoomId,
+        user_id: &UserId,
+    ) -> Result<MediaRelayRoomStatus, MediaRelayError> {
+        let Some(room) = self.rooms.get(&room_id) else {
+            return Err(MediaRelayError::Inactive { room_id });
+        };
+        if !room.active {
+            return Err(MediaRelayError::Inactive { room_id });
+        }
+        room.participants.remove(user_id);
+        drop(room);
+        Ok(self.snapshot(room_id))
+    }
+
     pub fn require_track(
         &self,
         room_id: &RoomId,

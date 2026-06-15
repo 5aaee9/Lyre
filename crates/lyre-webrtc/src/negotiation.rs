@@ -9,8 +9,8 @@ use crate::{
     ServerMediaDecodeFailure, ServerMediaEgressError, ServerMediaIceCandidateInit,
     ServerMediaPcmFrame, ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack,
     ServerMediaRtpPacket, ServerMediaSessionConfig, ServerMediaSessionKey,
-    ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcPeerConnectionHandle, WebRtcStack,
-    WebRtcStackError,
+    ServerMediaSessionRegistry, ServerMediaSessionState, ServerMediaSessionStatus,
+    WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -214,9 +214,10 @@ impl ServerMediaNegotiator {
         peer_connection.send_processed_audio_frame(frame).await
     }
 
-    pub fn close(&self, key: &ServerMediaSessionKey) {
-        self.sessions.close(key);
+    pub fn close(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {
+        let status = self.sessions.close(key);
         self.peer_connections.remove(key);
+        status
     }
 
     pub fn close_room(&self, room_id: &RoomId) {

@@ -26,6 +26,11 @@ struct ServerMediaCandidateRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct CloseServerMediaSessionRequest {
+    user_id: UserId,
+}
+
+#[derive(Debug, Deserialize)]
 struct ServerMediaCandidatesQuery {
     user_id: UserId,
 }
@@ -39,6 +44,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/rooms/{room_id}/server-media/candidates",
             post(add_server_media_ice_candidate).get(server_media_ice_candidates),
+        )
+        .route(
+            "/api/rooms/{room_id}/server-media/close",
+            post(close_server_media_session),
         )
 }
 
@@ -91,4 +100,16 @@ async fn server_media_ice_candidates(
             user_id: query.user_id,
         },
     )))
+}
+
+async fn close_server_media_session(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+    Json(request): Json<CloseServerMediaSessionRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    Ok(Json(state.close_server_media_session_for_user(
+        room_id,
+        request.user_id,
+    )?))
 }

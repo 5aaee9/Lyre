@@ -1,5 +1,5 @@
 use crate::{api::AppState, server_media_runtime};
-use lyre_core::{MediaRelayError, RoomId};
+use lyre_core::{MediaRelayError, MediaRelayRoomStatus, RoomId, UserId};
 #[cfg(test)]
 use lyre_webrtc::WebRtcPeerConnectionHandle;
 use lyre_webrtc::{
@@ -8,6 +8,13 @@ use lyre_webrtc::{
     ServerMediaRtpPacket, ServerMediaSessionConfig, ServerMediaSessionKey,
     ServerMediaSessionStatus,
 };
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CloseServerMediaSessionResponse {
+    pub media_relay: MediaRelayRoomStatus,
+    pub session: Option<ServerMediaSessionStatus>,
+}
 
 impl AppState {
     pub fn start_server_media_session(
@@ -33,6 +40,24 @@ impl AppState {
         self.server_media_runtime_pump.stop_room(room_id);
         self.server_media_negotiator.close_room(room_id);
         self.server_media_sessions.sessions()
+    }
+
+    pub fn close_server_media_session_for_user(
+        &self,
+        room_id: RoomId,
+        user_id: UserId,
+    ) -> Result<CloseServerMediaSessionResponse, MediaRelayError> {
+        let key = ServerMediaSessionKey {
+            room_id: room_id.clone(),
+            user_id: user_id.clone(),
+        };
+        self.server_media_runtime_pump.stop(&key);
+        let session = self.server_media_negotiator.close(&key);
+        let media_relay = self.media_relays.remove_participant(room_id, &user_id)?;
+        Ok(CloseServerMediaSessionResponse {
+            media_relay,
+            session,
+        })
     }
 
     pub async fn answer_server_media_offer(

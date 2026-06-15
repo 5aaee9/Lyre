@@ -223,6 +223,71 @@ fn active_participants_returns_sorted_participants_and_tracks() {
 }
 
 #[test]
+fn remove_participant_keeps_relay_active_noise_and_other_participants() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = RoomId::default_room();
+    let noise = NoiseCancellationConfig {
+        provider: NoiseProvider::Rnnoise,
+        intensity: 0.8,
+        voice_activity_threshold: 0.2,
+    };
+    registry.start(
+        room_id.clone(),
+        StartMediaRelayRequest {
+            noise: Some(noise.clone()),
+        },
+    );
+    for (user_id, track_id) in [
+        ("user_a", "audio-main"),
+        ("user_a", "video-main"),
+        ("user_b", "audio-main"),
+    ] {
+        registry
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: UserId::from_external(user_id),
+                    track_id: track_id.to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+    }
+
+    let status = registry
+        .remove_participant(room_id, &UserId::from_external("user_a"))
+        .unwrap();
+
+    assert_eq!(status.status, MediaRelayStatus::Active);
+    assert_eq!(status.mode, MediaRelayMode::MediaRelay);
+    assert_eq!(status.noise, noise);
+    assert_eq!(status.participants.len(), 1);
+    assert_eq!(status.participants[0].user_id.as_str(), "user_b");
+    assert_eq!(status.participants[0].tracks[0].track_id, "audio-main");
+}
+
+#[test]
+fn remove_participant_requires_active_relay_without_creating_unknown_room() {
+    let registry = MediaRelayRegistry::new();
+    let missing_room = RoomId::parse_boundary("UNKNOWN").unwrap();
+
+    assert_eq!(
+        registry.remove_participant(missing_room.clone(), &UserId::from_external("user_a")),
+        Err(MediaRelayError::Inactive {
+            room_id: missing_room.clone(),
+        })
+    );
+    assert!(!registry.contains_room(&missing_room));
+
+    let room_id = RoomId::default_room();
+    registry.status(room_id.clone());
+    assert_eq!(
+        registry.remove_participant(room_id.clone(), &UserId::from_external("user_a")),
+        Err(MediaRelayError::Inactive { room_id })
+    );
+}
+
+#[test]
 fn stop_clears_participants() {
     let registry = MediaRelayRegistry::new();
     let room_id = RoomId::default_room();

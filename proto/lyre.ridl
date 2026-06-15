@@ -92,6 +92,12 @@ struct ServerMediaAnswer
   - sdp: string
   - state: ServerMediaSessionState
 
+struct ServerMediaSessionStatus
+  - roomID: string
+  - userID: string
+  - audioTrackID: string
+  - state: ServerMediaSessionState
+
 struct ServerMediaIceCandidate
   - roomID: string
   - userID: string
@@ -99,6 +105,10 @@ struct ServerMediaIceCandidate
   - sdpMid?: string
   - sdpMLineIndex?: uint32
   - usernameFragment?: string
+
+struct ClosedServerMediaSession
+  - mediaRelay: MediaRelayRoomStatus
+  - session?: ServerMediaSessionStatus
 
 struct UserProfile
   - id: string
@@ -141,3 +151,5 @@ service Lyre
   - AddServerMediaIceCandidate(roomID: string, userID: string, candidate: string, sdpMid?: string, sdpMLineIndex?: uint32, usernameFragment?: string) => (accepted: ServerMediaIceCandidate)
   # Documents GET /api/rooms/{room_id}/server-media/candidates?user_id={userID}; REST fetch remains the runtime transport in this increment.
   - GetServerMediaIceCandidates(roomID: string, userID: string) => (candidates: []ServerMediaIceCandidate)
+  # Documents POST /api/rooms/{room_id}/server-media/close; REST fetch remains the runtime transport in this increment.
+  - CloseServerMediaSession(roomID: string, userID: string) => (closed: ClosedServerMediaSession)

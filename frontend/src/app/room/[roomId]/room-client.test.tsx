@@ -14,6 +14,7 @@ const stopMediaRelay = vi.fn();
 const apiMocks = vi.hoisted(() => ({
   addServerMediaIceCandidate: vi.fn(),
   answerServerMediaOffer: vi.fn(),
+  closeServerMediaSession: vi.fn(),
   getIceServers: vi.fn(async () => [{ urls: ["stun:stun.example:3478"], username: null, credential: null }]),
   getServerMediaIceCandidates: vi.fn(),
   leaveRoom: vi.fn(),
@@ -95,6 +96,7 @@ vi.mock("@/lib/api", async () => {
     registerMediaTrack: apiMocks.registerMediaTrack,
     answerServerMediaOffer: apiMocks.answerServerMediaOffer,
     addServerMediaIceCandidate: apiMocks.addServerMediaIceCandidate,
+    closeServerMediaSession: apiMocks.closeServerMediaSession,
     getServerMediaIceCandidates: apiMocks.getServerMediaIceCandidates,
     shareRoomUrl: () => "http://localhost:3000/room/DEFAULT"
   };
@@ -142,6 +144,8 @@ describe("RoomClient", () => {
     });
     apiMocks.getServerMediaIceCandidates.mockReset();
     apiMocks.getServerMediaIceCandidates.mockResolvedValue([]);
+    apiMocks.closeServerMediaSession.mockReset();
+    apiMocks.closeServerMediaSession.mockResolvedValue({});
     apiMocks.leaveRoom.mockReset();
     apiMocks.registerMediaTrack.mockReset();
     apiMocks.registerMediaTrack.mockResolvedValue({});
@@ -251,7 +255,7 @@ describe("RoomClient", () => {
     expect(playAudio).toHaveBeenCalledOnce();
   });
 
-  it("cleans server relay local media on leave without stopping the room relay", async () => {
+  it("cleans server relay local and server media on leave without stopping the room relay", async () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Connect audio"));
@@ -259,7 +263,11 @@ describe("RoomClient", () => {
 
     fireEvent.click(screen.getByText("Leave"));
 
+    await waitFor(() => expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a"));
     await waitFor(() => expect(apiMocks.leaveRoom).toHaveBeenCalledWith("DEFAULT", "user_a"));
+    expect(apiMocks.closeServerMediaSession.mock.invocationCallOrder[0]).toBeLessThan(
+      apiMocks.leaveRoom.mock.invocationCallOrder[0]
+    );
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
@@ -275,6 +283,7 @@ describe("RoomClient", () => {
     rendered.unmount();
 
     expect(apiMocks.leaveRoom).not.toHaveBeenCalled();
+    expect(apiMocks.closeServerMediaSession).not.toHaveBeenCalled();
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
@@ -282,7 +291,7 @@ describe("RoomClient", () => {
     expect(sockets[0].close).toHaveBeenCalledOnce();
   });
 
-  it("keeps server relay startup errors visible without stopping the room relay", async () => {
+  it("cleans server relay startup failures after relay start without stopping the room relay", async () => {
     apiMocks.registerMediaTrack.mockRejectedValueOnce(new Error("track registration failed"));
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
@@ -290,8 +299,23 @@ describe("RoomClient", () => {
     fireEvent.click(screen.getByText("Connect audio"));
 
     await waitFor(() => expect(screen.getByText("track registration failed")).toBeInTheDocument());
+    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a");
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(stopTrack).toHaveBeenCalledOnce();
+  });
+
+  it("keeps original server relay startup error visible when cleanup fails", async () => {
+    apiMocks.registerMediaTrack.mockRejectedValueOnce(new Error("track registration failed"));
+    apiMocks.closeServerMediaSession.mockRejectedValueOnce(new Error("cleanup failed"));
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("Connect audio"));
+
+    await waitFor(() => expect(screen.getByText("track registration failed")).toBeInTheDocument());
+    expect(screen.queryByText("cleanup failed")).not.toBeInTheDocument();
+    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a");
+    expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
   });
 
   it("keeps initial server candidate exchange errors visible", async () => {
@@ -304,6 +328,7 @@ describe("RoomClient", () => {
     await waitFor(() => expect(screen.getByText("candidate fetch failed")).toBeInTheDocument());
     expect(screen.queryByText("Server relay audio connected")).not.toBeInTheDocument();
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
+    expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a");
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
   });
@@ -326,6 +351,7 @@ describe("RoomClient", () => {
         expect.objectContaining({ type: "offer", recipient_id: "user_c" })
       ])
     );
+    expect(apiMocks.closeServerMediaSession).not.toHaveBeenCalled();
   });
 
   it("does not create a second mesh session when connect audio is clicked twice", async () => {

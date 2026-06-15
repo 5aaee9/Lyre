@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addServerMediaIceCandidate,
   answerServerMediaOffer,
+  closeServerMediaSession,
   generatedMediaTopologyModeToRest,
   generatedMediaRelayModeToRest,
   generatedMediaRelayStatusToRest,
@@ -17,6 +18,7 @@ import {
   registerMediaTrack,
   roomUrl,
   serverMediaCandidatesUrl,
+  serverMediaCloseUrl,
   serverMediaOfferUrl,
   shareRoomUrl,
   startMediaRelay,
@@ -26,7 +28,8 @@ import {
   type MediaTopology,
   type NoiseProvider,
   type ServerMediaAnswer,
-  type ServerMediaIceCandidate
+  type ServerMediaIceCandidate,
+  type CloseServerMediaSessionResponse
 } from "./api";
 import { MediaTopologyMode as WebrpcMediaTopologyMode } from "./lyre.gen";
 import {
@@ -35,6 +38,8 @@ import {
   MediaTrackKind as WebrpcMediaTrackKind,
   NoiseProvider as WebrpcNoiseProvider,
   ServerMediaSessionState,
+  type ClosedServerMediaSession as WebrpcClosedServerMediaSession,
+  type CloseServerMediaSessionResponse as WebrpcCloseServerMediaSessionResponse,
   type JoinRoomResponse as WebrpcJoinRoomResponse,
   type MediaRelayRoomStatus as WebrpcMediaRelayRoomStatus,
   type ServerMediaAnswer as WebrpcServerMediaAnswer,
@@ -141,6 +146,33 @@ const generatedServerMediaCandidateContract: WebrpcServerMediaIceCandidate = {
 };
 void generatedServerMediaCandidateContract;
 
+const closeServerMediaSessionFromRestShape: CloseServerMediaSessionResponse = {
+  media_relay: mediaRelayFromGeneratedDerivedShape,
+  session: {
+    room_id: "DEFAULT",
+    user_id: "user_a",
+    audio_track_id: "audio-main",
+    state: "closed"
+  }
+};
+void closeServerMediaSessionFromRestShape;
+
+const generatedClosedServerMediaSessionPayload: WebrpcClosedServerMediaSession = {
+  mediaRelay: generatedMediaRelayContract,
+  session: {
+    roomID: "DEFAULT",
+    userID: "user_a",
+    audioTrackID: "audio-main",
+    state: ServerMediaSessionState.CLOSED
+  }
+};
+void generatedClosedServerMediaSessionPayload;
+
+const generatedCloseServerMediaSessionContract: WebrpcCloseServerMediaSessionResponse = {
+  closed: generatedClosedServerMediaSessionPayload
+};
+void generatedCloseServerMediaSessionContract;
+
 describe("api", () => {
   beforeEach(() => {
     window.__LYRE_CONFIG__ = {
@@ -168,6 +200,12 @@ describe("api", () => {
   it("builds encoded server media candidate urls", () => {
     expect(serverMediaCandidatesUrl("Team A")).toBe(
       "https://api.example.test/api/rooms/Team%20A/server-media/candidates"
+    );
+  });
+
+  it("builds encoded server media close urls", () => {
+    expect(serverMediaCloseUrl("Team A")).toBe(
+      "https://api.example.test/api/rooms/Team%20A/server-media/close"
     );
   });
 
@@ -301,6 +339,16 @@ describe("api", () => {
     );
   });
 
+  it("serializes server media close request body", async () => {
+    await closeServerMediaSession("DEFAULT", "user_a");
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/server-media/close", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ user_id: "user_a" })
+    });
+  });
+
   it("throws useful errors for failed server media flow responses", async () => {
     global.fetch = vi.fn(async () => new Response(JSON.stringify({ error: "nope" }), { status: 503 })) as typeof fetch;
 
@@ -322,6 +370,9 @@ describe("api", () => {
     ).rejects.toThrow("failed to add server media ICE candidate: 503");
     await expect(getServerMediaIceCandidates("DEFAULT", "user_a")).rejects.toThrow(
       "failed to load server media ICE candidates: 503"
+    );
+    await expect(closeServerMediaSession("DEFAULT", "user_a")).rejects.toThrow(
+      "failed to close server media session: 503"
     );
   });
 });

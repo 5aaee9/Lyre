@@ -157,3 +157,12 @@
 - Server relay playback is remote-participant audio only; the current server fanout excludes self-loopback.
 - Leave and unmount clean up local browser media resources but do not call the room-level `stopMediaRelay`, because that endpoint stops the whole room until a per-user server-media cleanup API exists.
 - Server-media REST wrappers now throw visible errors for non-2xx responses so relay start, track registration, offer negotiation, and ICE candidate failures remain visible in room status.
+
+## 2026-06-15 Per-User Server Media Cleanup
+
+- Added a per-user server-media close path that stops only the matching runtime pump, closes only the matching server-media peer/session, and removes only that user's media relay participant tracks.
+- Kept the room media relay and room egress pump active during per-user cleanup; room-level `stopMediaRelay` remains the separate whole-room shutdown path.
+- Frontend server relay Leave now closes local media, calls the per-user cleanup endpoint, then leaves room presence.
+- Server relay startup failures after relay creation call the cleanup endpoint while preserving the original startup error if cleanup itself fails.
+- Component unmount remains local-only and does not call server mutation endpoints.
+- The WebRPC payload struct is named `ClosedServerMediaSession` to avoid a generated TypeScript name collision with the service method response wrapper; the REST wrapper still exposes `CloseServerMediaSessionResponse`.

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import {
+  closeServerMediaSession,
   getIceServers,
   joinRoom,
   leaveRoom,
@@ -37,6 +38,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const serverAudioSessionRef = useRef<ServerMediaAudioSession | null>(null);
   const audioStartedRef = useRef(false);
   const audioModeRef = useRef<AudioMode>("server_relay");
+  const serverMediaCleanupNeededRef = useRef(false);
   const link = useMemo(() => shareRoomUrl(roomId), [roomId]);
 
   useEffect(() => {
@@ -112,6 +114,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       cancelled = true;
       closeAudioSessions();
       audioStartedRef.current = false;
+      serverMediaCleanupNeededRef.current = false;
       setAudioStarted(false);
       socketRef.current?.close();
       socketRef.current = null;
@@ -134,6 +137,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       return;
     }
     let stream: MediaStream | null = null;
+    let cleanupNeeded = false;
     try {
       audioStartedRef.current = true;
       setAudioStarted(true);
@@ -141,6 +145,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
       stream = await openLocalAudioStream();
       const noise = readNoiseConfig();
       await startMediaRelay(roomId, noise);
+      cleanupNeeded = true;
+      serverMediaCleanupNeededRef.current = true;
       await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio");
       const session = new ServerMediaAudioSession({
         roomId,
@@ -162,6 +168,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
         for (const track of stream.getAudioTracks()) {
           track.stop();
         }
+      }
+      if (cleanupNeeded) {
+        try {
+          await closeServerMediaSession(roomId, currentUser.id);
+        } catch {
+          // Keep the original startup error visible.
+        }
+        serverMediaCleanupNeededRef.current = false;
       }
       setStatus(error instanceof Error ? error.message : "Audio connection failed");
     }
@@ -202,12 +216,18 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }
 
   async function leave() {
+    const shouldCloseServerMedia =
+      audioModeRef.current === "server_relay" && serverMediaCleanupNeededRef.current && currentUser;
     closeAudioSessions();
     audioStartedRef.current = false;
     setAudioStarted(false);
     socketRef.current?.close();
     socketRef.current = null;
     if (currentUser) {
+      if (shouldCloseServerMedia) {
+        await closeServerMediaSession(roomId, currentUser.id);
+        serverMediaCleanupNeededRef.current = false;
+      }
       await leaveRoom(roomId, currentUser.id);
     }
     sessionStorage.removeItem("lyre.currentUser");
