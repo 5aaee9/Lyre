@@ -5,6 +5,9 @@ use thiserror::Error;
 pub const SERVER_MEDIA_OPUS_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const SERVER_MEDIA_OPUS_CHANNELS: u16 = 1;
 pub const SERVER_MEDIA_OPUS_FRAME_SIZE: usize = 960;
+const DECODED_PCM_ARTIFACT_MIN_I16_ABS: i16 = 14_746;
+const DECODED_PCM_ARTIFACT_MIN_REPEATED_SAMPLES: usize = SERVER_MEDIA_OPUS_FRAME_SIZE / 4;
+const PCM_F32_TO_I16_SCALE: f32 = 32768.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerMediaPcmFrame {
@@ -54,6 +57,7 @@ impl ServerMediaOpusDecoder {
             .map_err(|source| ServerMediaDecodeError::Decode {
                 message: source.to_owned(),
             })?;
+        suppress_repeated_high_amplitude_artifact(&mut samples);
         Ok(ServerMediaPcmFrame {
             track_id: packet.track_id.clone(),
             sequence_number: packet.sequence_number,
@@ -74,6 +78,39 @@ fn new_opus_decoder() -> Result<OpusDecoder, ServerMediaDecodeError> {
         message: source.to_owned(),
     })?;
     Ok(decoder)
+}
+
+fn suppress_repeated_high_amplitude_artifact(samples: &mut [f32]) {
+    if has_repeated_high_amplitude_artifact(samples) {
+        samples.fill(0.0);
+    }
+}
+
+fn has_repeated_high_amplitude_artifact(samples: &[f32]) -> bool {
+    let mut most_repeated_count = 0;
+
+    for sample in samples {
+        let quantized = quantized_i16_abs(*sample);
+        if quantized < DECODED_PCM_ARTIFACT_MIN_I16_ABS {
+            continue;
+        }
+        let count = samples
+            .iter()
+            .filter(|candidate| quantized_i16_abs(**candidate) == quantized)
+            .count();
+        if count > most_repeated_count {
+            most_repeated_count = count;
+        }
+    }
+
+    most_repeated_count >= DECODED_PCM_ARTIFACT_MIN_REPEATED_SAMPLES
+}
+
+fn quantized_i16_abs(sample: f32) -> i16 {
+    (sample * PCM_F32_TO_I16_SCALE)
+        .round()
+        .clamp(i16::MIN as f32, i16::MAX as f32)
+        .abs() as i16
 }
 
 #[cfg(test)]
@@ -115,6 +152,10 @@ mod tests {
         }
     }
 
+    fn artifact_sample() -> f32 {
+        16_710.0 / PCM_F32_TO_I16_SCALE
+    }
+
     #[test]
     fn decoder_decodes_valid_opus_payload_to_pcm_frame() {
         let mut decoder = ServerMediaOpusDecoder::new().unwrap();
@@ -146,6 +187,29 @@ mod tests {
             .unwrap();
 
         assert_ne!(after_gap.samples, fresh.samples);
+    }
+
+    #[test]
+    fn suppresses_repeated_high_amplitude_decoded_pcm_artifact() {
+        let mut samples = vec![0.0; SERVER_MEDIA_OPUS_FRAME_SIZE];
+        samples[..DECODED_PCM_ARTIFACT_MIN_REPEATED_SAMPLES].fill(artifact_sample());
+        samples[DECODED_PCM_ARTIFACT_MIN_REPEATED_SAMPLES] = 0.25;
+
+        suppress_repeated_high_amplitude_artifact(&mut samples);
+
+        assert!(samples.iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
+    fn keeps_sparse_high_amplitude_pcm_samples() {
+        let mut samples = vec![0.0; SERVER_MEDIA_OPUS_FRAME_SIZE];
+        samples[..DECODED_PCM_ARTIFACT_MIN_REPEATED_SAMPLES - 1].fill(artifact_sample());
+
+        suppress_repeated_high_amplitude_artifact(&mut samples);
+
+        assert!(samples[..DECODED_PCM_ARTIFACT_MIN_REPEATED_SAMPLES - 1]
+            .iter()
+            .all(|sample| *sample == artifact_sample()));
     }
 
     #[test]

@@ -72,6 +72,7 @@
 - Server-media relay with noise cancellation off now forwards incoming Opus RTP directly to recipients, bypassing Rust decode/process/re-encode.
 - Server-media Opus ingress now keeps decoder state across RTP timestamp discontinuities so browser DTX gaps do not turn resumed speech into clipped processed PCM.
 - Server-media processed Opus egress now carries source RTP timestamp metadata through the runtime and fades in after source timestamp gaps to avoid click/pop discontinuities.
+- Server-media Opus ingress now suppresses repeated high-amplitude decoded PCM artifact frames before denoise processing, preventing fixed-value clipped frames from being relayed.
 
 ## Next
 
