@@ -30,11 +30,19 @@ use webrtc::{
 };
 
 #[derive(Debug, Default, Clone)]
-pub struct WebRtcStack;
+pub struct WebRtcStack {
+    server_media_public_ip: Option<IpAddr>,
+}
 
 impl WebRtcStack {
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    pub fn with_server_media_public_ip(server_media_public_ip: Option<IpAddr>) -> Self {
+        Self {
+            server_media_public_ip,
+        }
     }
 
     pub async fn create_peer_connection(
@@ -93,6 +101,7 @@ impl WebRtcStack {
         Ok(WebRtcPeerConnectionHandle {
             _peer_connection: Arc::from(peer_connection),
             local_ice_candidates,
+            server_media_public_ip: self.server_media_public_ip,
             media_ingress,
             media_egress,
         })
@@ -224,6 +233,24 @@ pub struct ServerMediaIceCandidateInit {
     pub username_fragment: Option<String>,
 }
 
+impl ServerMediaIceCandidateInit {
+    pub fn with_public_ip(&self, public_ip: Option<IpAddr>) -> Self {
+        let Some(public_ip) = public_ip else {
+            return self.clone();
+        };
+        let parts = self.candidate.split_whitespace().collect::<Vec<_>>();
+        if parts.len() < 8 || parts[7] != "host" {
+            return self.clone();
+        }
+        Self {
+            candidate: self.candidate.replacen(parts[4], &public_ip.to_string(), 1),
+            sdp_mid: self.sdp_mid.clone(),
+            sdp_mline_index: self.sdp_mline_index,
+            username_fragment: self.username_fragment.clone(),
+        }
+    }
+}
+
 impl From<RTCIceCandidateInit> for ServerMediaIceCandidateInit {
     fn from(candidate: RTCIceCandidateInit) -> Self {
         Self {
@@ -251,6 +278,7 @@ impl From<ServerMediaIceCandidateInit> for RTCIceCandidateInit {
 pub struct WebRtcPeerConnectionHandle {
     _peer_connection: Arc<dyn PeerConnection>,
     local_ice_candidates: Arc<Mutex<Vec<ServerMediaIceCandidateInit>>>,
+    server_media_public_ip: Option<IpAddr>,
     media_ingress: MediaIngressRecorder,
     media_egress: ServerMediaEgress,
 }
@@ -280,7 +308,9 @@ impl WebRtcPeerConnectionHandle {
         self.local_ice_candidates
             .lock()
             .expect("local ICE candidate collection lock must not be poisoned")
-            .clone()
+            .iter()
+            .map(|candidate| candidate.with_public_ip(self.server_media_public_ip))
+            .collect()
     }
 
     pub fn remote_tracks(&self) -> Vec<ServerMediaRemoteTrack> {

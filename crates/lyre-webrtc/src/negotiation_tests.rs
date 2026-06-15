@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 
 use lyre_core::{RoomId, UserId};
 
@@ -201,6 +201,30 @@ async fn local_ice_candidates_are_keyed_by_session() {
     assert!(candidates
         .iter()
         .all(|candidate| candidate.user_id == key.user_id));
+}
+
+#[tokio::test]
+async fn local_ice_candidates_use_configured_server_media_public_ip() {
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let public_ip = "203.0.113.10".parse::<IpAddr>().unwrap();
+    let negotiator = ServerMediaNegotiator::new(
+        WebRtcStack::with_server_media_public_ip(Some(public_ip)),
+        Arc::clone(&sessions),
+    );
+    let key = ServerMediaSessionKey {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+    };
+    negotiator
+        .answer_offer(offer("audio-main", offer_sdp().await))
+        .await
+        .unwrap();
+
+    let candidates = wait_for_local_candidates(&negotiator, &key).await;
+
+    assert!(candidates
+        .iter()
+        .any(|candidate| candidate.candidate.contains(" 203.0.113.10 ")));
 }
 
 #[tokio::test]

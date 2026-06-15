@@ -19,6 +19,7 @@ async fn main() -> Result<()> {
             let turn_rest_credentials = args.effective_turn_rest_credentials()?;
             let embedded_turn = args.effective_embedded_turn_config()?;
             let state_file = args.effective_state_file()?;
+            let server_media_public_ip = args.effective_server_media_public_ip()?;
             let deepfilternet_runtime = args.effective_deepfilternet_runtime()?;
             let cors_allowed_origins = args.effective_cors_allowed_origins();
             lyre_web::serve(ServeConfig {
@@ -27,6 +28,7 @@ async fn main() -> Result<()> {
                 ice_servers,
                 turn_rest_credentials,
                 embedded_turn,
+                server_media_public_ip,
                 state_file,
                 deepfilternet_runtime,
                 cors_allowed_origins,

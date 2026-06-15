@@ -1,4 +1,5 @@
 use crate::stack::{ServerMediaIceCandidateInit, WebRtcPeerConnectionHandle, WebRtcStack};
+use std::net::IpAddr;
 
 #[tokio::test]
 async fn create_peer_connection_returns_lyre_handle() {
@@ -135,4 +136,39 @@ async fn local_ice_candidates_are_not_loopback_only() {
     assert!(host_candidates.iter().any(|candidate| {
         !candidate.candidate.contains(" 127.0.0.1 ") && !candidate.candidate.contains(" 0.0.0.0 ")
     }));
+}
+
+#[test]
+fn rewrites_host_candidate_ip_to_public_address() {
+    let public_ip = "203.0.113.10".parse::<IpAddr>().unwrap();
+    let candidate = ServerMediaIceCandidateInit {
+        candidate: "candidate:1 1 UDP 2130706431 10.0.1.7 54321 typ host".to_owned(),
+        sdp_mid: Some("0".to_owned()),
+        sdp_mline_index: Some(0),
+        username_fragment: None,
+    };
+
+    let rewritten = candidate.with_public_ip(Some(public_ip));
+
+    assert_eq!(
+        rewritten.candidate,
+        "candidate:1 1 UDP 2130706431 203.0.113.10 54321 typ host"
+    );
+}
+
+#[test]
+fn leaves_non_host_candidate_unchanged_when_public_address_is_configured() {
+    let public_ip = "203.0.113.10".parse::<IpAddr>().unwrap();
+    let candidate = ServerMediaIceCandidateInit {
+        candidate:
+            "candidate:1 1 UDP 2130706431 10.0.1.7 54321 typ srflx raddr 10.0.1.7 rport 32100"
+                .to_owned(),
+        sdp_mid: Some("0".to_owned()),
+        sdp_mline_index: Some(0),
+        username_fragment: None,
+    };
+
+    let rewritten = candidate.with_public_ip(Some(public_ip));
+
+    assert_eq!(rewritten, candidate);
 }

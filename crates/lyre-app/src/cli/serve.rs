@@ -2,7 +2,7 @@ use super::ice::{parse_ice_server_entries, IceServerConfigError};
 use clap::Args;
 use lyre_core::{default_ice_servers, IceServerConfig, TurnRestCredentialsConfig};
 use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
-use std::{env, path::PathBuf};
+use std::{env, net::IpAddr, path::PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Args)]
@@ -83,6 +83,12 @@ pub struct ServeArgs {
         help = "UDP relay port range for the embedded TURN relay"
     )]
     pub embedded_turn_port_range: String,
+    #[arg(
+        long,
+        env = "LYRE_SERVER_MEDIA_PUBLIC_IP",
+        help = "Public IP advertised in server-media WebRTC host ICE candidates"
+    )]
+    pub server_media_public_ip: Option<String>,
     #[arg(
         long,
         env = "LYRE_STATE_FILE",
@@ -250,6 +256,28 @@ impl ServeArgs {
         Ok(Some(PathBuf::from(trimmed)))
     }
 
+    pub fn effective_server_media_public_ip(
+        &self,
+    ) -> Result<Option<IpAddr>, ServerMediaConfigError> {
+        let Some(value) = self
+            .server_media_public_ip
+            .clone()
+            .or_else(|| env::var("LYRE_SERVER_MEDIA_PUBLIC_IP").ok())
+        else {
+            return Ok(None);
+        };
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        trimmed
+            .parse()
+            .map(Some)
+            .map_err(|_| ServerMediaConfigError::InvalidPublicIp {
+                value: value.to_owned(),
+            })
+    }
+
     pub fn effective_deepfilternet_runtime(
         &self,
     ) -> Result<DeepFilterNetRuntimeConfig, super::deepfilternet::DeepFilterNetConfigError> {
@@ -308,6 +336,12 @@ pub enum TurnRestConfigError {
 pub enum StateFileConfigError {
     #[error("state file path must not be blank")]
     BlankPath,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ServerMediaConfigError {
+    #[error("server media public IP must be an IP address, got `{value}`")]
+    InvalidPublicIp { value: String },
 }
 
 #[cfg(test)]

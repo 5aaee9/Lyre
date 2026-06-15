@@ -5,6 +5,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use lyre_core::{RoomId, UserId};
+use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
 use lyre_webrtc::{ServerMediaSessionKey, WebRtcStack};
 use tower::ServiceExt;
 
@@ -282,6 +283,57 @@ async fn server_media_candidates_route_lists_server_candidates() {
         candidate["room_id"] == "DEFAULT"
             && candidate["user_id"] == joined.user_id
             && candidate["candidate"] == ""
+    }));
+}
+
+#[tokio::test]
+async fn server_media_candidates_route_uses_configured_public_ip() {
+    let state = AppState::with_room_state_persistence_and_server_media_public_ip(
+        lyre_core::default_ice_servers(),
+        None,
+        None,
+        DeepFilterNetRuntimeConfig::default(),
+        Some("203.0.113.10".parse().unwrap()),
+    )
+    .unwrap();
+    let joined = negotiate_server_media(&state).await;
+    let app = router(state);
+
+    let mut body = serde_json::Value::Null;
+    for _ in 0..128 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!(
+                        "/api/rooms/DEFAULT/server-media/candidates?user_id={}",
+                        joined.user_id
+                    ))
+                    .header("authorization", format!("Bearer {}", joined.access_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        body = body_json(response).await;
+        if body.as_array().unwrap().iter().any(|candidate| {
+            candidate["candidate"]
+                .as_str()
+                .unwrap()
+                .contains(" 203.0.113.10 ")
+        }) {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    assert!(body.as_array().unwrap().iter().any(|candidate| {
+        candidate["candidate"]
+            .as_str()
+            .unwrap()
+            .contains(" 203.0.113.10 ")
     }));
 }
 

@@ -15,7 +15,7 @@ use lyre_core::{
 };
 use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
 use lyre_webrtc::{ServerMediaNegotiator, ServerMediaSessionRegistry, WebRtcStack};
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 use tokio::sync::{broadcast, Mutex};
 
 #[derive(Debug, Clone)]
@@ -62,6 +62,22 @@ impl AppState {
         room_state_persistence: Option<RoomStatePersistence>,
         deepfilternet_runtime: DeepFilterNetRuntimeConfig,
     ) -> anyhow::Result<Self> {
+        Self::with_room_state_persistence_and_server_media_public_ip(
+            ice_servers,
+            turn_rest_credentials,
+            room_state_persistence,
+            deepfilternet_runtime,
+            None,
+        )
+    }
+
+    pub fn with_room_state_persistence_and_server_media_public_ip(
+        ice_servers: Vec<IceServerConfig>,
+        turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
+        room_state_persistence: Option<RoomStatePersistence>,
+        deepfilternet_runtime: DeepFilterNetRuntimeConfig,
+        server_media_public_ip: Option<IpAddr>,
+    ) -> anyhow::Result<Self> {
         let deepfilternet_runtime = deepfilternet_runtime
             .validate()
             .map_err(anyhow::Error::from)
@@ -73,7 +89,7 @@ impl AppState {
         let media_relays = Arc::new(MediaRelayRegistry::new());
         let server_media_sessions = Arc::new(ServerMediaSessionRegistry::new());
         let server_media_negotiator = Arc::new(ServerMediaNegotiator::new(
-            WebRtcStack::new(),
+            WebRtcStack::with_server_media_public_ip(server_media_public_ip),
             Arc::clone(&server_media_sessions),
         ));
         let media_runtime = Arc::new(WebMediaRuntime::with_deepfilternet_runtime(

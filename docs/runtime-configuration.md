@@ -42,6 +42,12 @@ When embedded TURN is enabled and no `--ice-server` / `LYRE_ICE_SERVERS` is conf
 
 The embedded TURN runtime uses the MIT `turn-server` crate from the `turn-rs` project. The relay validates the HMAC credential but does not enforce the timestamp embedded in TURN REST usernames, so keep TURN credential TTL short.
 
+## Server-Media Public IP
+
+When Lyre runs behind a VPC, NAT, or cloud private interface, server-media WebRTC host ICE candidates may otherwise advertise private addresses. Set `--server-media-public-ip <ip>` or `LYRE_SERVER_MEDIA_PUBLIC_IP=<ip>` to rewrite the advertised server-media host candidate IP returned to browsers.
+
+This changes only the ICE candidate address exposed to clients. The server still binds its WebRTC UDP socket on the local interface.
+
 ## DeepFilterNet Runtime
 
 The server-side DeepFilterNet provider currently configures libDF DSP/STFT frame processing, not pretrained DeepFilterNet neural model inference.

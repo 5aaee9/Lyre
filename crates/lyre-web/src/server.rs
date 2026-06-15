@@ -2,7 +2,11 @@ use crate::{api::AppState, router, state_persistence::RoomStatePersistence};
 use anyhow::{Context, Result};
 use lyre_core::{IceServerConfig, TurnRestCredentialsConfig};
 use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
-use std::{net::SocketAddr, path::PathBuf, str::FromStr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+    str::FromStr,
+};
 use tokio::net::TcpListener;
 
 #[derive(Debug, Clone)]
@@ -12,6 +16,7 @@ pub struct ServeConfig {
     pub ice_servers: Vec<IceServerConfig>,
     pub turn_rest_credentials: Option<TurnRestCredentialsConfig>,
     pub embedded_turn: Option<lyre_turn::EmbeddedTurnConfig>,
+    pub server_media_public_ip: Option<IpAddr>,
     pub state_file: Option<PathBuf>,
     pub deepfilternet_runtime: DeepFilterNetRuntimeConfig,
     pub cors_allowed_origins: Vec<String>,
@@ -31,11 +36,12 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
         .with_context(|| format!("failed to bind Lyre API listener at {addr}"))?;
     tracing::info!(%addr, "Lyre API listening");
     let room_state_persistence = config.state_file.clone().map(RoomStatePersistence::new);
-    let state = AppState::with_room_state_persistence(
+    let state = AppState::with_room_state_persistence_and_server_media_public_ip(
         config.ice_servers,
         config.turn_rest_credentials,
         room_state_persistence,
         config.deepfilternet_runtime,
+        config.server_media_public_ip,
     )
     .context("failed to initialize Lyre room state")?;
     let router = if config.cors_allowed_origins.is_empty() {

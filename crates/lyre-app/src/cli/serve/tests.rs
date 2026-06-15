@@ -5,6 +5,7 @@ mod bind;
 mod cors;
 mod deepfilternet;
 mod ice;
+mod server_media;
 mod state;
 mod turn;
 
@@ -52,6 +53,7 @@ fn default_serve_args() -> ServeArgs {
         embedded_turn_external: "127.0.0.1:3478".to_owned(),
         embedded_turn_realm: "lyre.local".to_owned(),
         embedded_turn_port_range: "49152..65535".to_owned(),
+        server_media_public_ip: None,
         state_file: None,
         deepfilternet_fft_size: 960,
         deepfilternet_hop_size: 480,
