@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ServerMediaDecodeFailure, ServerMediaEgressError, ServerMediaIceCandidateInit,
-    ServerMediaPcmFrame, ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack,
-    ServerMediaRtpPacket, ServerMediaSessionConfig, ServerMediaSessionKey,
+    ServerMediaConnectionStateSnapshot, ServerMediaDecodeFailure, ServerMediaEgressError,
+    ServerMediaIceCandidateInit, ServerMediaPcmFrame, ServerMediaProcessedAudioFrame,
+    ServerMediaRemoteTrack, ServerMediaRtpPacket, ServerMediaSessionConfig, ServerMediaSessionKey,
     ServerMediaSessionRegistry, ServerMediaSessionState, ServerMediaSessionStatus,
     WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError,
 };
@@ -183,6 +183,15 @@ impl ServerMediaNegotiator {
             .get(key)
             .map(|peer_connection| peer_connection.received_rtp_packets())
             .unwrap_or_default()
+    }
+
+    pub fn connection_state(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Option<ServerMediaConnectionStateSnapshot> {
+        self.peer_connections
+            .get(key)
+            .map(|peer_connection| peer_connection.connection_state())
     }
 
     pub fn drain_pcm_frames(&self, key: &ServerMediaSessionKey) -> Vec<ServerMediaPcmFrame> {

@@ -1,3 +1,4 @@
+mod connection_state;
 pub mod egress;
 mod jitter_buffer;
 pub mod media_ingress;
@@ -23,6 +24,7 @@ mod stack_pcm_plc_tests;
 #[cfg(test)]
 mod stack_tests;
 
+pub use connection_state::ServerMediaConnectionStateSnapshot;
 pub use egress::{
     ServerMediaEgressError, ServerMediaEgressRtpPacket, ServerMediaProcessedAudioFrame,
 };

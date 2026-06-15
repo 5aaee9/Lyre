@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use lyre_core::{RoomId, UserId};
 use lyre_webrtc::{
-    ServerMediaEgressError, ServerMediaNegotiator, ServerMediaProcessedAudioFrame,
-    ServerMediaSessionKey,
+    ServerMediaConnectionStateSnapshot, ServerMediaEgressError, ServerMediaNegotiator,
+    ServerMediaProcessedAudioFrame, ServerMediaSessionKey,
 };
 use std::{collections::HashSet, error::Error, sync::Arc};
 use tokio::{
@@ -42,6 +42,11 @@ pub trait ProcessedAudioWebRtcEgressSender: Send + Sync + 'static {
         key: &ServerMediaSessionKey,
         frame: ServerMediaProcessedAudioFrame,
     ) -> Result<usize, ServerMediaEgressError>;
+
+    fn connection_state(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Option<ServerMediaConnectionStateSnapshot>;
 }
 
 #[async_trait]
@@ -52,6 +57,13 @@ impl ProcessedAudioWebRtcEgressSender for ServerMediaNegotiator {
         frame: ServerMediaProcessedAudioFrame,
     ) -> Result<usize, ServerMediaEgressError> {
         ServerMediaNegotiator::send_processed_audio_frame(self, key, frame).await
+    }
+
+    fn connection_state(
+        &self,
+        key: &ServerMediaSessionKey,
+    ) -> Option<ServerMediaConnectionStateSnapshot> {
+        ServerMediaNegotiator::connection_state(self, key)
     }
 }
 
@@ -226,9 +238,16 @@ where
                             }
                         }
                         Err(error) => {
+                            let connection_state = sender.connection_state(&delivery.key);
                             tracing::warn!(
                                 error = format_args!("{error:#}"),
                                 error_source = ?error.source().map(|source| source.to_string()),
+                                peer_connection_state = ?connection_state
+                                    .as_ref()
+                                    .map(|state| state.peer_connection_state),
+                                ice_connection_state = ?connection_state
+                                    .as_ref()
+                                    .map(|state| state.ice_connection_state),
                                 room_id = %delivery.key.room_id,
                                 source_user_id = %delivery.source_user_id,
                                 recipient_user_id = %recipient_id,

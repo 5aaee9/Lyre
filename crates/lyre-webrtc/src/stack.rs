@@ -5,9 +5,10 @@ use std::{
 };
 
 use crate::{
-    egress::ServerMediaEgress, media_ingress::MediaIngressRecorder,
-    stack_audio_ingress::handle_audio_rtp_packet, ServerMediaDecodeFailure, ServerMediaEgressError,
-    ServerMediaJitterBuffer, ServerMediaOpusDecoder, ServerMediaPcmConcealer, ServerMediaPcmFrame,
+    connection_state::ServerMediaConnectionState, egress::ServerMediaEgress,
+    media_ingress::MediaIngressRecorder, stack_audio_ingress::handle_audio_rtp_packet,
+    ServerMediaDecodeFailure, ServerMediaEgressError, ServerMediaJitterBuffer,
+    ServerMediaOpusDecoder, ServerMediaPcmConcealer, ServerMediaPcmFrame,
     ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
     ServerMediaTrackKind,
 };
@@ -19,7 +20,7 @@ use rtc::{
     rtp_transceiver::rtp_sender::{RTCRtpCodec, RTCRtpCodecParameters, RtpCodecKind},
 };
 use thiserror::Error;
-use tracing::warn;
+use tracing::{info, warn};
 use webrtc::{
     media_stream::track_local::TrackLocal,
     media_stream::track_remote::{TrackRemote, TrackRemoteEvent},
@@ -49,6 +50,7 @@ impl WebRtcStack {
         &self,
     ) -> Result<WebRtcPeerConnectionHandle, WebRtcStackError> {
         let local_ice_candidates = Arc::new(Mutex::new(Vec::new()));
+        let connection_state = ServerMediaConnectionState::default();
         let media_ingress = MediaIngressRecorder::default();
         let media_egress =
             ServerMediaEgress::new().map_err(|source| WebRtcStackError::CreatePeerConnection {
@@ -56,6 +58,7 @@ impl WebRtcStack {
             })?;
         let handler = Arc::new(PeerConnectionHandler {
             local_ice_candidates: Arc::clone(&local_ice_candidates),
+            connection_state: connection_state.clone(),
             media_ingress: media_ingress.clone(),
         });
         let mut media_engine = MediaEngine::default();
@@ -102,6 +105,7 @@ impl WebRtcStack {
             _peer_connection: Arc::from(peer_connection),
             local_ice_candidates,
             server_media_public_ip: self.server_media_public_ip,
+            connection_state,
             media_ingress,
             media_egress,
         })
@@ -133,6 +137,7 @@ fn server_media_udp_addr() -> String {
 #[derive(Clone)]
 struct PeerConnectionHandler {
     local_ice_candidates: Arc<Mutex<Vec<ServerMediaIceCandidateInit>>>,
+    connection_state: ServerMediaConnectionState,
     media_ingress: MediaIngressRecorder,
 }
 
@@ -161,6 +166,28 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
                     username_fragment: None,
                 });
         }
+    }
+
+    async fn on_ice_connection_state_change(
+        &self,
+        state: webrtc::peer_connection::RTCIceConnectionState,
+    ) {
+        self.connection_state.set_ice_connection_state(state);
+        info!(
+            ice_connection_state = ?state,
+            "server media ICE connection state changed"
+        );
+    }
+
+    async fn on_connection_state_change(
+        &self,
+        state: webrtc::peer_connection::RTCPeerConnectionState,
+    ) {
+        self.connection_state.set_peer_connection_state(state);
+        info!(
+            peer_connection_state = ?state,
+            "server media peer connection state changed"
+        );
     }
 
     async fn on_track(&self, track: Arc<dyn TrackRemote>) {
@@ -279,6 +306,7 @@ pub struct WebRtcPeerConnectionHandle {
     _peer_connection: Arc<dyn PeerConnection>,
     local_ice_candidates: Arc<Mutex<Vec<ServerMediaIceCandidateInit>>>,
     server_media_public_ip: Option<IpAddr>,
+    connection_state: ServerMediaConnectionState,
     media_ingress: MediaIngressRecorder,
     media_egress: ServerMediaEgress,
 }
@@ -319,6 +347,10 @@ impl WebRtcPeerConnectionHandle {
 
     pub fn received_rtp_packets(&self) -> Vec<ServerMediaRtpPacket> {
         self.media_ingress.received_rtp_packets()
+    }
+
+    pub fn connection_state(&self) -> crate::ServerMediaConnectionStateSnapshot {
+        self.connection_state.snapshot()
     }
 
     pub fn drain_pcm_frames(&self) -> Vec<ServerMediaPcmFrame> {

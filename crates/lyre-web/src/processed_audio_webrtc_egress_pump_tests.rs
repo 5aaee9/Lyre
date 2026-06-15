@@ -12,9 +12,10 @@ use lyre_core::{
     RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
 use lyre_webrtc::{
-    ServerMediaEgressError, ServerMediaIceCandidate, ServerMediaNegotiator, ServerMediaOffer,
-    ServerMediaOpusDecoder, ServerMediaProcessedAudioFrame, ServerMediaRtpPacket,
-    ServerMediaSessionKey, ServerMediaSessionRegistry, WebRtcStack,
+    ServerMediaConnectionStateSnapshot, ServerMediaEgressError, ServerMediaIceCandidate,
+    ServerMediaNegotiator, ServerMediaOffer, ServerMediaOpusDecoder,
+    ServerMediaProcessedAudioFrame, ServerMediaRtpPacket, ServerMediaSessionKey,
+    ServerMediaSessionRegistry, WebRtcStack,
 };
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
@@ -58,6 +59,13 @@ impl ProcessedAudioWebRtcEgressSender for BlockingSender {
             .push(frame.sequence);
         self.notify.notify_waiters();
         Ok(1)
+    }
+
+    fn connection_state(
+        &self,
+        _key: &ServerMediaSessionKey,
+    ) -> Option<ServerMediaConnectionStateSnapshot> {
+        None
     }
 }
 
