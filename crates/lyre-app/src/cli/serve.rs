@@ -2,7 +2,7 @@ use super::ice::{parse_ice_server_entries, IceServerConfigError};
 use clap::Args;
 use lyre_core::{default_ice_servers, IceServerConfig, TurnRestCredentialsConfig};
 use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
-use std::{env, net::IpAddr, path::PathBuf};
+use std::{env, net::IpAddr, path::PathBuf, str::FromStr};
 use thiserror::Error;
 
 #[derive(Debug, Args)]
@@ -89,6 +89,12 @@ pub struct ServeArgs {
         help = "Public IP advertised in server-media WebRTC host ICE candidates"
     )]
     pub server_media_public_ip: Option<String>,
+    #[arg(
+        long,
+        env = "LYRE_SERVER_MEDIA_PORT_RANGE",
+        help = "UDP port range used by server-media WebRTC host candidates"
+    )]
+    pub server_media_port_range: Option<String>,
     #[arg(
         long,
         env = "LYRE_STATE_FILE",
@@ -278,6 +284,36 @@ impl ServeArgs {
             })
     }
 
+    pub fn effective_server_media_port_range(
+        &self,
+    ) -> Result<Option<ServerMediaPortRange>, ServerMediaConfigError> {
+        let Some(value) = self
+            .server_media_port_range
+            .clone()
+            .or_else(|| env::var("LYRE_SERVER_MEDIA_PORT_RANGE").ok())
+        else {
+            return Ok(None);
+        };
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        trimmed.parse().map(Some)
+    }
+
+    pub fn effective_server_media_port_range_with_embedded_turn(
+        &self,
+        embedded_turn: Option<&lyre_turn::EmbeddedTurnConfig>,
+    ) -> Result<Option<ServerMediaPortRange>, ServerMediaConfigError> {
+        match self.effective_server_media_port_range()? {
+            Some(range) => Ok(Some(range)),
+            None => Ok(embedded_turn.map(|config| ServerMediaPortRange {
+                start: config.port_range.start,
+                end: config.port_range.end,
+            })),
+        }
+    }
+
     pub fn effective_deepfilternet_runtime(
         &self,
     ) -> Result<DeepFilterNetRuntimeConfig, super::deepfilternet::DeepFilterNetConfigError> {
@@ -342,6 +378,59 @@ pub enum StateFileConfigError {
 pub enum ServerMediaConfigError {
     #[error("server media public IP must be an IP address, got `{value}`")]
     InvalidPublicIp { value: String },
+    #[error("server media port range must use <start>..<end>, got `{value}`")]
+    InvalidPortRangeFormat { value: String },
+    #[error("server media port range start must be <= end, got `{value}`")]
+    PortRangeStartAfterEnd { value: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServerMediaPortRange {
+    pub start: u16,
+    pub end: u16,
+}
+
+impl From<ServerMediaPortRange> for lyre_web::ServerMediaPortRange {
+    fn from(range: ServerMediaPortRange) -> Self {
+        Self {
+            start: range.start,
+            end: range.end,
+        }
+    }
+}
+
+impl FromStr for ServerMediaPortRange {
+    type Err = ServerMediaConfigError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let Some((start, end)) = value.split_once("..") else {
+            return Err(ServerMediaConfigError::InvalidPortRangeFormat {
+                value: value.to_owned(),
+            });
+        };
+        if start.is_empty() || end.is_empty() {
+            return Err(ServerMediaConfigError::InvalidPortRangeFormat {
+                value: value.to_owned(),
+            });
+        }
+        let start =
+            start
+                .parse::<u16>()
+                .map_err(|_| ServerMediaConfigError::InvalidPortRangeFormat {
+                    value: value.to_owned(),
+                })?;
+        let end =
+            end.parse::<u16>()
+                .map_err(|_| ServerMediaConfigError::InvalidPortRangeFormat {
+                    value: value.to_owned(),
+                })?;
+        if start > end {
+            return Err(ServerMediaConfigError::PortRangeStartAfterEnd {
+                value: value.to_owned(),
+            });
+        }
+        Ok(Self { start, end })
+    }
 }
 
 #[cfg(test)]

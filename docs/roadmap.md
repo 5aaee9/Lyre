@@ -63,6 +63,7 @@
 - Server relay e2e tests now verify RNNoise and DeepFilterNet RTP payloads decode to audible PCM, and DeepFilterNet DSP output keeps stream audio after warmup.
 - Server-media ICE REST boundaries now log sanitized candidate summaries so production relay failures can distinguish signalling, NAT reachability, and connection-state problems.
 - Server-media WebRTC state transition logs now include room and user IDs so production failures can identify which peer moved to Connected or Failed.
+- Server-media WebRTC UDP sockets can now use a configured port range, defaulting to the embedded TURN range when enabled, so VPC deployments advertise firewall-open host candidates.
 
 ## Next
 

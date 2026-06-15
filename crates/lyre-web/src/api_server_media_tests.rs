@@ -294,6 +294,7 @@ async fn server_media_candidates_route_uses_configured_public_ip() {
         None,
         DeepFilterNetRuntimeConfig::default(),
         Some("203.0.113.10".parse().unwrap()),
+        None,
     )
     .unwrap();
     let joined = negotiate_server_media(&state).await;

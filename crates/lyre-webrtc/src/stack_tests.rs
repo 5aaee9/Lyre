@@ -1,4 +1,6 @@
-use crate::stack::{ServerMediaIceCandidateInit, WebRtcPeerConnectionHandle, WebRtcStack};
+use crate::stack::{
+    ServerMediaIceCandidateInit, ServerMediaPortRange, WebRtcPeerConnectionHandle, WebRtcStack,
+};
 use std::net::IpAddr;
 
 #[tokio::test]
@@ -136,6 +138,30 @@ async fn local_ice_candidates_are_not_loopback_only() {
     assert!(host_candidates.iter().any(|candidate| {
         !candidate.candidate.contains(" 127.0.0.1 ") && !candidate.candidate.contains(" 0.0.0.0 ")
     }));
+}
+
+#[tokio::test]
+async fn local_ice_candidates_use_configured_port_range() {
+    let answerer = WebRtcStack::with_server_media_config(
+        None,
+        Some(ServerMediaPortRange {
+            start: 50100,
+            end: 50100,
+        }),
+    )
+    .create_peer_connection()
+    .await
+    .unwrap();
+    answerer
+        .answer_remote_offer(offer_sdp().await)
+        .await
+        .unwrap();
+
+    let candidates = wait_for_local_candidates(&answerer).await;
+
+    assert!(candidates
+        .iter()
+        .any(|candidate| candidate.candidate.contains(" 50100 typ host")));
 }
 
 #[test]

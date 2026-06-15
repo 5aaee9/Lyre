@@ -14,7 +14,9 @@ use lyre_core::{
     MediaRelayRegistry, ProcessedAudioFrame, RoomId, RoomRegistry,
 };
 use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
-use lyre_webrtc::{ServerMediaNegotiator, ServerMediaSessionRegistry, WebRtcStack};
+use lyre_webrtc::{
+    ServerMediaNegotiator, ServerMediaPortRange, ServerMediaSessionRegistry, WebRtcStack,
+};
 use std::{net::IpAddr, sync::Arc};
 use tokio::sync::{broadcast, Mutex};
 
@@ -68,6 +70,7 @@ impl AppState {
             room_state_persistence,
             deepfilternet_runtime,
             None,
+            None,
         )
     }
 
@@ -77,6 +80,7 @@ impl AppState {
         room_state_persistence: Option<RoomStatePersistence>,
         deepfilternet_runtime: DeepFilterNetRuntimeConfig,
         server_media_public_ip: Option<IpAddr>,
+        server_media_port_range: Option<ServerMediaPortRange>,
     ) -> anyhow::Result<Self> {
         let deepfilternet_runtime = deepfilternet_runtime
             .validate()
@@ -89,7 +93,7 @@ impl AppState {
         let media_relays = Arc::new(MediaRelayRegistry::new());
         let server_media_sessions = Arc::new(ServerMediaSessionRegistry::new());
         let server_media_negotiator = Arc::new(ServerMediaNegotiator::new(
-            WebRtcStack::with_server_media_public_ip(server_media_public_ip),
+            WebRtcStack::with_server_media_config(server_media_public_ip, server_media_port_range),
             Arc::clone(&server_media_sessions),
         ));
         let media_runtime = Arc::new(WebMediaRuntime::with_deepfilternet_runtime(

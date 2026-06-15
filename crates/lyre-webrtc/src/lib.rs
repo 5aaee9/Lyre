@@ -46,5 +46,6 @@ pub use session::{
     ServerMediaSessionState, ServerMediaSessionStatus,
 };
 pub use stack::{
-    ServerMediaIceCandidateInit, WebRtcPeerConnectionHandle, WebRtcStack, WebRtcStackError,
+    ServerMediaIceCandidateInit, ServerMediaPortRange, WebRtcPeerConnectionHandle, WebRtcStack,
+    WebRtcStackError,
 };

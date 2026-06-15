@@ -17,6 +17,7 @@ pub struct ServeConfig {
     pub turn_rest_credentials: Option<TurnRestCredentialsConfig>,
     pub embedded_turn: Option<lyre_turn::EmbeddedTurnConfig>,
     pub server_media_public_ip: Option<IpAddr>,
+    pub server_media_port_range: Option<lyre_webrtc::ServerMediaPortRange>,
     pub state_file: Option<PathBuf>,
     pub deepfilternet_runtime: DeepFilterNetRuntimeConfig,
     pub cors_allowed_origins: Vec<String>,
@@ -42,6 +43,7 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
         room_state_persistence,
         config.deepfilternet_runtime,
         config.server_media_public_ip,
+        config.server_media_port_range,
     )
     .context("failed to initialize Lyre room state")?;
     let router = if config.cors_allowed_origins.is_empty() {

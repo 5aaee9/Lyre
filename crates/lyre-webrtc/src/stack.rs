@@ -33,6 +33,7 @@ use webrtc::{
 #[derive(Debug, Default, Clone)]
 pub struct WebRtcStack {
     server_media_public_ip: Option<IpAddr>,
+    server_media_port_range: Option<ServerMediaPortRange>,
 }
 
 impl WebRtcStack {
@@ -43,6 +44,17 @@ impl WebRtcStack {
     pub fn with_server_media_public_ip(server_media_public_ip: Option<IpAddr>) -> Self {
         Self {
             server_media_public_ip,
+            server_media_port_range: None,
+        }
+    }
+
+    pub fn with_server_media_config(
+        server_media_public_ip: Option<IpAddr>,
+        server_media_port_range: Option<ServerMediaPortRange>,
+    ) -> Self {
+        Self {
+            server_media_public_ip,
+            server_media_port_range,
         }
     }
 
@@ -90,7 +102,7 @@ impl WebRtcStack {
             .with_handler(handler)
             .with_media_engine(media_engine)
             .with_interceptor_registry(registry)
-            .with_udp_addrs(vec![server_media_udp_addr()])
+            .with_udp_addrs(server_media_udp_addrs(self.server_media_port_range))
             .build()
             .await
             .map_err(|source| WebRtcStackError::CreatePeerConnection {
@@ -115,26 +127,50 @@ impl WebRtcStack {
     }
 }
 
-fn server_media_udp_addr() -> String {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServerMediaPortRange {
+    pub start: u16,
+    pub end: u16,
+}
+
+fn server_media_udp_addrs(port_range: Option<ServerMediaPortRange>) -> Vec<String> {
+    let host = server_media_udp_host();
+    vec![server_media_udp_addr(&host, port_range)]
+}
+
+fn server_media_udp_addr(host: &str, port_range: Option<ServerMediaPortRange>) -> String {
+    let Some(range) = port_range else {
+        return format!("{host}:0");
+    };
+    for port in range.start..=range.end {
+        let addr = format!("{host}:{port}");
+        if UdpSocket::bind(&addr).is_ok() {
+            return addr;
+        }
+    }
+    format!("{host}:{}", range.start)
+}
+
+fn server_media_udp_host() -> String {
     let socket = match UdpSocket::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))) {
         Ok(socket) => socket,
-        Err(_) => return "127.0.0.1:0".to_owned(),
+        Err(_) => return "127.0.0.1".to_owned(),
     };
     if socket.connect("8.8.8.8:80").is_ok() {
         if let Ok(SocketAddr::V4(addr)) = socket.local_addr() {
             if !addr.ip().is_unspecified() {
-                return format!("{}:0", addr.ip());
+                return addr.ip().to_string();
             }
         }
     }
     if socket.connect("2001:4860:4860::8888:80").is_ok() {
         if let Ok(SocketAddr::V6(addr)) = socket.local_addr() {
             if !addr.ip().is_unspecified() {
-                return format!("[{}]:0", addr.ip());
+                return format!("[{}]", addr.ip());
             }
         }
     }
-    format!("{}:0", IpAddr::V4(Ipv4Addr::LOCALHOST))
+    IpAddr::V4(Ipv4Addr::LOCALHOST).to_string()
 }
 
 #[derive(Clone)]

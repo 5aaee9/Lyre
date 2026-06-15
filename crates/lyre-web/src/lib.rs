@@ -46,4 +46,5 @@ mod webrpc_tests;
 
 pub use api::{router, router_with_cors};
 pub use app_state::AppState;
+pub use lyre_webrtc::ServerMediaPortRange;
 pub use server::{serve, ServeConfig};

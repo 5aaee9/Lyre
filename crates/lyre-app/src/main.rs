@@ -20,6 +20,9 @@ async fn main() -> Result<()> {
             let embedded_turn = args.effective_embedded_turn_config()?;
             let state_file = args.effective_state_file()?;
             let server_media_public_ip = args.effective_server_media_public_ip()?;
+            let server_media_port_range = args
+                .effective_server_media_port_range_with_embedded_turn(embedded_turn.as_ref())?
+                .map(lyre_web::ServerMediaPortRange::from);
             let deepfilternet_runtime = args.effective_deepfilternet_runtime()?;
             let cors_allowed_origins = args.effective_cors_allowed_origins();
             lyre_web::serve(ServeConfig {
@@ -29,6 +32,7 @@ async fn main() -> Result<()> {
                 turn_rest_credentials,
                 embedded_turn,
                 server_media_public_ip,
+                server_media_port_range,
                 state_file,
                 deepfilternet_runtime,
                 cors_allowed_origins,

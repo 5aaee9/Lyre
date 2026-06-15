@@ -48,6 +48,8 @@ When Lyre runs behind a VPC, NAT, or cloud private interface, server-media WebRT
 
 This changes only the ICE candidate address exposed to clients. The server still binds its WebRTC UDP socket on the local interface.
 
+Set `--server-media-port-range <start>..<end>` or `LYRE_SERVER_MEDIA_PORT_RANGE=<start>..<end>` to restrict server-media WebRTC UDP sockets to firewall-open ports. When embedded TURN is enabled and no server-media range is set, Lyre reuses `--embedded-turn-port-range` / `LYRE_EMBEDDED_TURN_PORT_RANGE`.
+
 ## DeepFilterNet Runtime
 
 The server-side DeepFilterNet provider currently configures libDF DSP/STFT frame processing, not pretrained DeepFilterNet neural model inference.

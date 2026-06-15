@@ -54,6 +54,7 @@ fn default_serve_args() -> ServeArgs {
         embedded_turn_realm: "lyre.local".to_owned(),
         embedded_turn_port_range: "49152..65535".to_owned(),
         server_media_public_ip: None,
+        server_media_port_range: None,
         state_file: None,
         deepfilternet_fft_size: 960,
         deepfilternet_hop_size: 480,
