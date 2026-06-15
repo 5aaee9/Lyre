@@ -300,4 +300,28 @@ describe("api", () => {
       "https://api.example.test/api/rooms/DEFAULT/server-media/candidates?user_id=user+a"
     );
   });
+
+  it("throws useful errors for failed server media flow responses", async () => {
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({ error: "nope" }), { status: 503 })) as typeof fetch;
+
+    await expect(startMediaRelay("DEFAULT")).rejects.toThrow("failed to start media relay: 503");
+    await expect(registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio")).rejects.toThrow(
+      "failed to register media track: 503"
+    );
+    await expect(answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0")).rejects.toThrow(
+      "failed to negotiate server media offer: 503"
+    );
+    await expect(
+      addServerMediaIceCandidate("DEFAULT", {
+        user_id: "user_a",
+        candidate: "candidate:1",
+        sdp_mid: "0",
+        sdp_mline_index: 0,
+        username_fragment: null
+      })
+    ).rejects.toThrow("failed to add server media ICE candidate: 503");
+    await expect(getServerMediaIceCandidates("DEFAULT", "user_a")).rejects.toThrow(
+      "failed to load server media ICE candidates: 503"
+    );
+  });
 });

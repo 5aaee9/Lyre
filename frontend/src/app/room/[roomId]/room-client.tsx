@@ -2,8 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { getIceServers, joinRoom, leaveRoom, shareRoomUrl, type RoomSnapshot, type UserProfile } from "@/lib/api";
+import { Select } from "@/components/ui/select";
+import {
+  getIceServers,
+  joinRoom,
+  leaveRoom,
+  registerMediaTrack,
+  shareRoomUrl,
+  startMediaRelay,
+  type RoomSnapshot,
+  type UserProfile
+} from "@/lib/api";
 import { MeshAudioSession } from "@/lib/mesh-audio";
+import { ServerMediaAudioSession } from "@/lib/server-media-audio";
 import {
   createRoomSocket,
   reducePresence,
@@ -13,28 +24,50 @@ import {
 import { readNickname, readNoiseConfig } from "@/lib/storage";
 import { openLocalAudioStream } from "@/lib/webrtc";
 
+type AudioMode = "server_relay" | "peer_mesh";
+
 export function RoomClient({ roomId }: { roomId: string }) {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState("Joining");
+  const [audioMode, setAudioMode] = useState<AudioMode>("server_relay");
+  const [audioStarted, setAudioStarted] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
-  const audioSessionRef = useRef<MeshAudioSession | null>(null);
+  const meshAudioSessionRef = useRef<MeshAudioSession | null>(null);
+  const serverAudioSessionRef = useRef<ServerMediaAudioSession | null>(null);
   const audioStartedRef = useRef(false);
+  const audioModeRef = useRef<AudioMode>("server_relay");
   const link = useMemo(() => shareRoomUrl(roomId), [roomId]);
+
+  useEffect(() => {
+    audioModeRef.current = audioMode;
+  }, [audioMode]);
+
+  const closeAudioSessions = useCallback(() => {
+    meshAudioSessionRef.current?.close();
+    meshAudioSessionRef.current = null;
+    serverAudioSessionRef.current?.close();
+    serverAudioSessionRef.current = null;
+  }, []);
 
   const handleSignal = useCallback(
     async (signal: SignalMessage) => {
       if (signal.payload.type === "offer" || signal.payload.type === "answer" || signal.payload.type === "ice-candidate") {
-        if (!audioStartedRef.current || !audioSessionRef.current) {
+        if (!audioStartedRef.current || audioModeRef.current !== "peer_mesh" || !meshAudioSessionRef.current) {
           return;
         }
-        await audioSessionRef.current.handleSignal(signal);
+        await meshAudioSessionRef.current.handleSignal(signal);
       }
-      if (signal.payload.type === "user-joined" && audioStartedRef.current && audioSessionRef.current) {
-        await audioSessionRef.current.connectToUsers([signal.payload.user]);
+      if (
+        signal.payload.type === "user-joined" &&
+        audioStartedRef.current &&
+        audioModeRef.current === "peer_mesh" &&
+        meshAudioSessionRef.current
+      ) {
+        await meshAudioSessionRef.current.connectToUsers([signal.payload.user]);
       }
       if (signal.payload.type === "user-left") {
-        audioSessionRef.current?.removePeer(signal.payload.user_id);
+        meshAudioSessionRef.current?.removePeer(signal.payload.user_id);
       }
     },
     []
@@ -77,15 +110,64 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
     return () => {
       cancelled = true;
-      audioSessionRef.current?.close();
-      audioSessionRef.current = null;
+      closeAudioSessions();
       audioStartedRef.current = false;
+      setAudioStarted(false);
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [handleSignal, roomId]);
+  }, [closeAudioSessions, handleSignal, roomId]);
 
   async function connectAudio() {
+    if (audioMode === "server_relay") {
+      await connectServerRelayAudio();
+      return;
+    }
+    await connectMeshAudio();
+  }
+
+  async function connectServerRelayAudio() {
+    if (!currentUser) {
+      return;
+    }
+    if (audioStartedRef.current) {
+      return;
+    }
+    let stream: MediaStream | null = null;
+    try {
+      audioStartedRef.current = true;
+      setAudioStarted(true);
+      const iceServers = await getIceServers();
+      stream = await openLocalAudioStream();
+      const noise = readNoiseConfig();
+      await startMediaRelay(roomId, noise);
+      await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio");
+      const session = new ServerMediaAudioSession({
+        roomId,
+        userId: currentUser.id,
+        iceServers,
+        stream,
+        onError: setStatus
+      });
+      serverAudioSessionRef.current = session;
+      stream = null;
+      await session.start();
+      setStatus("Server relay audio connected");
+    } catch (error) {
+      audioStartedRef.current = false;
+      setAudioStarted(false);
+      serverAudioSessionRef.current?.close();
+      serverAudioSessionRef.current = null;
+      if (stream) {
+        for (const track of stream.getAudioTracks()) {
+          track.stop();
+        }
+      }
+      setStatus(error instanceof Error ? error.message : "Audio connection failed");
+    }
+  }
+
+  async function connectMeshAudio() {
     if (!currentUser) {
       return;
     }
@@ -94,6 +176,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     }
     try {
       audioStartedRef.current = true;
+      setAudioStarted(true);
       const iceServers = await getIceServers();
       const stream = await openLocalAudioStream();
       const session = new MeshAudioSession({
@@ -104,23 +187,24 @@ export function RoomClient({ roomId }: { roomId: string }) {
         send: (message) => socketRef.current?.send(JSON.stringify(message)),
         onError: setStatus
       });
-      audioSessionRef.current = session;
+      meshAudioSessionRef.current = session;
       const connected = await session.connectToUsers(room?.users ?? []);
       if (connected) {
         setStatus("Audio offers sent");
       }
     } catch (error) {
       audioStartedRef.current = false;
-      audioSessionRef.current?.close();
-      audioSessionRef.current = null;
+      setAudioStarted(false);
+      meshAudioSessionRef.current?.close();
+      meshAudioSessionRef.current = null;
       setStatus(error instanceof Error ? error.message : "Audio connection failed");
     }
   }
 
   async function leave() {
-    audioSessionRef.current?.close();
-    audioSessionRef.current = null;
+    closeAudioSessions();
     audioStartedRef.current = false;
+    setAudioStarted(false);
     socketRef.current?.close();
     socketRef.current = null;
     if (currentUser) {
@@ -137,8 +221,18 @@ export function RoomClient({ roomId }: { roomId: string }) {
           <h1 className="text-2xl font-semibold">{roomId}</h1>
           <p className="mt-1 text-sm text-[#5c6a61]">{status}</p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={connectAudio}>Connect audio</Button>
+        <div className="flex flex-wrap gap-2">
+          <Select
+            aria-label="Audio mode"
+            className="w-36"
+            disabled={audioStarted}
+            value={audioMode}
+            onChange={(event) => setAudioMode(event.target.value as AudioMode)}
+          >
+            <option value="server_relay">Server relay</option>
+            <option value="peer_mesh">Peer mesh</option>
+          </Select>
+          <Button disabled={audioStarted} onClick={connectAudio}>Connect audio</Button>
           <Button className="bg-[#7a2f2f]" onClick={leave}>Leave</Button>
         </div>
       </div>

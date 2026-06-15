@@ -221,7 +221,7 @@ export async function leaveRoom(roomId: string, userId: string): Promise<RoomSna
 
 export async function getMediaRelay(roomId: string): Promise<MediaRelayRoomStatus> {
   const response = await fetch(mediaRelayUrl(roomId));
-  return response.json();
+  return jsonOrThrow(response, "failed to load media relay");
 }
 
 export async function startMediaRelay(
@@ -233,7 +233,7 @@ export async function startMediaRelay(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ noise })
   });
-  return response.json();
+  return jsonOrThrow(response, "failed to start media relay");
 }
 
 export async function stopMediaRelay(roomId: string, userId: string): Promise<MediaRelayRoomStatus> {
@@ -242,7 +242,7 @@ export async function stopMediaRelay(roomId: string, userId: string): Promise<Me
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId })
   });
-  return response.json();
+  return jsonOrThrow(response, "failed to stop media relay");
 }
 
 export async function registerMediaTrack(
@@ -256,7 +256,7 @@ export async function registerMediaTrack(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId, track_id: trackId, kind })
   });
-  return response.json();
+  return jsonOrThrow(response, "failed to register media track");
 }
 
 export async function answerServerMediaOffer(
@@ -270,7 +270,7 @@ export async function answerServerMediaOffer(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user_id: userId, audio_track_id: audioTrackId, sdp })
   });
-  return response.json();
+  return jsonOrThrow(response, "failed to negotiate server media offer");
 }
 
 export async function addServerMediaIceCandidate(
@@ -282,7 +282,7 @@ export async function addServerMediaIceCandidate(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(candidate)
   });
-  return response.json();
+  return jsonOrThrow(response, "failed to add server media ICE candidate");
 }
 
 export async function getServerMediaIceCandidates(
@@ -291,7 +291,7 @@ export async function getServerMediaIceCandidates(
 ): Promise<ServerMediaIceCandidate[]> {
   const query = new URLSearchParams({ user_id: userId });
   const response = await fetch(`${serverMediaCandidatesUrl(roomId)}?${query.toString()}`);
-  return response.json();
+  return jsonOrThrow(response, "failed to load server media ICE candidates");
 }
 
 export async function getNoiseProviders(): Promise<NoiseCancellationConfig[]> {
@@ -318,4 +318,11 @@ export function appBaseUrl(): string {
 
 export function shareRoomUrl(roomId: string): string {
   return `${appBaseUrl()}/room/${encodeURIComponent(roomId)}`;
+}
+
+async function jsonOrThrow<T>(response: Response, message: string): Promise<T> {
+  if (!response.ok) {
+    throw new Error(`${message}: ${response.status}`);
+  }
+  return response.json();
 }

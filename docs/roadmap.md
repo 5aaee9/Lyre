@@ -29,6 +29,7 @@
 - Server-side RNNoise processing for real decoded 20 ms Opus PCM frames.
 - Automatic server-media draining and processing for negotiated WebRTC tracks.
 - Internal WebRTC egress path that encodes processed server audio to Opus RTP and writes it to recipient server-media peers.
+- Frontend server-media audio mode with browser-to-server WebRTC negotiation and playback of remote processed server audio.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
 
@@ -36,7 +37,7 @@
 
 - Wire DeepFilterNet provider to real decoded WebRTC tracks.
 - Add jitter buffering and packet loss concealment for server media ingress.
-- Switch frontend media flow to server-media mode and verify browser playback of processed audio.
+- Add per-user server-media cleanup so clients can release server resources without stopping the whole room relay.
 - Add DeepFilterNet binding and processing implementation.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Add authentication and room access control.

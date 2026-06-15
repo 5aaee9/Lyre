@@ -149,3 +149,11 @@
 - `lyre-webrtc` now owns a local Opus audio track per server-media peer and keeps direct WebRTC/RTP types behind Lyre-owned processed-frame and egress-packet DTOs.
 - `lyre-web` starts a room egress pump with media relay activation, fans processed frames out to audio-capable recipients, and sends them through recipient server-media peer handles.
 - No public egress pump, RTP packet, decoded PCM, encode-failure, or debug endpoint was added; frontend server-media mode, browser playback verification, jitter/PLC, and DeepFilterNet remain future work.
+
+## 2026-06-15 Frontend Server Media Playback
+
+- Switched the room page default audio path to server relay mode while keeping peer mesh as an explicit compatibility option.
+- Added a frontend server-media WebRTC session that negotiates through existing REST endpoints, exchanges ICE candidates, and attaches remote processed audio to a hidden browser audio element.
+- Server relay playback is remote-participant audio only; the current server fanout excludes self-loopback.
+- Leave and unmount clean up local browser media resources but do not call the room-level `stopMediaRelay`, because that endpoint stops the whole room until a per-user server-media cleanup API exists.
+- Server-media REST wrappers now throw visible errors for non-2xx responses so relay start, track registration, offer negotiation, and ICE candidate failures remain visible in room status.
