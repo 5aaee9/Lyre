@@ -54,6 +54,7 @@ export class ServerMediaAudioSession {
   }
 
   async start(): Promise<void> {
+    void this.audio.play().catch((error: unknown) => this.reportError(error));
     const offer = await this.peer.createOffer();
     await this.peer.setLocalDescription(offer);
     const answer = await answerServerMediaOffer(

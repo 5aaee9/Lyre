@@ -3,7 +3,7 @@ use lyre_core::{
     AudioFrame, MediaTrackKind, RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest,
     StopMediaRelayRequest, UserId,
 };
-use lyre_webrtc::{ServerMediaOffer, ServerMediaSessionKey, WebRtcStack};
+use lyre_webrtc::{ServerMediaIceCandidate, ServerMediaOffer, ServerMediaSessionKey, WebRtcStack};
 
 #[tokio::test]
 async fn app_state_start_and_stop_manage_egress_pump() {
@@ -79,6 +79,43 @@ async fn answer_offer(state: &AppState, room_id: &RoomId, user_id: &str) -> Serv
     key
 }
 
+async fn connect_test_offer(
+    state: &AppState,
+    room_id: &RoomId,
+    user_id: &str,
+) -> lyre_webrtc::test_support::ServerMediaConnectedOffer {
+    let key = ServerMediaSessionKey {
+        room_id: room_id.clone(),
+        user_id: UserId::from_external(user_id),
+    };
+    let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
+    let answer = state
+        .answer_server_media_offer(ServerMediaOffer {
+            room_id: key.room_id.clone(),
+            user_id: key.user_id.clone(),
+            audio_track_id: "audio-main".to_owned(),
+            sdp: offer.offer_sdp.clone(),
+        })
+        .await
+        .unwrap();
+    for candidate in offer.remote_candidates().await {
+        state
+            .add_server_media_ice_candidate(ServerMediaIceCandidate {
+                room_id: key.room_id.clone(),
+                user_id: key.user_id.clone(),
+                candidate: candidate.candidate,
+                sdp_mid: candidate.sdp_mid,
+                sdp_mline_index: candidate.sdp_mline_index,
+                username_fragment: candidate.username_fragment,
+            })
+            .await
+            .unwrap();
+    }
+    offer
+        .accept_answer(&answer, state.server_media_ice_candidates(&key))
+        .await
+}
+
 #[tokio::test]
 async fn processed_audio_frame_is_sent_to_recipient_server_media_peer() {
     let state = AppState::default();
@@ -111,4 +148,51 @@ async fn processed_audio_frame_is_sent_to_recipient_server_media_peer() {
     }
 
     panic!("processed audio frame was not sent to recipient server-media peer");
+}
+
+#[tokio::test]
+async fn server_relay_audio_reaches_recipient_peer_connection() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    register_audio_track(&state, &room_id, "source");
+    register_audio_track(&state, &room_id, "recipient");
+    let source = connect_test_offer(&state, &room_id, "source").await;
+    let recipient = connect_test_offer(&state, &room_id, "recipient").await;
+
+    source.send_valid_opus_packets(100).await;
+
+    for _ in 0..150 {
+        if !recipient.received_remote_rtp_packets().is_empty() {
+            assert!(source.received_remote_rtp_packets().is_empty());
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("server relay audio RTP did not reach recipient peer connection");
+}
+
+#[tokio::test]
+async fn server_relay_audio_survives_repeated_room_relay_start() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    register_audio_track(&state, &room_id, "source");
+    let source = connect_test_offer(&state, &room_id, "source").await;
+
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    register_audio_track(&state, &room_id, "recipient");
+    let recipient = connect_test_offer(&state, &room_id, "recipient").await;
+
+    source.send_valid_opus_packets(100).await;
+
+    for _ in 0..150 {
+        if !recipient.received_remote_rtp_packets().is_empty() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("server relay audio RTP did not reach recipient after repeated relay start");
 }

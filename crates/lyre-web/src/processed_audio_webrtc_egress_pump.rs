@@ -1,8 +1,8 @@
 use crate::{media_egress::ProcessedAudioEgressFanout, media_runtime::WebMediaRuntime};
 use dashmap::DashMap;
-use lyre_core::RoomId;
+use lyre_core::{RoomId, UserId};
 use lyre_webrtc::{ServerMediaNegotiator, ServerMediaProcessedAudioFrame, ServerMediaSessionKey};
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use tokio::{sync::broadcast, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
@@ -43,6 +43,8 @@ impl ProcessedAudioWebRtcEgressPump {
         let task_token = token.clone();
         let task_room_id = room_id.clone();
         let handle = tokio::spawn(async move {
+            let mut logged_empty_fanout = HashSet::<UserId>::new();
+            let mut logged_egress_started = HashSet::<(UserId, UserId)>::new();
             loop {
                 tokio::select! {
                     () = task_token.cancelled() => break,
@@ -60,6 +62,16 @@ impl ProcessedAudioWebRtcEgressPump {
                                     continue;
                                 }
                             };
+                            if egress_frames.is_empty()
+                                && logged_empty_fanout.insert(frame.user_id.clone())
+                            {
+                                tracing::info!(
+                                    room_id = %frame.room_id,
+                                    source_user_id = %frame.user_id,
+                                    track_id = %frame.track_id,
+                                    "processed audio WebRTC egress has no recipients"
+                                );
+                            }
                             for egress in egress_frames {
                                 let recipient_id = egress.recipient_id.clone();
                                 let key = ServerMediaSessionKey {
@@ -72,16 +84,30 @@ impl ProcessedAudioWebRtcEgressPump {
                                     channels: egress.frame.channels,
                                     samples: egress.frame.samples,
                                 };
-                                if let Err(error) =
-                                    negotiator.send_processed_audio_frame(&key, frame).await
-                                {
-                                    tracing::warn!(
-                                        error = format_args!("{error:#}"),
-                                        room_id = %key.room_id,
-                                        source_user_id = %egress.frame.user_id,
-                                        recipient_user_id = %recipient_id,
-                                        "processed audio WebRTC egress send failed"
-                                    );
+                                match negotiator.send_processed_audio_frame(&key, frame).await {
+                                    Ok(packet_count) => {
+                                        if logged_egress_started.insert((
+                                            egress.frame.user_id.clone(),
+                                            recipient_id.clone(),
+                                        )) {
+                                            tracing::info!(
+                                                packet_count,
+                                                room_id = %key.room_id,
+                                                source_user_id = %egress.frame.user_id,
+                                                recipient_user_id = %recipient_id,
+                                                "processed audio WebRTC egress send started"
+                                            );
+                                        }
+                                    }
+                                    Err(error) => {
+                                        tracing::warn!(
+                                            error = format_args!("{error:#}"),
+                                            room_id = %key.room_id,
+                                            source_user_id = %egress.frame.user_id,
+                                            recipient_user_id = %recipient_id,
+                                            "processed audio WebRTC egress send failed"
+                                        );
+                                    }
                                 }
                             }
                         }

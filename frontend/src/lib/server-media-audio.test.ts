@@ -142,6 +142,7 @@ describe("ServerMediaAudioSession", () => {
       sdp: "server-answer"
     });
     expect(apiMocks.getServerMediaIceCandidates).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
+    expect(play).toHaveBeenCalledOnce();
 
     await vi.advanceTimersByTimeAsync(10);
 
@@ -211,7 +212,7 @@ describe("ServerMediaAudioSession", () => {
     } as unknown as RTCTrackEvent);
 
     expect(addRemoteTrack).toHaveBeenCalledWith({ id: "remote-track" });
-    expect(play).toHaveBeenCalledOnce();
+    expect(play).toHaveBeenCalledTimes(2);
   });
 
   it("deduplicates repeated server ICE candidates", async () => {

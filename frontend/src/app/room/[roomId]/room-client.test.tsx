@@ -277,7 +277,7 @@ describe("RoomClient", () => {
     });
 
     expect(addRemoteTrack).toHaveBeenCalledWith({ id: "remote-track" });
-    expect(playAudio).toHaveBeenCalledOnce();
+    expect(playAudio).toHaveBeenCalledTimes(2);
   });
 
   it("cleans server relay local and server media on leave without stopping the room relay", async () => {

@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 use webrtc::{
     media_stream::{
         track_local::{static_rtp::TrackLocalStaticRTP, TrackLocal},
+        track_remote::{TrackRemote, TrackRemoteEvent},
         MediaStreamTrack,
     },
     peer_connection::{
@@ -31,6 +32,7 @@ struct TestPeerConnectionHandler {
     local_ice_candidates: Arc<Mutex<Vec<RTCIceCandidateInit>>>,
     gather_complete: Sender<()>,
     connected: Sender<()>,
+    remote_rtp_packets: Arc<Mutex<Vec<rtc::rtp::Packet>>>,
 }
 
 #[async_trait::async_trait]
@@ -57,11 +59,31 @@ impl PeerConnectionEventHandler for TestPeerConnectionHandler {
             let _ = self.connected.try_send(());
         }
     }
+
+    async fn on_track(&self, track: Arc<dyn TrackRemote>) {
+        let remote_rtp_packets = Arc::clone(&self.remote_rtp_packets);
+        tokio::spawn(async move {
+            while let Some(event) = track.poll().await {
+                if let TrackRemoteEvent::OnRtpPacket(packet) = event {
+                    remote_rtp_packets
+                        .lock()
+                        .expect("test remote RTP packet collection lock must not be poisoned")
+                        .push(packet);
+                }
+            }
+        });
+    }
 }
 
 pub async fn server_media_offer_with_valid_opus_sender() -> ServerMediaTestOffer {
-    let (offerer, track, offerer_candidates, mut gather_complete_rx, connected_rx) =
-        opus_offerer().await;
+    let (
+        offerer,
+        track,
+        offerer_candidates,
+        remote_rtp_packets,
+        mut gather_complete_rx,
+        connected_rx,
+    ) = opus_offerer().await;
 
     let offer = offerer.create_offer(None).await.unwrap();
     offerer.set_local_description(offer).await.unwrap();
@@ -72,6 +94,7 @@ pub async fn server_media_offer_with_valid_opus_sender() -> ServerMediaTestOffer
         offerer,
         track,
         offerer_candidates,
+        remote_rtp_packets,
         connected_rx,
     }
 }
@@ -81,6 +104,7 @@ pub struct ServerMediaTestOffer {
     offerer: Arc<dyn PeerConnection>,
     track: Arc<TrackLocalStaticRTP>,
     offerer_candidates: Arc<Mutex<Vec<RTCIceCandidateInit>>>,
+    remote_rtp_packets: Arc<Mutex<Vec<rtc::rtp::Packet>>>,
     connected_rx: Receiver<()>,
 }
 
@@ -122,6 +146,7 @@ impl ServerMediaTestOffer {
         ServerMediaConnectedOffer {
             _offerer: self.offerer,
             track: self.track,
+            remote_rtp_packets: self.remote_rtp_packets,
         }
     }
 
@@ -137,6 +162,7 @@ impl ServerMediaTestOffer {
 pub struct ServerMediaConnectedOffer {
     _offerer: Arc<dyn PeerConnection>,
     track: Arc<TrackLocalStaticRTP>,
+    remote_rtp_packets: Arc<Mutex<Vec<rtc::rtp::Packet>>>,
 }
 
 impl ServerMediaConnectedOffer {
@@ -150,6 +176,13 @@ impl ServerMediaConnectedOffer {
             let _ = self.track.write_rtp(test_rtp_packet(payload.clone())).await;
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
+    }
+
+    pub fn received_remote_rtp_packets(&self) -> Vec<rtc::rtp::Packet> {
+        self.remote_rtp_packets
+            .lock()
+            .expect("test remote RTP packet collection lock must not be poisoned")
+            .clone()
     }
 }
 
@@ -188,20 +221,23 @@ pub async fn send_valid_opus_packet_to_server(server: &crate::WebRtcPeerConnecti
         .await;
 }
 
-async fn opus_offerer() -> (
+type OpusOffererParts = (
     Arc<dyn PeerConnection>,
     Arc<TrackLocalStaticRTP>,
     Arc<Mutex<Vec<RTCIceCandidateInit>>>,
+    Arc<Mutex<Vec<rtc::rtp::Packet>>>,
     Receiver<()>,
     Receiver<()>,
-) {
+);
+
+async fn opus_offerer() -> OpusOffererParts {
     let mut media_engine = MediaEngine::default();
     media_engine
         .register_default_codecs()
         .expect("default codecs should register for tests");
-    let registry = register_default_interceptors(Registry::new(), &mut media_engine)
-        .expect("default interceptors should register for tests");
+    let registry = register_default_interceptors(Registry::new(), &mut media_engine).unwrap();
     let local_ice_candidates = Arc::new(Mutex::new(Vec::new()));
+    let remote_rtp_packets = Arc::new(Mutex::new(Vec::new()));
     let (gather_complete, gather_complete_rx) = channel(1);
     let (connected, connected_rx) = channel(1);
     let offerer = PeerConnectionBuilder::new()
@@ -209,6 +245,7 @@ async fn opus_offerer() -> (
             local_ice_candidates: Arc::clone(&local_ice_candidates),
             gather_complete,
             connected,
+            remote_rtp_packets: Arc::clone(&remote_rtp_packets),
         }))
         .with_media_engine(media_engine)
         .with_interceptor_registry(registry)
@@ -216,6 +253,13 @@ async fn opus_offerer() -> (
         .build()
         .await
         .expect("test offerer peer connection should build");
+    let codec = RTCRtpCodec {
+        mime_type: MIME_TYPE_OPUS.to_owned(),
+        clock_rate: 48_000,
+        channels: 2,
+        sdp_fmtp_line: String::new(),
+        rtcp_feedback: vec![],
+    };
     let track = Arc::new(TrackLocalStaticRTP::new(MediaStreamTrack::new(
         "lyre-test".to_owned(),
         "audio".to_owned(),
@@ -226,24 +270,16 @@ async fn opus_offerer() -> (
                 ssrc: Some(1234),
                 ..Default::default()
             },
-            codec: RTCRtpCodec {
-                mime_type: MIME_TYPE_OPUS.to_owned(),
-                clock_rate: 48_000,
-                channels: 2,
-                sdp_fmtp_line: String::new(),
-                rtcp_feedback: vec![],
-            },
+            codec,
             ..Default::default()
         }],
     )));
-    offerer
-        .add_track(track.clone())
-        .await
-        .expect("test offerer should accept audio track");
+    offerer.add_track(track.clone()).await.unwrap();
     (
         Arc::from(offerer),
         track,
         local_ice_candidates,
+        remote_rtp_packets,
         gather_complete_rx,
         connected_rx,
     )
@@ -327,9 +363,7 @@ fn to_webrtc_candidate(candidate: ServerMediaIceCandidateInit) -> RTCIceCandidat
 
 pub fn encoded_opus_payload_for_test() -> Vec<u8> {
     let mut encoder = OpusEncoder::new(48_000, 1, Application::Voip).unwrap();
-    let samples = (0..SERVER_MEDIA_OPUS_FRAME_SIZE)
-        .map(|index| ((index as f32) / 24.0).sin() * 0.1)
-        .collect::<Vec<_>>();
+    let samples = vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE];
     let mut payload = vec![0_u8; 512];
     let payload_len = encoder
         .encode(&samples, SERVER_MEDIA_OPUS_FRAME_SIZE, &mut payload)
