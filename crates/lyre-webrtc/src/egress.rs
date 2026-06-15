@@ -4,7 +4,11 @@ use opus_rs::{Application, OpusEncoder};
 use rtc::rtp_transceiver::rtp_sender::{
     RTCRtpCodec, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    error::Error,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use thiserror::Error;
 use webrtc::media_stream::{
     track_local::{static_rtp::TrackLocalStaticRTP, TrackLocal},
@@ -14,6 +18,14 @@ use webrtc::media_stream::{
 pub const SERVER_MEDIA_EGRESS_PAYLOAD_TYPE: u8 = 111;
 pub const SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const SERVER_MEDIA_EGRESS_CHANNELS: u16 = 1;
+#[cfg(not(test))]
+const SERVER_MEDIA_EGRESS_WRITE_RETRIES: usize = 50;
+#[cfg(test)]
+const SERVER_MEDIA_EGRESS_WRITE_RETRIES: usize = 2;
+#[cfg(not(test))]
+const SERVER_MEDIA_EGRESS_WRITE_RETRY_INTERVAL: Duration = Duration::from_millis(20);
+#[cfg(test)]
+const SERVER_MEDIA_EGRESS_WRITE_RETRY_INTERVAL: Duration = Duration::from_millis(1);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerMediaProcessedAudioFrame {
@@ -48,7 +60,7 @@ pub enum ServerMediaEgressError {
     #[error("failed to write server media egress RTP packet")]
     WriteRtp {
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: Box<dyn Error + Send + Sync>,
     },
     #[error("server media egress peer is missing for room `{room_id}` user `{user_id}`")]
     PeerMissing {
@@ -112,23 +124,7 @@ impl ServerMediaEgress {
             .expect("server media egress lock must not be poisoned")
             .encode(&frame)?;
         for packet in &packets {
-            self.track
-                .write_rtp(rtc::rtp::Packet {
-                    header: rtc::rtp::Header {
-                        version: 2,
-                        sequence_number: packet.sequence_number,
-                        timestamp: packet.timestamp,
-                        marker: true,
-                        payload_type: packet.payload_type,
-                        ssrc: 5678,
-                        ..Default::default()
-                    },
-                    payload: Bytes::from(packet.payload.clone()),
-                })
-                .await
-                .map_err(|source| ServerMediaEgressError::WriteRtp {
-                    source: Box::new(source),
-                })?;
+            write_rtp_with_retry(&self.track, egress_rtp_packet(packet)).await?;
         }
         self.sent_packets
             .lock()
@@ -143,6 +139,46 @@ impl ServerMediaEgress {
             .lock()
             .expect("server media egress packet snapshots lock must not be poisoned")
             .clone()
+    }
+}
+
+async fn write_rtp_with_retry(
+    track: &TrackLocalStaticRTP,
+    packet: rtc::rtp::Packet,
+) -> Result<(), ServerMediaEgressError> {
+    for attempt in 0..=SERVER_MEDIA_EGRESS_WRITE_RETRIES {
+        match track.write_rtp(packet.clone()).await {
+            Ok(()) => return Ok(()),
+            Err(source) if attempt < SERVER_MEDIA_EGRESS_WRITE_RETRIES => {
+                tracing::debug!(
+                    error = %source,
+                    attempt,
+                    "server media egress RTP write not ready; retrying"
+                );
+                tokio::time::sleep(SERVER_MEDIA_EGRESS_WRITE_RETRY_INTERVAL).await;
+            }
+            Err(source) => {
+                return Err(ServerMediaEgressError::WriteRtp {
+                    source: Box::new(source),
+                });
+            }
+        }
+    }
+    unreachable!("egress write retry loop must return on final attempt");
+}
+
+fn egress_rtp_packet(packet: &ServerMediaEgressRtpPacket) -> rtc::rtp::Packet {
+    rtc::rtp::Packet {
+        header: rtc::rtp::Header {
+            version: 2,
+            sequence_number: packet.sequence_number,
+            timestamp: packet.timestamp,
+            marker: true,
+            payload_type: packet.payload_type,
+            ssrc: 5678,
+            ..Default::default()
+        },
+        payload: Bytes::from(packet.payload.clone()),
     }
 }
 
@@ -276,6 +312,23 @@ mod tests {
 
         let peak = output.iter().map(|sample| sample.abs()).fold(0.0, f32::max);
         assert!(peak > 0.05, "peak={peak}");
+    }
+
+    #[tokio::test]
+    async fn unbound_track_write_retries_and_preserves_source_error() {
+        let egress = ServerMediaEgress::new().unwrap();
+
+        let error = egress
+            .send_processed_audio_frame(frame(vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE]))
+            .await
+            .unwrap_err();
+
+        match error {
+            ServerMediaEgressError::WriteRtp { source } => {
+                assert!(source.to_string().contains("track is not binding yet"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

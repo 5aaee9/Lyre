@@ -2,7 +2,7 @@ use crate::{media_egress::ProcessedAudioEgressFanout, media_runtime::WebMediaRun
 use dashmap::DashMap;
 use lyre_core::{RoomId, UserId};
 use lyre_webrtc::{ServerMediaNegotiator, ServerMediaProcessedAudioFrame, ServerMediaSessionKey};
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, error::Error, sync::Arc};
 use tokio::{sync::broadcast, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
@@ -102,6 +102,7 @@ impl ProcessedAudioWebRtcEgressPump {
                                     Err(error) => {
                                         tracing::warn!(
                                             error = format_args!("{error:#}"),
+                                            error_source = ?error.source().map(|source| source.to_string()),
                                             room_id = %key.room_id,
                                             source_user_id = %egress.frame.user_id,
                                             recipient_user_id = %recipient_id,
