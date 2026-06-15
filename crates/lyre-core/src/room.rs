@@ -71,6 +71,12 @@ pub struct LeaveRoomRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LeaveRoomResponse {
+    pub room: RoomSnapshot,
+    pub removed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PersistedRoomRegistry {
     pub rooms: Vec<PersistedRoom>,
 }
@@ -85,6 +91,12 @@ pub struct PersistedRoom {
 pub struct PersistedRoomUser {
     pub profile: UserProfile,
     pub access_token: RoomAccessToken,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoomRegistryAggregate {
+    pub rooms: usize,
+    pub users: usize,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -146,12 +158,18 @@ impl RoomRegistry {
         }
     }
 
-    pub fn leave(&self, room_id: &RoomId, user_id: &UserId) -> RoomSnapshot {
-        if let Some(room) = self.rooms.get(room_id) {
-            room.users.remove(user_id);
+    pub fn leave(&self, room_id: &RoomId, user_id: &UserId) -> LeaveRoomResponse {
+        let removed = if let Some(room) = self.rooms.get(room_id) {
+            let removed = room.users.remove(user_id).is_some();
             room.access_tokens.remove(user_id);
+            removed
+        } else {
+            false
+        };
+        LeaveRoomResponse {
+            room: self.snapshot_existing(room_id.clone()),
+            removed,
         }
-        self.snapshot(room_id.clone())
     }
 
     pub fn validate_access_token(
@@ -230,6 +248,17 @@ impl RoomRegistry {
         PersistedRoomRegistry { rooms }
     }
 
+    pub fn aggregate(&self) -> RoomRegistryAggregate {
+        RoomRegistryAggregate {
+            rooms: self.rooms.len(),
+            users: self
+                .rooms
+                .iter()
+                .map(|entry| entry.value().users.len())
+                .sum(),
+        }
+    }
+
     pub fn replace_with_persisted(&self, persisted: PersistedRoomRegistry) {
         self.rooms.clear();
         for persisted_room in persisted.rooms {
@@ -303,7 +332,7 @@ mod tests {
             .join(room_id.clone(), JoinRoomRequest::default())
             .user;
 
-        let snapshot = registry.leave(&room_id, &first.id);
+        let snapshot = registry.leave(&room_id, &first.id).room;
 
         assert_eq!(snapshot.users.len(), 1);
         assert_eq!(snapshot.users[0].id, second.id);

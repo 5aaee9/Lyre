@@ -38,11 +38,11 @@
 - Optional JSON file persistence for anonymous room/user/session access state.
 - Docker packaging targets for `lyre-api` and `lyre-web`.
 - GitHub Actions workflow for publishing both images to GHCR.
+- Aggregate Prometheus-compatible `/metrics` endpoint for process-local API observability.
 
 ## Next
 
 - Add full DeepFilterNet neural model inference/configuration for decoded WebRTC tracks.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Add production-grade database/session management if anonymous JSON persistence stops being sufficient.
-- Add production observability and metrics.
 - Integrate a generated WebRPC Rust server/runtime path.

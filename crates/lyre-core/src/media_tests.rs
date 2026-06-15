@@ -1,7 +1,7 @@
 use crate::{
-    MediaRelayError, MediaRelayMode, MediaRelayRegistry, MediaRelayStatus, MediaTrackKind,
-    NoiseCancellationConfig, NoiseProvider, RegisterMediaTrackRequest, RoomId,
-    StartMediaRelayRequest, StopMediaRelayRequest, UserId,
+    MediaRelayError, MediaRelayMode, MediaRelayRegistry, MediaRelayRegistryAggregate,
+    MediaRelayStatus, MediaTrackKind, NoiseCancellationConfig, NoiseProvider,
+    RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
 
 #[test]
@@ -175,6 +175,39 @@ fn active_participants_requires_active_relay_without_creating_unknown_room() {
         })
     );
     assert!(!registry.contains_room(&room_id));
+}
+
+#[test]
+fn aggregate_counts_only_active_media_relays_without_creating_rooms() {
+    let registry = MediaRelayRegistry::new();
+
+    assert_eq!(
+        registry.aggregate(),
+        MediaRelayRegistryAggregate {
+            active_rooms: 0,
+            participants: 0,
+        }
+    );
+
+    registry.start(RoomId::default_room(), StartMediaRelayRequest::default());
+    registry
+        .register_track(
+            RoomId::default_room(),
+            RegisterMediaTrackRequest {
+                user_id: UserId::from_external("user_a"),
+                track_id: "audio".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        registry.aggregate(),
+        MediaRelayRegistryAggregate {
+            active_rooms: 1,
+            participants: 1,
+        }
+    );
 }
 
 #[test]

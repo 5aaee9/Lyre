@@ -8,12 +8,15 @@ pub mod webrtc;
 
 #[cfg(test)]
 mod media_tests;
+#[cfg(test)]
+mod room_aggregate_tests;
 
 pub use ids::{RoomId, RoomIdError, UserId, DEFAULT_ROOM_ID};
 pub use media::{
     MediaRelayError, MediaRelayMode, MediaRelayParticipant, MediaRelayRegistry,
-    MediaRelayRoomStatus, MediaRelayStatus, MediaRelayTrack, MediaRelayTrackLookup, MediaTrackKind,
-    RegisterMediaTrackRequest, StartMediaRelayRequest, StopMediaRelayRequest,
+    MediaRelayRegistryAggregate, MediaRelayRoomStatus, MediaRelayStatus, MediaRelayTrack,
+    MediaRelayTrackLookup, MediaTrackKind, RegisterMediaTrackRequest, StartMediaRelayRequest,
+    StopMediaRelayRequest,
 };
 pub use media_runtime::{
     AudioFrame, AudioFrameProcessor, MediaRuntime, PassthroughAudioFrameProcessor,
@@ -21,9 +24,9 @@ pub use media_runtime::{
 };
 pub use noise::{supported_noise_providers, NoiseCancellationConfig, NoiseProvider};
 pub use room::{
-    JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, PersistedRoom, PersistedRoomRegistry,
-    PersistedRoomRegistryError, PersistedRoomUser, RoomAccessError, RoomAccessToken, RoomRegistry,
-    RoomSnapshot, UserProfile,
+    JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, LeaveRoomResponse, PersistedRoom,
+    PersistedRoomRegistry, PersistedRoomRegistryError, PersistedRoomUser, RoomAccessError,
+    RoomAccessToken, RoomRegistry, RoomRegistryAggregate, RoomSnapshot, UserProfile,
 };
 pub use webrtc::{
     current_media_topology, default_ice_servers, generate_turn_rest_credentials,

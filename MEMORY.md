@@ -199,3 +199,10 @@
 - Added optional JSON file persistence for anonymous room users and access tokens via `--state-file` / `LYRE_STATE_FILE`.
 - Persisted state is limited to the room registry. WebSocket peer handles, WebRTC sessions, relay pumps, processed audio buffers, TURN state, and media runtime state remain process-local.
 - Persisted join/leave mutations are serialized and roll back in-memory registry state if the state file write fails, so failed leaves do not resurrect tokens after restart.
+
+## 2026-06-15 Production Metrics
+
+- Added a Prometheus-compatible `/metrics` endpoint to the Rust API server.
+- Kept metrics aggregate and process-local: no room IDs, user IDs, access tokens, nicknames, SDP, ICE candidates, RTP payloads, or persistence paths appear in metrics output.
+- Used read-only registry aggregate snapshots so scraping metrics does not create room or media relay state.
+- Counted joins/leaves only after successful in-memory or persisted mutations; failed persistence writes increment a separate process-local counter after rollback.

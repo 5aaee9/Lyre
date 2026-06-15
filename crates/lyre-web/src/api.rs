@@ -2,6 +2,7 @@ use crate::{
     error::ApiError,
     media_egress::{ProcessedAudioEgressFanout, ProcessedAudioEgressFrame},
     media_runtime::WebMediaRuntime,
+    metrics::MetricsState,
     processed_audio_webrtc_egress_pump::ProcessedAudioWebRtcEgressPump,
     server_media_runtime_pump::ServerMediaRuntimePump,
     signalling::{route_signal_message, PeerHub, SignalMessage, SignalPayload},
@@ -47,6 +48,7 @@ pub struct AppState {
     pub server_media_negotiator: Arc<ServerMediaNegotiator>,
     pub server_media_runtime_pump: Arc<ServerMediaRuntimePump>,
     pub peers: Arc<PeerHub>,
+    pub metrics: Arc<MetricsState>,
     pub ice_servers: Arc<Vec<IceServerConfig>>,
     pub turn_rest_credentials: Option<lyre_core::TurnRestCredentialsConfig>,
     room_state_persistence: Arc<Mutex<Option<RoomStatePersistence>>>,
@@ -104,6 +106,7 @@ impl AppState {
             server_media_runtime_pump,
             media_relays,
             peers: Arc::new(PeerHub::new()),
+            metrics: Arc::new(MetricsState::default()),
             ice_servers: Arc::new(ice_servers),
             turn_rest_credentials,
             room_state_persistence: Arc::new(Mutex::new(room_state_persistence)),
@@ -175,14 +178,18 @@ impl AppState {
         let _guard = self.room_state_persistence_lock.lock().await;
         let persistence = self.room_state_persistence.lock().await.clone();
         let Some(persistence) = persistence else {
-            return Ok(self.registry.join(room_id, request));
+            let response = self.registry.join(room_id, request);
+            self.metrics.record_join();
+            return Ok(response);
         };
         let rollback = self.registry.to_persisted();
         let response = self.registry.join(room_id, request);
         if let Err(error) = persistence.save_registry(&self.registry) {
             self.registry.replace_with_persisted(rollback);
+            self.metrics.record_persistence_failure();
             return Err(ApiError::from(error));
         }
+        self.metrics.record_join();
         Ok(response)
     }
 
@@ -194,15 +201,23 @@ impl AppState {
         let _guard = self.room_state_persistence_lock.lock().await;
         let persistence = self.room_state_persistence.lock().await.clone();
         let Some(persistence) = persistence else {
-            return Ok(self.registry.leave(room_id, user_id));
+            let response = self.registry.leave(room_id, user_id);
+            if response.removed {
+                self.metrics.record_leave();
+            }
+            return Ok(response.room);
         };
         let rollback = self.registry.to_persisted();
-        let snapshot = self.registry.leave(room_id, user_id);
+        let response = self.registry.leave(room_id, user_id);
         if let Err(error) = persistence.save_registry(&self.registry) {
             self.registry.replace_with_persisted(rollback);
+            self.metrics.record_persistence_failure();
             return Err(ApiError::from(error));
         }
-        Ok(snapshot)
+        if response.removed {
+            self.metrics.record_leave();
+        }
+        Ok(response.room)
     }
 }
 
@@ -220,6 +235,7 @@ struct WsQuery {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/metrics", get(crate::metrics::metrics))
         .route("/api/noise/providers", get(noise_providers))
         .route("/api/webrtc/ice-servers", get(ice_servers))
         .route("/api/webrtc/topology", get(media_topology))

@@ -140,12 +140,10 @@ impl AppState {
         self.server_media_negotiator.stored_peer_connection_count()
     }
 
-    #[cfg(test)]
     pub fn server_media_runtime_pump_count(&self) -> usize {
         self.server_media_runtime_pump.task_count()
     }
 
-    #[cfg(test)]
     pub fn processed_audio_webrtc_egress_pump_count(&self) -> usize {
         self.processed_audio_webrtc_egress_pump.task_count()
     }

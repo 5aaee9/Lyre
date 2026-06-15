@@ -47,6 +47,12 @@ pub struct MediaRelayRoomStatus {
     pub participants: Vec<MediaRelayParticipant>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediaRelayRegistryAggregate {
+    pub active_rooms: usize,
+    pub participants: usize,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StartMediaRelayRequest {
     pub noise: Option<NoiseCancellationConfig>,
@@ -223,6 +229,22 @@ impl MediaRelayRegistry {
             });
         }
         Ok(sorted_participants(&room.participants))
+    }
+
+    pub fn aggregate(&self) -> MediaRelayRegistryAggregate {
+        self.rooms.iter().fold(
+            MediaRelayRegistryAggregate {
+                active_rooms: 0,
+                participants: 0,
+            },
+            |mut aggregate, entry| {
+                if entry.value().active {
+                    aggregate.active_rooms += 1;
+                    aggregate.participants += entry.value().participants.len();
+                }
+                aggregate
+            },
+        )
     }
 
     fn snapshot(&self, room_id: RoomId) -> MediaRelayRoomStatus {

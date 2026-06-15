@@ -211,6 +211,9 @@ async fn failed_persisted_join_rolls_back_user_without_token_response() {
         .snapshot(RoomId::default_room())
         .users
         .is_empty());
+    let metrics = crate::metrics::snapshot(&state);
+    assert_eq!(metrics.joins, 0);
+    assert_eq!(metrics.persistence_failures, 1);
     let _ = std::fs::remove_file(path);
 }
 
@@ -269,6 +272,9 @@ async fn failed_persisted_leave_rolls_back_user_and_token() {
             &RoomAccessToken::from_external("token_a"),
         )
         .is_ok());
+    let metrics = crate::metrics::snapshot(&state);
+    assert_eq!(metrics.leaves, 0);
+    assert_eq!(metrics.persistence_failures, 1);
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(bad_path);
 }
