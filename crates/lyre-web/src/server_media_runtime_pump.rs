@@ -42,9 +42,28 @@ impl ServerMediaRuntimePump {
                 if task_token.is_cancelled() {
                     break;
                 }
-                if let Err(error) =
-                    server_media_runtime::process_pcm_frames(&runtime, &negotiator, &task_key)
-                {
+                let process_result = {
+                    let runtime = Arc::clone(&runtime);
+                    let negotiator = Arc::clone(&negotiator);
+                    let key = task_key.clone();
+                    tokio::task::spawn_blocking(move || {
+                        server_media_runtime::process_pcm_frames(&runtime, &negotiator, &key)
+                    })
+                    .await
+                };
+                let process_result = match process_result {
+                    Ok(result) => result,
+                    Err(error) => {
+                        tracing::warn!(
+                            error = format_args!("{error:#}"),
+                            room_id = %task_key.room_id,
+                            user_id = %task_key.user_id,
+                            "server media runtime pump blocking task ended with join error"
+                        );
+                        continue;
+                    }
+                };
+                if let Err(error) = process_result {
                     tracing::warn!(
                         error = format_args!("{error:#}"),
                         room_id = %task_key.room_id,

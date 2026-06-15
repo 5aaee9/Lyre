@@ -196,6 +196,32 @@ fn audio_frame_processor_adapter_uses_rnnoise_for_decoded_opus_frame() {
 }
 
 #[test]
+fn audio_frame_processor_adapter_keeps_rnnoise_state_per_audio_source() {
+    let processor = NoiseCancellingAudioFrameProcessor::default();
+    let reference_processor = NoiseCancellingAudioFrameProcessor::default();
+    let input = decoded_opus_frame_samples();
+    let user_01_frame = AudioFrame {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+        track_id: "audio-main".to_owned(),
+        sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
+        channels: RNNOISE_CHANNELS,
+        sequence: 1,
+        samples: input.clone(),
+    };
+    let user_02_frame = AudioFrame {
+        user_id: UserId::from_external("user_02"),
+        ..user_01_frame.clone()
+    };
+
+    processor.process(&user_01_frame, &config(NoiseProvider::Rnnoise));
+    let output = processor.process(&user_02_frame, &config(NoiseProvider::Rnnoise));
+    let expected = reference_processor.process(&user_02_frame, &config(NoiseProvider::Rnnoise));
+
+    assert_eq!(output, expected);
+}
+
+#[test]
 fn audio_frame_processor_adapter_uses_deepfilternet_for_valid_audio() {
     let processor = NoiseCancellingAudioFrameProcessor::default();
     let input = decoded_opus_frame_samples();
@@ -240,7 +266,17 @@ fn audio_frame_processor_adapter_passthroughs_invalid_or_unsupported_frames() {
 
 #[test]
 fn audio_frame_processor_adapter_preserves_state_per_config_key() {
+    let frame = AudioFrame {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+        track_id: "audio-main".to_owned(),
+        sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
+        channels: RNNOISE_CHANNELS,
+        sequence: 1,
+        samples: vec![0.1; RNNOISE_FRAME_SIZE],
+    };
     let first = NoiseConfigKey::new(
+        &frame,
         &NoiseCancellationConfig {
             provider: NoiseProvider::Rnnoise,
             intensity: 0.5,
@@ -249,6 +285,7 @@ fn audio_frame_processor_adapter_preserves_state_per_config_key() {
         DeepFilterNetRuntimeConfig::default(),
     );
     let second = NoiseConfigKey::new(
+        &frame,
         &NoiseCancellationConfig {
             provider: NoiseProvider::Rnnoise,
             intensity: f32::from_bits(0.5f32.to_bits()),
@@ -257,6 +294,7 @@ fn audio_frame_processor_adapter_preserves_state_per_config_key() {
         DeepFilterNetRuntimeConfig::default(),
     );
     let third = NoiseConfigKey::new(
+        &frame,
         &NoiseCancellationConfig {
             provider: NoiseProvider::Rnnoise,
             intensity: 0.6,
@@ -271,7 +309,17 @@ fn audio_frame_processor_adapter_preserves_state_per_config_key() {
 
 #[test]
 fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key() {
+    let frame = AudioFrame {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+        track_id: "audio-main".to_owned(),
+        sample_rate_hz: DEEPFILTERNET_SAMPLE_RATE_HZ,
+        channels: DEEPFILTERNET_CHANNELS,
+        sequence: 1,
+        samples: vec![0.1; DEEPFILTERNET_FRAME_SIZE],
+    };
     let default = NoiseConfigKey::new(
+        &frame,
         &NoiseCancellationConfig {
             provider: NoiseProvider::Deepfilternet,
             intensity: 0.5,
@@ -280,6 +328,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
         DeepFilterNetRuntimeConfig::default(),
     );
     let custom = NoiseConfigKey::new(
+        &frame,
         &NoiseCancellationConfig {
             provider: NoiseProvider::Deepfilternet,
             intensity: 0.5,
@@ -292,6 +341,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
         },
     );
     let rnnoise_default = NoiseConfigKey::new(
+        &frame,
         &NoiseCancellationConfig {
             provider: NoiseProvider::Rnnoise,
             intensity: 0.5,
@@ -300,6 +350,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
         DeepFilterNetRuntimeConfig::default(),
     );
     let rnnoise_custom = NoiseConfigKey::new(
+        &frame,
         &NoiseCancellationConfig {
             provider: NoiseProvider::Rnnoise,
             intensity: 0.5,

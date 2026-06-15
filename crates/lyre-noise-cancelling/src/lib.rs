@@ -190,8 +190,11 @@ fn validate_rnnoise_frame(frame: NoiseFrame<'_>) -> Result<(), NoiseCancellation
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct NoiseConfigKey {
+    room_id: lyre_core::RoomId,
+    user_id: lyre_core::UserId,
+    track_id: String,
     provider: NoiseProviderKey,
     intensity_bits: u32,
     voice_activity_threshold_bits: u32,
@@ -217,10 +220,14 @@ impl From<NoiseProvider> for NoiseProviderKey {
 
 impl NoiseConfigKey {
     fn new(
+        frame: &AudioFrame,
         config: &NoiseCancellationConfig,
         deepfilternet_runtime: DeepFilterNetRuntimeConfig,
     ) -> Self {
         Self {
+            room_id: frame.room_id.clone(),
+            user_id: frame.user_id.clone(),
+            track_id: frame.track_id.clone(),
             provider: NoiseProviderKey::from(config.provider),
             intensity_bits: config.intensity.to_bits(),
             voice_activity_threshold_bits: config.voice_activity_threshold.to_bits(),
@@ -256,7 +263,7 @@ impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
             .cancellers
             .lock()
             .expect("noise canceller mutex poisoned");
-        let key = NoiseConfigKey::new(noise, self.deepfilternet_runtime);
+        let key = NoiseConfigKey::new(frame, noise, self.deepfilternet_runtime);
         let canceller = match cancellers.get_mut(&key) {
             Some(canceller) => canceller,
             None => match build_noise_canceller_with_runtime_config(
