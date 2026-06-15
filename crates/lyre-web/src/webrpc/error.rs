@@ -119,8 +119,8 @@ fn server_media_status(error: &ServerMediaNegotiationError) -> StatusCode {
         | ServerMediaNegotiationError::WebRtc {
             source: WebRtcStackError::AddIceCandidate { .. },
         } => StatusCode::BAD_REQUEST,
-        ServerMediaNegotiationError::WebRtc { .. }
-        | ServerMediaNegotiationError::SessionMissing => StatusCode::INTERNAL_SERVER_ERROR,
+        ServerMediaNegotiationError::SessionMissing => StatusCode::CONFLICT,
+        ServerMediaNegotiationError::WebRtc { .. } => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 

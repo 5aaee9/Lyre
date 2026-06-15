@@ -27,7 +27,9 @@ export class ServerMediaAudioSession {
   private readonly remoteStream = new MediaStream();
   private readonly audio: HTMLAudioElement;
   private readonly seenCandidates = new Set<string>();
+  private readonly pendingLocalCandidates: RTCIceCandidateInit[] = [];
   private candidatePoll?: number;
+  private offerAnswered = false;
 
   constructor(private readonly input: ServerMediaAudioSessionInput) {
     this.audioTrackId = input.audioTrackId ?? DEFAULT_AUDIO_TRACK_ID;
@@ -40,7 +42,7 @@ export class ServerMediaAudioSession {
     document.body.append(this.audio);
     this.peer.onicecandidate = (event) => {
       if (event.candidate) {
-        void this.addLocalCandidate(event.candidate.toJSON());
+        void this.sendOrQueueLocalCandidate(event.candidate.toJSON());
       }
     };
     this.peer.ontrack = (event) => {
@@ -62,6 +64,8 @@ export class ServerMediaAudioSession {
       this.input.accessToken
     );
     await this.peer.setRemoteDescription({ type: "answer", sdp: answer.sdp });
+    this.offerAnswered = true;
+    await this.flushLocalCandidates();
     await this.fetchServerCandidates({ report: false });
     this.candidatePoll = window.setInterval(() => {
       void this.fetchServerCandidates();
@@ -79,6 +83,20 @@ export class ServerMediaAudioSession {
     }
     this.audio.srcObject = null;
     this.audio.remove();
+  }
+
+  private async sendOrQueueLocalCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    if (!this.offerAnswered) {
+      this.pendingLocalCandidates.push(candidate);
+      return;
+    }
+    await this.addLocalCandidate(candidate);
+  }
+
+  private async flushLocalCandidates(): Promise<void> {
+    for (const candidate of this.pendingLocalCandidates.splice(0)) {
+      await this.addLocalCandidate(candidate);
+    }
   }
 
   private async addLocalCandidate(candidate: RTCIceCandidateInit): Promise<void> {

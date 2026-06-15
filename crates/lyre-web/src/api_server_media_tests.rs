@@ -227,7 +227,7 @@ async fn server_media_candidate_route_rejects_missing_peer() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(response.status(), StatusCode::CONFLICT);
     assert!(state.server_media_sessions().is_empty());
 }
 

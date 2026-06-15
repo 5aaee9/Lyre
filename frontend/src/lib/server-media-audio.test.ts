@@ -47,6 +47,19 @@ class MockPeerConnection {
   }
 }
 
+function iceCandidateEvent(candidate = "candidate:local"): RTCPeerConnectionIceEvent {
+  return {
+    candidate: {
+      toJSON: () => ({
+        candidate,
+        sdpMid: "0",
+        sdpMLineIndex: 0,
+        usernameFragment: "ufrag"
+      })
+    }
+  } as RTCPeerConnectionIceEvent;
+}
+
 function makeSession() {
   return new ServerMediaAudioSession({
     roomId: "DEFAULT",
@@ -139,21 +152,48 @@ describe("ServerMediaAudioSession", () => {
     const session = makeSession();
     await session.start();
 
-    peerConnections[0].onicecandidate?.({
-      candidate: {
-        toJSON: () => ({
-          candidate: "candidate:local",
-          sdpMid: "0",
-          sdpMLineIndex: 0,
-          usernameFragment: "ufrag"
-        })
-      }
-    } as RTCPeerConnectionIceEvent);
+    peerConnections[0].onicecandidate?.(iceCandidateEvent());
 
     await vi.waitFor(() =>
       expect(apiMocks.addServerMediaIceCandidate).toHaveBeenCalledWith("DEFAULT", {
         user_id: "user_a",
         candidate: "candidate:local",
+        sdp_mid: "0",
+        sdp_mline_index: 0,
+        username_fragment: "ufrag"
+      }, "token_a")
+    );
+  });
+
+  it("queues local ICE candidates until the server media offer exists", async () => {
+    let resolveAnswer: (value: unknown) => void;
+    apiMocks.answerServerMediaOffer.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAnswer = resolve;
+      })
+    );
+    const session = makeSession();
+    const start = session.start();
+
+    await vi.waitFor(() => expect(peerConnections[0].setLocalDescription).toHaveBeenCalledOnce());
+    peerConnections[0].onicecandidate?.(iceCandidateEvent("candidate:early"));
+    await Promise.resolve();
+
+    expect(apiMocks.addServerMediaIceCandidate).not.toHaveBeenCalled();
+
+    resolveAnswer!({
+      room_id: "DEFAULT",
+      user_id: "user_a",
+      audio_track_id: "audio-main",
+      sdp: "server-answer",
+      state: "negotiating"
+    });
+    await start;
+
+    await vi.waitFor(() =>
+      expect(apiMocks.addServerMediaIceCandidate).toHaveBeenCalledWith("DEFAULT", {
+        user_id: "user_a",
+        candidate: "candidate:early",
         sdp_mid: "0",
         sdp_mline_index: 0,
         username_fragment: "ufrag"

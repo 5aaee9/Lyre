@@ -74,10 +74,8 @@ impl IntoResponse for ApiError {
                     | ServerMediaNegotiationError::WebRtc {
                         source: lyre_webrtc::WebRtcStackError::AddIceCandidate { .. },
                     } => StatusCode::BAD_REQUEST,
-                    ServerMediaNegotiationError::WebRtc { .. }
-                    | ServerMediaNegotiationError::SessionMissing => {
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    }
+                    ServerMediaNegotiationError::SessionMissing => StatusCode::CONFLICT,
+                    ServerMediaNegotiationError::WebRtc { .. } => StatusCode::INTERNAL_SERVER_ERROR,
                 };
                 (status, error_chain(&error))
             }
