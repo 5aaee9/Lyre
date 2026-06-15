@@ -32,6 +32,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/5aaee9/lyre/${{ matrix.image.name }}
+          tags: |
+            type=ref,event=branch,enable=${{ github.event_name == 'push' }}
+            type=ref,event=tag
+            type=raw,value=main,enable=${{ github.event_name == 'workflow_dispatch' }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -48,7 +52,7 @@ jobs:
   helm-chart:
     runs-on: ubuntu-latest
     needs: docker
-    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v'))
     steps:
       - uses: actions/checkout@v5
       - uses: azure/setup-helm@v4
@@ -58,7 +62,11 @@ jobs:
         id: chart-version
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.1.0-main"
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Package Helm chart
         run: |

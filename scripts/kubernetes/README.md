@@ -100,4 +100,4 @@ helm upgrade --install lyre oci://ghcr.io/5aaee9/lyre/chart/lyre \
 
 The GitHub Actions workflow publishes the same chart to
 `ghcr.io/5aaee9/lyre/chart/lyre`. Tag builds use the tag version without the leading
-`v`; main branch builds do not publish Helm charts.
+`v`; manual builds publish `0.1.0-main`.
