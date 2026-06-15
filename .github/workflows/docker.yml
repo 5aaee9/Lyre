@@ -42,7 +42,7 @@ jobs:
       - name: Cleanup Untagged Image
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          packages: ${{ github.event.repository.name }}/${{ matrix.image.name }}
+          packages: lyre/${{ matrix.image.name }}
           delete-untagged: true
 
   helm-chart:
@@ -74,5 +74,5 @@ jobs:
       - name: Cleanup Untagged Chart
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          packages: ${{ github.event.repository.name }}/chart
+          packages: lyre/chart
           delete-untagged: true
