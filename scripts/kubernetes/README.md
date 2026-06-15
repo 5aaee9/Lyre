@@ -86,18 +86,18 @@ Package and publish the chart as an OCI artifact:
 
 ```bash
 helm package scripts/kubernetes --destination /tmp
-helm push /tmp/chart-0.1.0.tgz oci://ghcr.io/5aaee9/lyre
+helm push /tmp/lyre-0.1.0.tgz oci://ghcr.io/5aaee9/lyre/chart
 ```
 
 Install from GHCR:
 
 ```bash
-helm upgrade --install lyre oci://ghcr.io/5aaee9/lyre/chart \
+helm upgrade --install lyre oci://ghcr.io/5aaee9/lyre/chart/lyre \
   --version 0.1.0 \
   --namespace lyre \
   --create-namespace
 ```
 
 The GitHub Actions workflow publishes the same chart to
-`ghcr.io/5aaee9/lyre/chart`. Tag builds use the tag version without the leading
-`v`; main branch builds use `0.1.0-<short-sha>`.
+`ghcr.io/5aaee9/lyre/chart/lyre`. Tag builds use the tag version without the leading
+`v`; main branch builds do not publish Helm charts.

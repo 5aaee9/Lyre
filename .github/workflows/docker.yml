@@ -67,9 +67,9 @@ jobs:
             --version "${{ steps.chart-version.outputs.version }}" \
             --app-version "${{ steps.chart-version.outputs.version }}"
       - name: Push Helm chart to GHCR
-        run: helm push dist/chart-*.tgz oci://ghcr.io/5aaee9/lyre
+        run: helm push dist/lyre-*.tgz oci://ghcr.io/5aaee9/lyre/chart
       - name: Cleanup Untagged Chart
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          packages: lyre/chart
+          packages: lyre/chart/lyre
           delete-untagged: true
