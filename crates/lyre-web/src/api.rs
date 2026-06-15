@@ -7,7 +7,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, Query, State,
     },
-    http::{header, HeaderMap, StatusCode, Uri},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tower_http::{
-    cors::CorsLayer,
+    cors::{AllowOrigin, CorsLayer},
     trace::{DefaultOnResponse, TraceLayer},
 };
 use tracing::Level;
@@ -39,6 +39,36 @@ struct WsQuery {
 }
 
 pub fn router(state: AppState) -> Router {
+    base_router()
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(make_request_span)
+                .on_response(DefaultOnResponse::new()),
+        )
+        .with_state(state)
+}
+
+pub fn router_with_cors(state: AppState, allowed_origins: Vec<String>) -> anyhow::Result<Router> {
+    let allowed_origins = allowed_origins
+        .into_iter()
+        .map(|origin| HeaderValue::from_str(origin.trim()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list(allowed_origins))
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+
+    Ok(base_router()
+        .layer(cors)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(make_request_span)
+                .on_response(DefaultOnResponse::new()),
+        )
+        .with_state(state))
+}
+
+fn base_router() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/metrics", get(crate::metrics::metrics))
@@ -64,13 +94,6 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::api_server_media::router())
         .merge(crate::webrpc::router())
         .route("/api/rooms/{room_id}/ws", get(room_ws))
-        .layer(CorsLayer::permissive())
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(make_request_span)
-                .on_response(DefaultOnResponse::new()),
-        )
-        .with_state(state)
 }
 
 fn make_request_span<B>(request: &axum::http::Request<B>) -> tracing::Span {

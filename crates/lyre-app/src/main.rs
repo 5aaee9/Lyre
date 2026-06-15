@@ -20,6 +20,7 @@ async fn main() -> Result<()> {
             let embedded_turn = args.effective_embedded_turn_config()?;
             let state_file = args.effective_state_file()?;
             let deepfilternet_runtime = args.effective_deepfilternet_runtime()?;
+            let cors_allowed_origins = args.effective_cors_allowed_origins();
             lyre_web::serve(ServeConfig {
                 host,
                 port,
@@ -28,6 +29,7 @@ async fn main() -> Result<()> {
                 embedded_turn,
                 state_file,
                 deepfilternet_runtime,
+                cors_allowed_origins,
             })
             .await
             .context("failed to run Lyre server")?;

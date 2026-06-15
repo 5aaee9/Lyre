@@ -2,6 +2,7 @@ use super::ServeArgs;
 use std::sync::Mutex;
 
 mod bind;
+mod cors;
 mod deepfilternet;
 mod ice;
 mod state;
@@ -42,6 +43,7 @@ fn default_serve_args() -> ServeArgs {
         host: "0.0.0.0".to_owned(),
         port: 8080,
         ice_servers: Vec::new(),
+        cors_allowed_origins: Vec::new(),
         turn_rest_secret: None,
         turn_rest_ttl_seconds: 3600,
         turn_rest_identity: "lyre".to_owned(),

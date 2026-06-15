@@ -24,6 +24,11 @@ pub struct ServeArgs {
     #[arg(long = "ice-server", help = "ICE server exposed to WebRTC clients")]
     pub ice_servers: Vec<String>,
     #[arg(
+        long = "cors-allowed-origin",
+        help = "Browser origin allowed to call the API with CORS"
+    )]
+    pub cors_allowed_origins: Vec<String>,
+    #[arg(
         long,
         env = "LYRE_TURN_REST_SECRET",
         help = "Shared secret for issuing TURN REST credentials"
@@ -148,6 +153,27 @@ impl ServeArgs {
             }]);
         }
         Ok(default_ice_servers())
+    }
+
+    pub fn effective_cors_allowed_origins(&self) -> Vec<String> {
+        if !self.cors_allowed_origins.is_empty() {
+            return self
+                .cors_allowed_origins
+                .iter()
+                .map(|origin| origin.trim().to_owned())
+                .filter(|origin| !origin.is_empty())
+                .collect();
+        }
+        env::var("LYRE_CORS_ALLOWED_ORIGINS")
+            .ok()
+            .map(|raw| {
+                raw.split(';')
+                    .map(str::trim)
+                    .filter(|origin| !origin.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn effective_turn_rest_credentials(

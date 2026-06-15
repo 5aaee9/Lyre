@@ -43,6 +43,6 @@ mod state_persistence_tests;
 #[cfg(test)]
 mod webrpc_tests;
 
-pub use api::router;
+pub use api::{router, router_with_cors};
 pub use app_state::AppState;
 pub use server::{serve, ServeConfig};

@@ -14,6 +14,7 @@ pub struct ServeConfig {
     pub embedded_turn: Option<lyre_turn::EmbeddedTurnConfig>,
     pub state_file: Option<PathBuf>,
     pub deepfilternet_runtime: DeepFilterNetRuntimeConfig,
+    pub cors_allowed_origins: Vec<String>,
 }
 
 impl ServeConfig {
@@ -37,8 +38,14 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
         config.deepfilternet_runtime,
     )
     .context("failed to initialize Lyre room state")?;
+    let router = if config.cors_allowed_origins.is_empty() {
+        router(state)
+    } else {
+        crate::router_with_cors(state, config.cors_allowed_origins)
+            .context("failed to configure CORS allowed origins")?
+    };
     let api = async move {
-        axum::serve(listener, router(state))
+        axum::serve(listener, router)
             .await
             .context("Lyre API server failed")
     };
@@ -77,6 +84,61 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::Body,
+        http::{header, Method, Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn configured_cors_allows_preflight_from_listed_origin() {
+        let app = crate::router_with_cors(
+            AppState::default(),
+            vec!["https://app.example.test".to_owned()],
+        )
+        .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/api/rooms/DEFAULT/join")
+                    .header(header::ORIGIN, "https://app.example.test")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
+            Some(&"https://app.example.test".parse().unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn default_router_does_not_emit_cors_headers() {
+        let response = crate::router(AppState::default())
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/health")
+                    .header(header::ORIGIN, "https://app.example.test")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
+            None
+        );
+    }
 
     #[tokio::test]
     async fn api_error_is_returned_when_turn_is_enabled() {

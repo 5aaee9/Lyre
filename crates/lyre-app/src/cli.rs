@@ -58,6 +58,7 @@ mod tests {
             "Network host for the API listener",
             "TCP port for the API listener",
             "ICE server exposed to WebRTC clients",
+            "Browser origin allowed to call the API with CORS",
             "Shared secret for issuing TURN REST credentials",
             "Seconds before generated TURN REST credentials expire",
             "Identity prefix used when generating TURN REST credentials",

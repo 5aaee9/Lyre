@@ -45,6 +45,7 @@
 - Helm readiness and liveness health checks for both `lyre-api` and `lyre-web`.
 - Aggregate Prometheus-compatible `/metrics` endpoint for process-local API observability.
 - Rust WebRPC runtime routes at `POST /rpc/Lyre/<Method>` compatible with the generated TypeScript client while preserving REST routes.
+- Configurable API CORS allowed origins through `serve --cors-allowed-origin` and `LYRE_CORS_ALLOWED_ORIGINS`.
 - Concise README with detailed setup, configuration, API, media, development, and deployment documentation split under `docs/`.
 - Nix flake packaging for the Rust API binary with crane, fenix, flake-utils, and a Rust development shell.
 - GitHub Actions CI for Nix flake check, API package build, clippy, rustfmt, and Hestia-backed Nix cache maintenance.
