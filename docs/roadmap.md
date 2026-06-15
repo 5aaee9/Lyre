@@ -13,9 +13,8 @@
 - Short-lived TURN REST credential generation for configured TURN/TURNS ICE servers.
 - Opt-in embedded UDP TURN relay using the MIT `turn-server` crate from the `turn-rs` project.
 - Formal WebRPC RIDL contract and generated TypeScript client/types for frontend-consumed HTTP DTOs.
-- Media topology boundary API documenting current P2P mesh behavior, TURN relay support, and server-side noise cancellation requirements.
+- Media topology boundary API documenting server relay audio behavior, TURN relay support, and server-side noise cancellation requirements.
 - Media relay state skeleton, REST endpoints, WebRPC contract, and frontend API wrappers for future server-side audio processing.
-- Frontend multi-peer WebRTC mesh negotiation with per-user peer connections, targeted offer/answer/ICE signalling, and presence-driven peer add/remove cleanup.
 - Decoded-PCM server media runtime boundary with processor and sink traits.
 - RNNoise-compatible decoded PCM provider runtime in `lyre-noise-cancelling`.
 - Web server decoded-PCM media runtime wiring with internal processed-frame sink.
@@ -34,6 +33,7 @@
 - Deterministic PCM packet loss concealment synthesis for server media ingress after jitter-buffer loss detection.
 - Internal WebRTC egress path that encodes processed server audio to Opus RTP and writes it to recipient server-media peers.
 - Frontend server-media audio mode with browser-to-server WebRTC negotiation and playback of remote processed server audio.
+- Removed peer mesh audio mode so room audio runs through server relay only.
 - Zustand-backed frontend settings store with persisted nickname, room preference, noise settings, and browser audio processing controls.
 - Browser microphone capture now exposes persisted echo cancellation and auto gain control settings, both enabled by default.
 - Per-user server-media cleanup endpoint and frontend Leave/startup-failure cleanup flow.

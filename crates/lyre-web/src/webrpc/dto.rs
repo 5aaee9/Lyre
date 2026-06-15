@@ -185,7 +185,6 @@ pub enum NoiseProvider {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaTopologyMode {
-    P2P_MESH,
     MEDIA_RELAY,
 }
 
@@ -197,7 +196,6 @@ pub enum MediaRelayStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaRelayMode {
-    P2P_MESH,
     MEDIA_RELAY,
 }
 

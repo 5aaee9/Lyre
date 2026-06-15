@@ -80,10 +80,10 @@ const generatedJoinRoomResponseContract: WebrpcJoinRoomResponse = {
 void generatedJoinRoomResponseContract;
 
 const mediaTopologyFromGeneratedDerivedShape: MediaTopology = {
-  mode: "p2p_mesh",
+  mode: "media_relay",
   turn_relay_supported: true,
-  server_side_audio_processing: false,
-  server_side_noise_cancelling: false,
+  server_side_audio_processing: true,
+  server_side_noise_cancelling: true,
   server_noise_cancelling_requires: "media_relay"
 };
 void mediaTopologyFromGeneratedDerivedShape;
@@ -91,7 +91,7 @@ void mediaTopologyFromGeneratedDerivedShape;
 const mediaRelayFromGeneratedDerivedShape: MediaRelayRoomStatus = {
   room_id: "DEFAULT",
   status: "inactive",
-  mode: "p2p_mesh",
+  mode: "media_relay",
   server_side_audio_processing: false,
   server_side_noise_cancelling: false,
   noise: { provider: "off", intensity: 0.5, voice_activity_threshold: 0.35 },
@@ -102,7 +102,7 @@ void mediaRelayFromGeneratedDerivedShape;
 const generatedMediaRelayContract: WebrpcMediaRelayRoomStatus = {
   roomID: "DEFAULT",
   status: WebrpcMediaRelayStatus.INACTIVE,
-  mode: WebrpcMediaRelayMode.P2P_MESH,
+  mode: WebrpcMediaRelayMode.MEDIA_RELAY,
   serverSideAudioProcessing: false,
   serverSideNoiseCancelling: false,
   noise: { provider: WebrpcNoiseProvider.OFF, intensity: 0.5, voiceActivityThreshold: 0.35 },
@@ -229,14 +229,12 @@ describe("api", () => {
   });
 
   it("maps generated topology mode values to REST topology strings", () => {
-    expect(generatedMediaTopologyModeToRest(WebrpcMediaTopologyMode.P2P_MESH)).toBe("p2p_mesh");
     expect(generatedMediaTopologyModeToRest(WebrpcMediaTopologyMode.MEDIA_RELAY)).toBe("media_relay");
   });
 
   it("maps generated media relay values to REST strings", () => {
     expect(generatedMediaRelayStatusToRest(WebrpcMediaRelayStatus.INACTIVE)).toBe("inactive");
     expect(generatedMediaRelayStatusToRest(WebrpcMediaRelayStatus.ACTIVE)).toBe("active");
-    expect(generatedMediaRelayModeToRest(WebrpcMediaRelayMode.P2P_MESH)).toBe("p2p_mesh");
     expect(generatedMediaRelayModeToRest(WebrpcMediaRelayMode.MEDIA_RELAY)).toBe("media_relay");
     expect(generatedMediaTrackKindToRest(WebrpcMediaTrackKind.AUDIO)).toBe("audio");
     expect(generatedMediaTrackKindToRest(WebrpcMediaTrackKind.VIDEO)).toBe("video");

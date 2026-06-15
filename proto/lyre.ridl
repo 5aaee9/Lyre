@@ -20,16 +20,14 @@ struct IceServerConfig
   - credential?: string
 
 enum MediaTopologyMode: uint32
-  - P2P_MESH = 0
-  - MEDIA_RELAY = 1
+  - MEDIA_RELAY = 0
 
 enum MediaRelayStatus: uint32
   - INACTIVE = 0
   - ACTIVE = 1
 
 enum MediaRelayMode: uint32
-  - P2P_MESH = 0
-  - MEDIA_RELAY = 1
+  - MEDIA_RELAY = 0
 
 enum MediaTrackKind: uint32
   - AUDIO = 0

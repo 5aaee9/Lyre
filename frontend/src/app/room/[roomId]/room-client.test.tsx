@@ -40,14 +40,6 @@ function makeUser(id: string, nickname = id): UserProfile {
 
 const users = [makeUser("user_a", "Ada"), makeUser("user_b", "Bob"), makeUser("user_c", "Cam")];
 
-function sentMessages() {
-  return send.mock.calls.map(([message]) => JSON.parse(message as string));
-}
-
-function selectPeerMesh() {
-  fireEvent.change(screen.getByLabelText("Audio mode"), { target: { value: "peer_mesh" } });
-}
-
 class MockWebSocket {
   onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -246,7 +238,7 @@ describe("RoomClient", () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
 
-    expect(screen.getByLabelText("Audio mode")).toHaveValue("server_relay");
+    expect(screen.queryByLabelText("Audio mode")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Connect audio"));
 
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
@@ -268,7 +260,6 @@ describe("RoomClient", () => {
     );
     expect(send).not.toHaveBeenCalled();
     expect(screen.getByText("Server relay audio connected")).toBeInTheDocument();
-    expect(screen.getByLabelText("Audio mode")).toBeDisabled();
     expect(screen.getByText("Connect audio")).toBeDisabled();
   });
 
@@ -365,187 +356,6 @@ describe("RoomClient", () => {
     expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
-  });
-
-  it("starts one peer connection per remote user and sends targeted offers", async () => {
-    render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    selectPeerMesh();
-
-    fireEvent.click(screen.getByText("Connect audio"));
-
-    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
-    expect(apiMocks.getIceServers.mock.invocationCallOrder[0]).toBeLessThan(
-      getUserMedia.mock.invocationCallOrder[0]
-    );
-    await waitFor(() => expect(peerConnections).toHaveLength(2));
-    expect(sentMessages()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "offer", recipient_id: "user_b" }),
-        expect.objectContaining({ type: "offer", recipient_id: "user_c" })
-      ])
-    );
-    expect(apiMocks.closeServerMediaSession).not.toHaveBeenCalled();
-  });
-
-  it("does not create a second mesh session when connect audio is clicked twice", async () => {
-    render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    selectPeerMesh();
-
-    fireEvent.click(screen.getByText("Connect audio"));
-    fireEvent.click(screen.getByText("Connect audio"));
-
-    await waitFor(() => expect(peerConnections).toHaveLength(2));
-    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
-    expect(stopTrack).not.toHaveBeenCalled();
-  });
-
-  it("keeps peer-specific startup errors visible", async () => {
-    createOfferMock.mockRejectedValue(new Error("offer failed"));
-    render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    selectPeerMesh();
-
-    fireEvent.click(screen.getByText("Connect audio"));
-
-    await waitFor(() => expect(screen.getByText("offer failed")).toBeInTheDocument());
-    expect(screen.queryByText("Audio offers sent")).not.toBeInTheDocument();
-  });
-
-  it("answers incoming offers after audio is started", async () => {
-    render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    selectPeerMesh();
-    fireEvent.click(screen.getByText("Connect audio"));
-    await waitFor(() => expect(peerConnections).toHaveLength(2));
-    send.mockClear();
-
-    act(() => {
-      sockets[0].onmessage?.(
-        new MessageEvent("message", {
-          data: JSON.stringify({
-            type: "offer",
-            room_id: "DEFAULT",
-            sender_id: "user_d",
-            recipient_id: "user_a",
-            payload: { type: "offer", sdp: "remote-offer" }
-          })
-        })
-      );
-    });
-
-    await waitFor(() => expect(peerConnections).toHaveLength(3));
-    expect(peerConnections[2].setRemoteDescription).toHaveBeenCalledWith({ type: "offer", sdp: "remote-offer" });
-    expect(send).toHaveBeenCalledWith(
-      JSON.stringify({
-        type: "answer",
-        room_id: "DEFAULT",
-        sender_id: "user_a",
-        recipient_id: "user_d",
-        payload: { type: "answer", sdp: "local-answer-undefined" }
-      })
-    );
-  });
-
-  it("routes incoming ice candidates to the sender peer", async () => {
-    render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    selectPeerMesh();
-    fireEvent.click(screen.getByText("Connect audio"));
-    await waitFor(() => expect(peerConnections).toHaveLength(2));
-
-    act(() => {
-      sockets[0].onmessage?.(
-        new MessageEvent("message", {
-          data: JSON.stringify({
-            type: "ice-candidate",
-            room_id: "DEFAULT",
-            sender_id: "user_c",
-            recipient_id: "user_a",
-            payload: { type: "ice-candidate", candidate: "candidate-c", sdp_mid: "0", sdp_m_line_index: 0 }
-          })
-        })
-      );
-    });
-
-    await waitFor(() =>
-      expect(peerConnections[1].addIceCandidate).toHaveBeenCalledWith({
-        candidate: "candidate-c",
-        sdpMid: "0",
-        sdpMLineIndex: 0
-      })
-    );
-    expect(peerConnections[0].addIceCandidate).not.toHaveBeenCalled();
-  });
-
-  it("offers to a newly joined user after audio has started", async () => {
-    render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    selectPeerMesh();
-    fireEvent.click(screen.getByText("Connect audio"));
-    await waitFor(() => expect(peerConnections).toHaveLength(2));
-    send.mockClear();
-
-    act(() => {
-      sockets[0].onmessage?.(
-        new MessageEvent("message", {
-          data: JSON.stringify({
-            type: "user-joined",
-            room_id: "DEFAULT",
-            sender_id: "user_d",
-            payload: { type: "user-joined", user: makeUser("user_d", "Dee") }
-          })
-        })
-      );
-    });
-
-    await waitFor(() => expect(peerConnections).toHaveLength(3));
-    expect(sentMessages()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: "offer", recipient_id: "user_d" })])
-    );
-    expect(screen.getByText("Dee")).toBeInTheDocument();
-  });
-
-  it("closes a leaving user's peer connection", async () => {
-    render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    selectPeerMesh();
-    fireEvent.click(screen.getByText("Connect audio"));
-    await waitFor(() => expect(peerConnections).toHaveLength(2));
-
-    act(() => {
-      sockets[0].onmessage?.(
-        new MessageEvent("message", {
-          data: JSON.stringify({
-            type: "user-left",
-            room_id: "DEFAULT",
-            sender_id: "user_b",
-            payload: { type: "user-left", user_id: "user_b" }
-          })
-        })
-      );
-    });
-
-    await waitFor(() => expect(peerConnections[0].close).toHaveBeenCalledOnce());
-    expect(peerConnections[1].close).not.toHaveBeenCalled();
-    expect(screen.queryByText("Bob")).not.toBeInTheDocument();
-    expect(screen.getByText("Cam")).toBeInTheDocument();
-  });
-
-  it("closes peer connections and stops local tracks on unmount", async () => {
-    const rendered = render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    selectPeerMesh();
-    fireEvent.click(screen.getByText("Connect audio"));
-    await waitFor(() => expect(peerConnections).toHaveLength(2));
-
-    rendered.unmount();
-
-    expect(peerConnections[0].close).toHaveBeenCalledOnce();
-    expect(peerConnections[1].close).toHaveBeenCalledOnce();
-    expect(stopTrack).toHaveBeenCalledOnce();
-    expect(sockets[0].close).toHaveBeenCalledOnce();
   });
 
   it("does not start media when ice server fetch fails", async () => {

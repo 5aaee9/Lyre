@@ -111,10 +111,10 @@ async fn media_topology_route_documents_current_runtime_boundary() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_json(response).await;
-    assert_eq!(body["mode"], "p2p_mesh");
+    assert_eq!(body["mode"], "media_relay");
     assert_eq!(body["turn_relay_supported"], true);
-    assert_eq!(body["server_side_audio_processing"], false);
-    assert_eq!(body["server_side_noise_cancelling"], false);
+    assert_eq!(body["server_side_audio_processing"], true);
+    assert_eq!(body["server_side_noise_cancelling"], true);
     assert_eq!(body["server_noise_cancelling_requires"], "media_relay");
 }
 
@@ -130,7 +130,7 @@ async fn media_relay_status_defaults_to_inactive() {
     let body = body_json(response).await;
     assert_eq!(body["room_id"], "DEFAULT");
     assert_eq!(body["status"], "inactive");
-    assert_eq!(body["mode"], "p2p_mesh");
+    assert_eq!(body["mode"], "media_relay");
     assert_eq!(body["server_side_audio_processing"], false);
     assert_eq!(body["server_side_noise_cancelling"], false);
     assert_eq!(body["noise"]["provider"], "off");

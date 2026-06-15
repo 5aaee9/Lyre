@@ -41,19 +41,17 @@ export function generatedNoiseProviderToRest(provider: WebrpcNoiseProvider): Noi
   }
 }
 
-export type MediaTopologyMode = "p2p_mesh" | "media_relay";
+export type MediaTopologyMode = "media_relay";
 
 export function generatedMediaTopologyModeToRest(mode: WebrpcMediaTopologyMode): MediaTopologyMode {
   switch (mode) {
     case WebrpcMediaTopologyMode.MEDIA_RELAY:
       return "media_relay";
-    case WebrpcMediaTopologyMode.P2P_MESH:
-      return "p2p_mesh";
   }
 }
 
 export type MediaRelayStatus = "inactive" | "active";
-export type MediaRelayMode = "p2p_mesh" | "media_relay";
+export type MediaRelayMode = "media_relay";
 export type MediaTrackKind = "audio" | "video";
 export type ServerMediaSessionState = "new" | "negotiating" | "connected" | "closed";
 
@@ -70,8 +68,6 @@ export function generatedMediaRelayModeToRest(mode: WebrpcMediaRelayMode): Media
   switch (mode) {
     case WebrpcMediaRelayMode.MEDIA_RELAY:
       return "media_relay";
-    case WebrpcMediaRelayMode.P2P_MESH:
-      return "p2p_mesh";
   }
 }
 

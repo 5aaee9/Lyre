@@ -10,7 +10,7 @@ fn default_status_is_inactive() {
     let status = registry.status(RoomId::default_room());
 
     assert_eq!(status.status, MediaRelayStatus::Inactive);
-    assert_eq!(status.mode, MediaRelayMode::P2pMesh);
+    assert_eq!(status.mode, MediaRelayMode::MediaRelay);
     assert!(!status.server_side_audio_processing);
     assert!(!status.server_side_noise_cancelling);
     assert!(status.participants.is_empty());

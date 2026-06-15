@@ -106,7 +106,7 @@ async fn webrpc_public_discovery_methods_return_wrapper_shapes() {
         .await
         .unwrap();
     let topology = body_json(topology).await;
-    assert_eq!(topology["topology"]["mode"], "P2P_MESH");
+    assert_eq!(topology["topology"]["mode"], "MEDIA_RELAY");
     assert_eq!(
         topology["topology"]["serverNoiseCancellingRequires"],
         "MEDIA_RELAY"

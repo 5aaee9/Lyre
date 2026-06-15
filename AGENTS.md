@@ -48,6 +48,7 @@ Frontend browser settings/state must use Zustand stores. Do not manually read or
 
 ## 项目要求
 - No legacy fallback
+- Lyre audio topology is server relay only. Do not add, restore, or preserve peer mesh audio mode, peer-to-peer audio negotiation, or mesh compatibility fallbacks.
 - 不要吞掉底层异常或 cause/context 链。跨运行时、reload、listener、配置源、网络/系统调用等边界记录或返回错误时，必须保留下层错误信息方便排查；Rust `anyhow` 错误进入日志时优先使用 `{err:#}` / `{error:#}` 或等价完整 context 链格式，而不是只输出最外层 `Display`。
 - Ignore superpowers:using-git-worktrees
 

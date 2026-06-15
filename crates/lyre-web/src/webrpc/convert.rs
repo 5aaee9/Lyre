@@ -53,7 +53,6 @@ impl From<lyre_core::IceServerConfig> for IceServerConfig {
 impl From<lyre_core::MediaTopologyMode> for MediaTopologyMode {
     fn from(mode: lyre_core::MediaTopologyMode) -> Self {
         match mode {
-            lyre_core::MediaTopologyMode::P2pMesh => Self::P2P_MESH,
             lyre_core::MediaTopologyMode::MediaRelay => Self::MEDIA_RELAY,
         }
     }
@@ -83,7 +82,6 @@ impl From<lyre_core::MediaRelayStatus> for MediaRelayStatus {
 impl From<lyre_core::MediaRelayMode> for MediaRelayMode {
     fn from(mode: lyre_core::MediaRelayMode) -> Self {
         match mode {
-            lyre_core::MediaRelayMode::P2pMesh => Self::P2P_MESH,
             lyre_core::MediaRelayMode::MediaRelay => Self::MEDIA_RELAY,
         }
     }

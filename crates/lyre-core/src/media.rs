@@ -6,7 +6,6 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaRelayMode {
-    P2pMesh,
     MediaRelay,
 }
 
@@ -259,11 +258,7 @@ impl MediaRelayRegistry {
             } else {
                 MediaRelayStatus::Inactive
             },
-            mode: if active {
-                MediaRelayMode::MediaRelay
-            } else {
-                MediaRelayMode::P2pMesh
-            },
+            mode: MediaRelayMode::MediaRelay,
             server_side_audio_processing: false,
             server_side_noise_cancelling: false,
             noise: room.noise.clone(),
@@ -301,7 +296,7 @@ fn inactive_status(room_id: RoomId) -> MediaRelayRoomStatus {
     MediaRelayRoomStatus {
         room_id,
         status: MediaRelayStatus::Inactive,
-        mode: MediaRelayMode::P2pMesh,
+        mode: MediaRelayMode::MediaRelay,
         server_side_audio_processing: false,
         server_side_noise_cancelling: false,
         noise: NoiseCancellationConfig::default(),
