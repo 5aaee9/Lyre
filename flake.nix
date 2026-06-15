@@ -47,6 +47,9 @@
         commonArgs = {
           inherit src;
           strictDeps = true;
+          buildInputs = [
+            pkgs.libopus
+          ];
         };
 
         apiArgs = commonArgs // {
@@ -108,6 +111,7 @@
             cargo-nextest
             devToolchain
             fenixPkgs.rust-analyzer
+            libopus
           ];
         };
 

@@ -74,6 +74,7 @@
 - Server-media processed Opus egress now carries source RTP timestamp metadata through the runtime and fades in after source timestamp gaps to avoid click/pop discontinuities.
 - Server-media Opus ingress now records but skips non-Opus RTP payload types before decode, preventing comfort-noise or other audio payloads from being decoded as Opus PCM.
 - Server-media WebRTC can now dump inbound and outbound RTP payload records with `LYRE_DEBUG_DUMP_PAYLOAD` for diagnosing browser-sourced audio artifacts.
+- Server-media processed Opus egress now uses libopus for browser-compatible RTP payloads instead of the pure Rust encoder that produced libopus-decoder artifacts.
 
 ## Next
 
