@@ -56,10 +56,14 @@ class MockAudioSource {
 }
 
 class MockAudioContext {
+  state = "suspended";
   destination = {};
   createMediaStreamSource = vi.fn((stream: MediaStream) => new MockAudioSource(stream));
   createGain = vi.fn(() => new MockGainNode());
   close = vi.fn();
+  resume = vi.fn(async () => {
+    this.state = "running";
+  });
 
   constructor() {
     audioContexts.push(this);
@@ -283,6 +287,18 @@ describe("ServerMediaAudioSession", () => {
 
     session.setUserAudioSettings("user_b", { muted: true, volumePercent: 150 });
     expect(gainNodes[0].gain.value).toBe(0);
+  });
+
+  it("resumes the playback audio context when a source track starts", async () => {
+    const session = makeSession();
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    expect(audioContexts[0].resume).toHaveBeenCalledOnce();
   });
 
   it("clamps applied per-user gain at the audio boundary", async () => {

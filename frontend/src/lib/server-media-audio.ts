@@ -175,6 +175,9 @@ export class ServerMediaAudioSession {
     const gain = audioContext.createGain();
     source.connect(gain);
     gain.connect(audioContext.destination);
+    if (audioContext.state === "suspended") {
+      void audioContext.resume().catch((error: unknown) => this.reportError(error));
+    }
     this.remotePlayback.set(sourceUserId, { stream, source, gain });
     this.setUserAudioSettings(
       sourceUserId,
