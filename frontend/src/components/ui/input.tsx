@@ -1,14 +1,14 @@
 import type { InputHTMLAttributes } from "react";
+import { cn } from "@/lib/utils";
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={[
-        "h-10 w-full rounded-md border border-[#cbd5ce] bg-white px-3 text-sm outline-none",
-        "focus:border-[#1f6f50]",
-        props.className ?? ""
-      ].join(" ")}
+      className={cn(
+        "flex h-9 w-full rounded-md border border-neutral-200 bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-950 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
     />
   );
 }

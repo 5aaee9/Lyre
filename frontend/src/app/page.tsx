@@ -69,7 +69,7 @@ export default function Home() {
         </Select>
       </label>
         <label className="flex items-center gap-2 text-sm">
-          <Switch checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+          <Switch checked={remember} onCheckedChange={setRemember} />
           Remember Room ID
         </label>
         <Button disabled={joining} onClick={onJoin}>

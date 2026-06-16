@@ -223,12 +223,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
           <p className="mt-1 text-sm text-[#5c6a61]">{status}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+          <Button aria-label="Settings" onClick={() => setSettingsOpen(true)} variant="outline">
             <Settings className="h-4 w-4" />
             <span className="ml-2">Settings</span>
           </Button>
           <Button disabled={audioStarted} onClick={connectAudio}>Connect audio</Button>
-          <Button className="bg-[#7a2f2f]" onClick={leave}>Leave</Button>
+          <Button onClick={leave} variant="destructive">Leave</Button>
         </div>
       </div>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} onSave={saveSettings} />
