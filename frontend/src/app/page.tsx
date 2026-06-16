@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { joinRoom, parseNoiseProvider } from "@/lib/api";
 import { useSettingsStore } from "@/lib/settings-store";
@@ -55,19 +55,24 @@ export default function Home() {
           Noise cancellation
           <Select
             value={noise.provider}
-            onChange={(event) =>
+            onValueChange={(value) =>
               setNoise({
                 ...noise,
-                provider: parseNoiseProvider(event.target.value)
+                provider: parseNoiseProvider(value)
               })
             }
           >
-            <option value="off">Off</option>
-          <option value="rnnoise">RNNoise</option>
-          <option value="deepfilternet">DeepFilterNet</option>
-          <option value="dpdfnet">DPDFNet</option>
-        </Select>
-      </label>
+            <SelectTrigger aria-label="Noise cancellation">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">Off</SelectItem>
+              <SelectItem value="rnnoise">RNNoise</SelectItem>
+              <SelectItem value="deepfilternet">DeepFilterNet</SelectItem>
+              <SelectItem value="dpdfnet">DPDFNet</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={remember} onCheckedChange={setRemember} />
           Remember Room ID

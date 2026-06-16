@@ -12,6 +12,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import {
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { parseNoiseProvider } from "@/lib/api";
 import { readSettingsSnapshot, useSettingsStore, type SettingsSnapshot } from "@/lib/settings-store";
@@ -67,21 +73,27 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                 Provider
               </label>
               <Select
-                aria-label="Server Noise Cancelling"
-                className="col-span-3"
-                id="settings-server-noise"
                 value={noise.provider}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setNoise({
                     ...noise,
-                    provider: parseNoiseProvider(event.target.value)
+                    provider: parseNoiseProvider(value)
                   })
                 }
               >
-                <option value="off">Off</option>
-                <option value="rnnoise">RNNoise</option>
-                <option value="deepfilternet">DeepFilterNet</option>
-                <option value="dpdfnet">DPDFNet</option>
+                <SelectTrigger
+                  aria-label="Server Noise Cancelling"
+                  className="col-span-3 w-full"
+                  id="settings-server-noise"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Off</SelectItem>
+                  <SelectItem value="rnnoise">RNNoise</SelectItem>
+                  <SelectItem value="deepfilternet">DeepFilterNet</SelectItem>
+                  <SelectItem value="dpdfnet">DPDFNet</SelectItem>
+                </SelectContent>
               </Select>
             </div>
             {noise.provider === "dpdfnet" ? (
@@ -90,25 +102,31 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                   Model
                 </label>
                 <Select
-                  aria-label="DPDFNet model"
-                  className="col-span-3"
-                  id="settings-dpdfnet-model"
                   value={noise.dpdfnet.model}
-                  onChange={(event) =>
+                  onValueChange={(value) =>
                     setNoise({
                       ...noise,
                       dpdfnet: {
-                        model: event.target.value
+                        model: value
                       }
                     })
                   }
                 >
-                  <option value="baseline">baseline</option>
-                  <option value="dpdfnet2">dpdfnet2</option>
-                  <option value="dpdfnet4">dpdfnet4</option>
-                  <option value="dpdfnet8">dpdfnet8</option>
-                  <option value="dpdfnet2_48khz_hr">dpdfnet2_48khz_hr</option>
-                  <option value="dpdfnet8_48khz_hr">dpdfnet8_48khz_hr</option>
+                  <SelectTrigger
+                    aria-label="DPDFNet model"
+                    className="col-span-3 w-full"
+                    id="settings-dpdfnet-model"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="baseline">baseline</SelectItem>
+                    <SelectItem value="dpdfnet2">dpdfnet2</SelectItem>
+                    <SelectItem value="dpdfnet4">dpdfnet4</SelectItem>
+                    <SelectItem value="dpdfnet8">dpdfnet8</SelectItem>
+                    <SelectItem value="dpdfnet2_48khz_hr">dpdfnet2_48khz_hr</SelectItem>
+                    <SelectItem value="dpdfnet8_48khz_hr">dpdfnet8_48khz_hr</SelectItem>
+                  </SelectContent>
                 </Select>
               </div>
             ) : null}

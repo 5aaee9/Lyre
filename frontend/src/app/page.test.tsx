@@ -56,7 +56,8 @@ describe("Home", () => {
 
     render(<Home />);
 
-    fireEvent.change(screen.getByLabelText("Noise cancellation"), { target: { value: "deepfilternet" } });
+    fireEvent.click(screen.getByRole("combobox", { name: "Noise cancellation" }));
+    fireEvent.click(await screen.findByRole("option", { name: "DeepFilterNet" }));
     fireEvent.click(screen.getByText("Join"));
 
     await waitFor(() => {

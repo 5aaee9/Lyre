@@ -15,8 +15,8 @@ describe("SettingsDialog", () => {
     render(<SettingsDialog open onOpenChange={onOpenChange} />);
 
     fireEvent.change(screen.getByLabelText("Nickname"), { target: { value: "Ada" } });
-    fireEvent.change(screen.getByLabelText("Server Noise Cancelling"), { target: { value: "dpdfnet" } });
-    fireEvent.change(screen.getByLabelText("DPDFNet model"), { target: { value: "dpdfnet8_48khz_hr" } });
+    await chooseSelectOption("Server Noise Cancelling", "DPDFNet");
+    await chooseSelectOption("DPDFNet model", "dpdfnet8_48khz_hr");
     fireEvent.change(screen.getByLabelText("Intensity"), { target: { value: "0.75" } });
     fireEvent.change(screen.getByLabelText("Voice activity threshold"), { target: { value: "0.2" } });
     fireEvent.click(screen.getByLabelText("Echo cancellation"));
@@ -43,7 +43,7 @@ describe("SettingsDialog", () => {
     const onSave = vi.fn();
     render(<SettingsDialog open onOpenChange={vi.fn()} onSave={onSave} />);
 
-    fireEvent.change(screen.getByLabelText("Server Noise Cancelling"), { target: { value: "rnnoise" } });
+    await chooseSelectOption("Server Noise Cancelling", "RNNoise");
     fireEvent.click(screen.getByText("Save"));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
@@ -51,3 +51,8 @@ describe("SettingsDialog", () => {
     })));
   });
 });
+
+async function chooseSelectOption(label: string, option: string): Promise<void> {
+  fireEvent.click(screen.getByLabelText(label));
+  fireEvent.click(await screen.findByRole("option", { name: option }));
+}

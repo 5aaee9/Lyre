@@ -21,7 +21,7 @@ describe("RoomClient settings", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));
-    fireEvent.change(screen.getByLabelText("Server Noise Cancelling"), { target: { value: "rnnoise" } });
+    await chooseSelectOption("Server Noise Cancelling", "RNNoise");
     fireEvent.change(screen.getByLabelText("Intensity"), { target: { value: "0.75" } });
     fireEvent.click(screen.getByLabelText("Browser noise suppression"));
     fireEvent.click(screen.getByText("Save"));
@@ -63,7 +63,7 @@ describe("RoomClient settings", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));
-    fireEvent.change(screen.getByLabelText("Server Noise Cancelling"), { target: { value: "off" } });
+    await chooseSelectOption("Server Noise Cancelling", "Off");
     fireEvent.click(screen.getByText("Save"));
 
     await waitFor(() =>
@@ -77,3 +77,8 @@ describe("RoomClient settings", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
   });
 });
+
+async function chooseSelectOption(label: string, option: string): Promise<void> {
+  fireEvent.click(screen.getByLabelText(label));
+  fireEvent.click(await screen.findByRole("option", { name: option }));
+}

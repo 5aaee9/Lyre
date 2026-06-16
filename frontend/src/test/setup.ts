@@ -22,3 +22,5 @@ Object.defineProperty(globalThis, "sessionStorage", {
   },
   configurable: true
 });
+
+Element.prototype.scrollIntoView = function scrollIntoView() {};
