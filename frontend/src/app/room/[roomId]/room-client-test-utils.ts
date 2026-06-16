@@ -70,6 +70,7 @@ class MockPeerConnection {
   close = vi.fn();
   createAnswer = vi.fn(async () => ({ type: "answer", sdp: `local-answer-${this.remoteUserId}` }));
   createOffer = vi.fn(async () => createOfferMock(this));
+  getReceivers = vi.fn(() => [] as RTCRtpReceiver[]);
   getStats = vi.fn(async () => peerStatsReports[peerConnections.indexOf(this)] ?? new Map());
   setLocalDescription = vi.fn();
   setRemoteDescription = vi.fn();

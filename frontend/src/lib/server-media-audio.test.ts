@@ -83,6 +83,7 @@ class MockPeerConnection {
   addTrack = vi.fn();
   close = vi.fn();
   createOffer = vi.fn(async () => ({ type: "offer", sdp: "local-offer" }));
+  getReceivers = vi.fn(() => [] as RTCRtpReceiver[]);
   getStats = vi.fn(async () => peerStatsReports[peerConnections.indexOf(this)] ?? new Map());
   setLocalDescription = vi.fn();
   setRemoteDescription = vi.fn();
@@ -350,6 +351,10 @@ describe("ServerMediaAudioSession", () => {
       track: { id: "lyre-user:user_b:audio" },
       streams: []
     } as unknown as RTCTrackEvent);
+    peerConnections[0].getReceivers.mockReturnValue([
+      { track: { id: "lyre-user:user_b:audio" } as MediaStreamTrack } as RTCRtpReceiver,
+      { track: { id: "receiver-audio" } as MediaStreamTrack } as RTCRtpReceiver
+    ]);
 
     const diagnostics = await session.diagnostics();
 
@@ -358,6 +363,10 @@ describe("ServerMediaAudioSession", () => {
     expect(diagnostics.signalingState).toBe("stable");
     expect(diagnostics.audioContextState).toBe("running");
     expect(diagnostics.remoteTrackIds).toEqual(["lyre-user:user_b:audio"]);
+    expect(diagnostics.receiverTrackIds).toEqual(["lyre-user:user_b:audio", "receiver-audio"]);
+    expect(diagnostics.onTrackTrackIds).toEqual(["lyre-user:user_b:audio"]);
+    expect(diagnostics.rejectedTrackIds).toEqual([]);
+    expect(diagnostics.lastPlaybackError).toBeNull();
     expect(diagnostics.stats).toEqual({
       packetsSent: 12,
       bytesSent: 3456,
@@ -435,6 +444,11 @@ describe("ServerMediaAudioSession", () => {
 
     expect(audioContexts).toHaveLength(0);
     expect(onError).toHaveBeenCalledWith("Ignored server media track with invalid id: remote-track");
+    await expect(session.diagnostics()).resolves.toMatchObject({
+      onTrackTrackIds: ["remote-track"],
+      rejectedTrackIds: ["remote-track"],
+      lastPlaybackError: "Ignored server media track with invalid id: remote-track"
+    });
   });
 
   it("toggles local microphone tracks without closing the session", async () => {

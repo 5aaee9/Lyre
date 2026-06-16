@@ -82,6 +82,14 @@ export function RoomAudioDiagnostics({
           <dd>{subscribedSourceIds.length ? subscribedSourceIds.join(", ") : "none"}</dd>
           <dt className="text-[#5c6a61]">Remote tracks</dt>
           <dd>{diagnostics?.remoteTrackIds.length ? diagnostics.remoteTrackIds.join(", ") : "none"}</dd>
+          <dt className="text-[#5c6a61]">Receiver tracks</dt>
+          <dd>{diagnostics?.receiverTrackIds.length ? diagnostics.receiverTrackIds.join(", ") : "none"}</dd>
+          <dt className="text-[#5c6a61]">Track events</dt>
+          <dd>{diagnostics?.onTrackTrackIds.length ? diagnostics.onTrackTrackIds.join(", ") : "none"}</dd>
+          <dt className="text-[#5c6a61]">Rejected tracks</dt>
+          <dd>{diagnostics?.rejectedTrackIds.length ? diagnostics.rejectedTrackIds.join(", ") : "none"}</dd>
+          <dt className="text-[#5c6a61]">Playback error</dt>
+          <dd>{diagnostics?.lastPlaybackError ?? "none"}</dd>
         </dl>
       </div>
     </div>

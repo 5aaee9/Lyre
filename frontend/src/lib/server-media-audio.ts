@@ -48,6 +48,10 @@ export type ServerMediaAudioDiagnostics = {
   signalingState: RTCSignalingState;
   audioContextState: AudioContextState | "uncreated";
   remoteTrackIds: string[];
+  receiverTrackIds: string[];
+  onTrackTrackIds: string[];
+  rejectedTrackIds: string[];
+  lastPlaybackError: string | null;
   stats: ServerMediaAudioStats;
 };
 
@@ -74,6 +78,9 @@ export class ServerMediaAudioSession {
   private candidatePoll?: number;
   private audioContext?: AudioContext;
   private offerAnswered = false;
+  private readonly onTrackTrackIds: string[] = [];
+  private readonly rejectedTrackIds: string[] = [];
+  private lastPlaybackError: string | null = null;
 
   constructor(private readonly input: ServerMediaAudioSessionInput) {
     this.audioTrackId = input.audioTrackId ?? DEFAULT_AUDIO_TRACK_ID;
@@ -136,6 +143,12 @@ export class ServerMediaAudioSession {
       remoteTrackIds: [...this.remotePlayback.values()].flatMap((playback) =>
         playback.stream.getAudioTracks().map((track) => track.id)
       ),
+      receiverTrackIds: this.peer.getReceivers()
+        .map((receiver) => receiver.track?.id)
+        .filter((trackId): trackId is string => typeof trackId === "string" && trackId.length > 0),
+      onTrackTrackIds: [...this.onTrackTrackIds],
+      rejectedTrackIds: [...this.rejectedTrackIds],
+      lastPlaybackError: this.lastPlaybackError,
       stats
     };
   }
@@ -211,9 +224,11 @@ export class ServerMediaAudioSession {
   }
 
   private addRemoteTrack(track: MediaStreamTrack): void {
+    this.onTrackTrackIds.push(track.id);
     const sourceUserId = parseServerMediaSourceTrackId(track.id);
     if (!sourceUserId) {
-      this.reportError(`Ignored server media track with invalid id: ${track.id}`);
+      this.rejectedTrackIds.push(track.id);
+      this.reportPlaybackError(`Ignored server media track with invalid id: ${track.id}`);
       return;
     }
     this.removeUserAudio(sourceUserId);
@@ -226,7 +241,7 @@ export class ServerMediaAudioSession {
     source.connect(gain);
     gain.connect(audioContext.destination);
     if (audioContext.state === "suspended") {
-      void audioContext.resume().catch((error: unknown) => this.reportError(error));
+      void audioContext.resume().catch((error: unknown) => this.reportPlaybackError(error));
     }
     this.remotePlayback.set(sourceUserId, { stream, source, gain });
     this.setUserAudioSettings(
@@ -275,6 +290,16 @@ export class ServerMediaAudioSession {
       return;
     }
     this.input.onError?.(typeof error === "string" ? error : "Audio connection failed");
+  }
+
+  private reportPlaybackError(error: unknown): void {
+    const message = error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "Audio playback failed";
+    this.lastPlaybackError = message;
+    this.input.onError?.(message);
   }
 }
 

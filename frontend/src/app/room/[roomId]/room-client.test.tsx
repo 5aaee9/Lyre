@@ -243,6 +243,10 @@ describe("RoomClient", () => {
     ]);
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    peerConnections[0].getReceivers.mockReturnValue([
+      { track: { id: "lyre-user:user_b:audio" } as MediaStreamTrack } as RTCRtpReceiver,
+      { track: { id: "receiver-only-track" } as MediaStreamTrack } as RTCRtpReceiver
+    ]);
     act(() => {
       peerConnections[0].ontrack?.({
         track: { id: "lyre-user:user_b:audio" },
@@ -257,8 +261,28 @@ describe("RoomClient", () => {
     expect(screen.getByText("890")).toBeInTheDocument();
     expect(screen.getByText("31 ms")).toBeInTheDocument();
     expect(screen.getAllByText("user_b, user_c")).toHaveLength(2);
-    expect(screen.getByText("lyre-user:user_b:audio")).toBeInTheDocument();
+    expect(screen.getAllByText("lyre-user:user_b:audio")).toHaveLength(2);
+    expect(screen.getByText("lyre-user:user_b:audio, receiver-only-track")).toBeInTheDocument();
+    expect(screen.getAllByText("none").length).toBeGreaterThanOrEqual(2);
     expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce();
+  });
+
+  it("shows rejected server media track ids in diagnostics", async () => {
+    useSettingsStore.getState().setAudioDiagnosticsEnabled(true);
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    act(() => {
+      peerConnections[0].ontrack?.({
+        track: { id: "remote-track" },
+        streams: []
+      } as unknown as RTCTrackEvent);
+    });
+
+    await waitFor(() => expect(screen.getByText("Ignored server media track with invalid id: remote-track")).toBeInTheDocument());
+
+    expect(screen.getAllByText("remote-track")).toHaveLength(2);
+    expect(screen.getAllByText("Ignored server media track with invalid id: remote-track")).toHaveLength(2);
   });
 
   it("uses persisted muted users before first server-media connect", async () => {
