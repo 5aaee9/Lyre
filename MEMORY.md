@@ -172,15 +172,20 @@
 
 - Wired `NoiseProvider::Deepfilternet` to a Rust libDF DSP runtime using the `deep_filter` package's `df::DFState`.
 - The runtime keeps one persistent `DFState` per noise config and processes 48 kHz mono PCM in 480-sample chunks through `DFState::process_frame`.
-- This is STFT/ISTFT frame reconstruction and provider plumbing only; it does not include pretrained DeepFilterNet neural model inference, post-filtering, model configuration, or proven noise attenuation.
-- Full DeepFilterNet model inference remains future work.
+- Superseded on 2026-06-17 by DeepFilterNet3 ONNX Runtime inference.
 
 ## 2026-06-15 DeepFilterNet Runtime Configuration
 
 - Added a Lyre-owned `DeepFilterNetRuntimeConfig` for libDF sample rate, channel count, FFT size, hop size, ERB bands, and minimum ERB frequencies.
 - Validated runtime config before constructing `DFState` so invalid CLI/env input fails startup instead of reaching panic-prone libDF invariants or falling back silently.
 - Threaded the runtime config from `lyre serve` CLI/env and `lyre config print` through `lyre-web::ServeConfig`, `AppState`, `WebMediaRuntime`, and the noise canceller cache key.
-- Kept this explicitly scoped to libDF DSP/STFT configuration; `deep_filter = 0.2.5` still does not provide a Rust pretrained neural checkpoint loader.
+- Superseded on 2026-06-17 by DeepFilterNet3 ONNX model directory/thread configuration.
+
+## 2026-06-17 DeepFilterNet3 ONNX Runtime
+
+- Replaced the DeepFilterNet provider's libDF-only DSP path with DeepFilterNet3 ONNX Runtime inference over `enc.onnx`, `erb_dec.onnx`, and `df_dec.onnx`.
+- Kept Rust `deep_filter` for streaming STFT/ISTFT, ERB feature extraction, ERB mask application, and deep-filter reconstruction around the ONNX model outputs.
+- Runtime configuration now uses `--deepfilternet-model-dir`, `--deepfilternet-intra-threads`, and `--deepfilternet-inter-threads`; local downloaded model artifacts live under ignored `deepfilternet/`.
 
 ## 2026-06-15 Server Media Jitter Buffer
 

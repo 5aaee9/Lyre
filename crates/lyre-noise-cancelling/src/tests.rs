@@ -386,8 +386,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
             ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig {
-            fft_size: 1920,
-            hop_size: 960,
+            model_dir: "custom-deepfilternet/onnx".into(),
             ..DeepFilterNetRuntimeConfig::default()
         },
     );
@@ -410,8 +409,7 @@ fn audio_frame_processor_adapter_preserves_deepfilternet_runtime_per_config_key(
             ..NoiseCancellationConfig::default()
         },
         DeepFilterNetRuntimeConfig {
-            fft_size: 1920,
-            hop_size: 960,
+            model_dir: "custom-deepfilternet/onnx".into(),
             ..DeepFilterNetRuntimeConfig::default()
         },
     );

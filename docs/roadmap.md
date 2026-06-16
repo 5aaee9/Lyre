@@ -26,8 +26,8 @@
 - Server audio RTP ingress boundary with Opus receive negotiation, remote track snapshots, and internal RTP packet capture.
 - Decoded incoming Opus RTP into 48 kHz mono PCM frames and fed them into the existing server media runtime.
 - Server-side RNNoise processing for real decoded 20 ms Opus PCM frames.
-- DeepFilterNet provider wiring through Rust libDF DSP frame reconstruction.
-- DeepFilterNet libDF runtime configuration through CLI/env, server state, and media runtime construction.
+- Initial DeepFilterNet provider wiring through Rust libDF DSP frame reconstruction, superseded by DeepFilterNet3 ONNX inference.
+- Initial DeepFilterNet libDF runtime configuration through CLI/env, server state, and media runtime construction, superseded by model-directory and ONNX thread configuration.
 - Automatic server-media draining and processing for negotiated WebRTC tracks.
 - Bounded server-media RTP jitter buffering with duplicate/stale packet dropping and deterministic loss detection.
 - Deterministic PCM packet loss concealment synthesis for server media ingress after jitter-buffer loss detection.
@@ -79,6 +79,7 @@
 - Nix `lyre-api` packaging now carries libopus and GCC runtime libraries in the runtime closure so the libopus-backed WebRTC codec path starts without host library dependencies.
 - DPDFNet server-side noise cancellation provider wired through ONNX Runtime with streaming STFT/ISTFT, model metadata state initialization, configurable model directory, and per-user DPDFNet model selection.
 - DPDFNet 16 kHz ONNX models now resample 48 kHz server PCM down before inference and back up after inference, so non-48 kHz DPDFNet selections are effective in the WebRTC relay path.
+- DeepFilterNet server-side noise cancellation now uses the DeepFilterNet3 ONNX `enc.onnx`, `erb_dec.onnx`, and `df_dec.onnx` pipeline with configurable model directory and ONNX Runtime thread counts.
 - Frontend server noise cancelling controls now live under Settings with provider-specific DPDFNet model selection, and Room no longer shows peer noise cancelling provider details.
 - Settings now use a reusable shadcn/Radix Dialog modal, and saving settings from Room updates server relay noise settings plus recreates browser user media so browser DSP changes take effect immediately.
 - Authenticated media relay settings updates can switch server-side noise cancellation between off and denoise providers without dropping registered relay tracks.
@@ -91,7 +92,6 @@
 ## Next
 
 - Add Nix packaging for the Next.js frontend if Nix becomes a deployment target.
-- Add full DeepFilterNet neural model inference/configuration for decoded WebRTC tracks.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Add production Helm values for TLS, real hostnames, secrets, persistence, and scaling policy.
 - Add production-grade database/session management if anonymous JSON persistence stops being sufficient.

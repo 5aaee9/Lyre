@@ -68,10 +68,9 @@ mod tests {
             "Authentication realm for the embedded TURN relay",
             "UDP relay port range for the embedded TURN relay",
             "JSON state file used to persist anonymous rooms and access tokens",
-            "DeepFilterNet FFT window size",
-            "DeepFilterNet hop size",
-            "DeepFilterNet ERB band count",
-            "DeepFilterNet minimum ERB frequency bin count",
+            "Directory containing DeepFilterNet3 enc.onnx, erb_dec.onnx, and df_dec.onnx",
+            "ONNX Runtime intra-op threads for DeepFilterNet3",
+            "ONNX Runtime inter-op threads for DeepFilterNet3",
         ] {
             assert!(serve_help.contains(expected), "{expected}");
         }

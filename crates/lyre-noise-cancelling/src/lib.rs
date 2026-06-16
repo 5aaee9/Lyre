@@ -5,8 +5,8 @@ pub use lyre_core::{DpdfNetConfig, NoiseCancellationConfig, NoiseProvider};
 
 pub use deepfilternet::{
     DeepFilterNetNoiseCanceller, DeepFilterNetRuntimeConfig, DEEPFILTERNET_CHANNELS,
-    DEEPFILTERNET_DEFAULT_ERB_BANDS, DEEPFILTERNET_DEFAULT_FFT_SIZE,
-    DEEPFILTERNET_DEFAULT_MIN_ERB_FREQS, DEEPFILTERNET_FRAME_SIZE, DEEPFILTERNET_SAMPLE_RATE_HZ,
+    DEEPFILTERNET_DEFAULT_INTER_THREADS, DEEPFILTERNET_DEFAULT_INTRA_THREADS,
+    DEEPFILTERNET_DEFAULT_MODEL_DIR, DEEPFILTERNET_FRAME_SIZE, DEEPFILTERNET_SAMPLE_RATE_HZ,
 };
 pub use dpdfnet::{
     dpdfnet_available_parallelism, dpdfnet_default_intra_threads, DpdfNetModelSpec,
@@ -70,14 +70,6 @@ pub enum NoiseCancellationError {
         provider: NoiseProvider,
         reason: String,
     },
-}
-
-pub(crate) fn invalid_deepfilternet_runtime_config(
-    reason: impl Into<String>,
-) -> NoiseCancellationError {
-    NoiseCancellationError::InvalidDeepFilterNetRuntimeConfig {
-        reason: reason.into(),
-    }
 }
 
 pub(crate) fn model_file_unavailable(
@@ -336,7 +328,7 @@ impl Default for NoiseCancellingAudioFrameProcessor {
 
 impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
     fn process(&self, frame: &AudioFrame, noise: &NoiseCancellationConfig) -> Vec<f32> {
-        let key = NoiseConfigKey::new(frame, noise, self.model_runtime.deepfilternet);
+        let key = NoiseConfigKey::new(frame, noise, self.model_runtime.deepfilternet.clone());
         let canceller = {
             let mut cancellers = self
                 .cancellers

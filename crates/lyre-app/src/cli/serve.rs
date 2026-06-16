@@ -105,32 +105,25 @@ pub struct ServeArgs {
     pub state_file: Option<String>,
     #[arg(
         long,
-        default_value_t = super::deepfilternet::DEFAULT_DEEPFILTERNET_FFT_SIZE,
-        env = "LYRE_DEEPFILTERNET_FFT_SIZE",
-        help = "DeepFilterNet FFT window size"
+        default_value = lyre_noise_cancelling::DEEPFILTERNET_DEFAULT_MODEL_DIR,
+        env = "LYRE_DEEPFILTERNET_MODEL_DIR",
+        help = "Directory containing DeepFilterNet3 enc.onnx, erb_dec.onnx, and df_dec.onnx"
     )]
-    pub deepfilternet_fft_size: usize,
+    pub deepfilternet_model_dir: PathBuf,
     #[arg(
         long,
-        default_value_t = super::deepfilternet::DEFAULT_DEEPFILTERNET_HOP_SIZE,
-        env = "LYRE_DEEPFILTERNET_HOP_SIZE",
-        help = "DeepFilterNet hop size"
+        default_value_t = lyre_noise_cancelling::DEEPFILTERNET_DEFAULT_INTRA_THREADS,
+        env = "LYRE_DEEPFILTERNET_INTRA_THREADS",
+        help = "ONNX Runtime intra-op threads for DeepFilterNet3"
     )]
-    pub deepfilternet_hop_size: usize,
+    pub deepfilternet_intra_threads: usize,
     #[arg(
         long,
-        default_value_t = super::deepfilternet::DEFAULT_DEEPFILTERNET_ERB_BANDS,
-        env = "LYRE_DEEPFILTERNET_ERB_BANDS",
-        help = "DeepFilterNet ERB band count"
+        default_value_t = lyre_noise_cancelling::DEEPFILTERNET_DEFAULT_INTER_THREADS,
+        env = "LYRE_DEEPFILTERNET_INTER_THREADS",
+        help = "ONNX Runtime inter-op threads for DeepFilterNet3"
     )]
-    pub deepfilternet_erb_bands: usize,
-    #[arg(
-        long,
-        default_value_t = super::deepfilternet::DEFAULT_DEEPFILTERNET_MIN_ERB_FREQS,
-        env = "LYRE_DEEPFILTERNET_MIN_ERB_FREQS",
-        help = "DeepFilterNet minimum ERB frequency bin count"
-    )]
-    pub deepfilternet_min_erb_freqs: usize,
+    pub deepfilternet_inter_threads: usize,
     #[arg(
         long,
         default_value = lyre_noise_cancelling::DPDFNET_DEFAULT_MODEL_DIR,
@@ -340,11 +333,9 @@ impl ServeArgs {
         &self,
     ) -> Result<DeepFilterNetRuntimeConfig, super::deepfilternet::DeepFilterNetConfigError> {
         super::deepfilternet::validate_deepfilternet_runtime(DeepFilterNetRuntimeConfig {
-            fft_size: self.deepfilternet_fft_size,
-            hop_size: self.deepfilternet_hop_size,
-            erb_bands: self.deepfilternet_erb_bands,
-            min_erb_freqs: self.deepfilternet_min_erb_freqs,
-            ..DeepFilterNetRuntimeConfig::default()
+            model_dir: self.deepfilternet_model_dir.clone(),
+            intra_threads: self.deepfilternet_intra_threads,
+            inter_threads: self.deepfilternet_inter_threads,
         })
     }
 

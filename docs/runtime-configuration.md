@@ -52,13 +52,16 @@ Set `--server-media-port-range <start>..<end>` or `LYRE_SERVER_MEDIA_PORT_RANGE=
 
 ## DeepFilterNet Runtime
 
-The server-side DeepFilterNet provider currently configures libDF DSP/STFT frame processing, not pretrained DeepFilterNet neural model inference.
+The server-side DeepFilterNet provider runs the DeepFilterNet3 ONNX model through ONNX Runtime. The model directory must contain:
+
+- `enc.onnx`
+- `erb_dec.onnx`
+- `df_dec.onnx`
 
 Runtime parameters:
 
-- `--deepfilternet-fft-size` / `LYRE_DEEPFILTERNET_FFT_SIZE`, default `960`
-- `--deepfilternet-hop-size` / `LYRE_DEEPFILTERNET_HOP_SIZE`, default `480`
-- `--deepfilternet-erb-bands` / `LYRE_DEEPFILTERNET_ERB_BANDS`, default `32`
-- `--deepfilternet-min-erb-freqs` / `LYRE_DEEPFILTERNET_MIN_ERB_FREQS`, default `2`
+- `--deepfilternet-model-dir` / `LYRE_DEEPFILTERNET_MODEL_DIR`, default `deepfilternet/onnx`
+- `--deepfilternet-intra-threads` / `LYRE_DEEPFILTERNET_INTRA_THREADS`, default `1`
+- `--deepfilternet-inter-threads` / `LYRE_DEEPFILTERNET_INTER_THREADS`, default `1`
 
-Invalid combinations fail startup instead of falling back silently.
+The local `deepfilternet/` model directory is ignored by git so downloaded ONNX artifacts stay out of the source tree. Invalid runtime thread counts fail startup instead of falling back silently.

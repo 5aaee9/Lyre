@@ -27,6 +27,6 @@ The media relay REST endpoints expose the room-scoped state for this path:
 
 `lyre-noise-cancelling` can run RNNoise-compatible processing for decoded 48 kHz mono PCM frames of 480 samples using `nnnoiseless`. RNNoise returns voice activity detection metadata, but Lyre's `intensity` and `voice_activity_threshold` settings do not alter or suppress output yet.
 
-DeepFilterNet uses the Rust `deep_filter` crate's libDF DSP/STFT runtime and can be configured at process startup. It still does not load pretrained DeepFilterNet neural model checkpoints.
+DeepFilterNet uses the DeepFilterNet3 ONNX `enc.onnx`, `erb_dec.onnx`, and `df_dec.onnx` neural model pipeline through ONNX Runtime. Lyre still uses the Rust `deep_filter` crate for the streaming STFT, feature extraction, ERB masking, deep-filter reconstruction, and ISTFT audio framing around the model inference.
 
 If client-side noise cancellation is added before server-side media relay processing, it should be implemented as Rust compiled to WebAssembly rather than a JavaScript DSP path.

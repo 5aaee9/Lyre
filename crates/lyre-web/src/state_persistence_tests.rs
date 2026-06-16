@@ -339,13 +339,12 @@ fn invalid_deepfilternet_runtime_fails_state_construction_with_context() {
         None,
         None,
         DeepFilterNetRuntimeConfig {
-            fft_size: 480,
-            hop_size: 480,
+            intra_threads: 0,
             ..DeepFilterNetRuntimeConfig::default()
         },
     )
     .unwrap_err();
 
     assert!(format!("{error:#}").contains("invalid DeepFilterNet runtime config"));
-    assert!(format!("{error:#}").contains("hop_size * 2 must be <= fft_size"));
+    assert!(format!("{error:#}").contains("intra-op threads must be greater than zero"));
 }

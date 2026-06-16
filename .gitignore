@@ -6,3 +6,5 @@
 /frontend/.next
 /frontend/node_modules
 /*.wav
+/deepfilternet/
+/dpdfnet/

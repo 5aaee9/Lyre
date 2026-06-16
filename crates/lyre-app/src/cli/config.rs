@@ -12,12 +12,9 @@ pub struct ConfigPrint {
 
 #[derive(Debug, Serialize)]
 pub struct DeepFilterNetRuntimeConfigPrint {
-    pub sample_rate_hz: u32,
-    pub channels: u16,
-    pub fft_size: usize,
-    pub hop_size: usize,
-    pub erb_bands: usize,
-    pub min_erb_freqs: usize,
+    pub model_dir: String,
+    pub intra_threads: usize,
+    pub inter_threads: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,12 +27,9 @@ pub struct DpdfNetRuntimeConfigPrint {
 impl From<lyre_noise_cancelling::DeepFilterNetRuntimeConfig> for DeepFilterNetRuntimeConfigPrint {
     fn from(config: lyre_noise_cancelling::DeepFilterNetRuntimeConfig) -> Self {
         Self {
-            sample_rate_hz: config.sample_rate_hz,
-            channels: config.channels,
-            fft_size: config.fft_size,
-            hop_size: config.hop_size,
-            erb_bands: config.erb_bands,
-            min_erb_freqs: config.min_erb_freqs,
+            model_dir: config.model_dir.display().to_string(),
+            intra_threads: config.intra_threads,
+            inter_threads: config.inter_threads,
         }
     }
 }
@@ -67,12 +61,12 @@ mod tests {
             value["ice_servers"][0]["urls"][0],
             "stun:stun.l.google.com:19302"
         );
-        assert_eq!(value["deepfilternet_runtime"]["sample_rate_hz"], 48_000);
-        assert_eq!(value["deepfilternet_runtime"]["channels"], 1);
-        assert_eq!(value["deepfilternet_runtime"]["fft_size"], 960);
-        assert_eq!(value["deepfilternet_runtime"]["hop_size"], 480);
-        assert_eq!(value["deepfilternet_runtime"]["erb_bands"], 32);
-        assert_eq!(value["deepfilternet_runtime"]["min_erb_freqs"], 2);
+        assert_eq!(
+            value["deepfilternet_runtime"]["model_dir"],
+            "deepfilternet/onnx"
+        );
+        assert_eq!(value["deepfilternet_runtime"]["intra_threads"], 1);
+        assert_eq!(value["deepfilternet_runtime"]["inter_threads"], 1);
         assert_eq!(value["dpdfnet_runtime"]["model_dir"], "dpdfnet/onnx");
         assert!(value["dpdfnet_runtime"]["intra_threads"].as_u64().unwrap() >= 1);
         assert_eq!(value["dpdfnet_runtime"]["inter_threads"], 1);
