@@ -133,7 +133,12 @@ impl ServerMediaNegotiator {
             .sessions
             .set_state(&key, ServerMediaSessionState::Negotiating)
             .ok_or(ServerMediaNegotiationError::SessionMissing)?;
-        self.peer_connections.insert(key, peer_connection);
+        if let Some(previous) = self.peer_connections.insert(key, peer_connection) {
+            previous
+                .close()
+                .await
+                .map_err(|source| ServerMediaNegotiationError::WebRtc { source })?;
+        }
 
         Ok(ServerMediaAnswer {
             room_id: status.room_id,
@@ -261,14 +266,39 @@ impl ServerMediaNegotiator {
 
     pub fn close(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {
         let status = self.sessions.close(key);
-        self.peer_connections.remove(key);
+        if let Some((_, peer_connection)) = self.peer_connections.remove(key) {
+            tokio::spawn(async move {
+                if let Err(error) = peer_connection.close().await {
+                    tracing::debug!(
+                        error = format_args!("{error:#}"),
+                        "server media peer connection close failed"
+                    );
+                }
+            });
+        }
         status
     }
 
     pub fn close_room(&self, room_id: &RoomId) {
         self.sessions.close_room(room_id);
-        self.peer_connections
-            .retain(|key, _| &key.room_id != room_id);
+        let keys = self
+            .peer_connections
+            .iter()
+            .filter(|entry| &entry.key().room_id == room_id)
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        for key in keys {
+            if let Some((_, peer_connection)) = self.peer_connections.remove(&key) {
+                tokio::spawn(async move {
+                    if let Err(error) = peer_connection.close().await {
+                        tracing::debug!(
+                            error = format_args!("{error:#}"),
+                            "server media peer connection close failed"
+                        );
+                    }
+                });
+            }
+        }
     }
 
     pub fn stored_peer_connection_count(&self) -> usize {

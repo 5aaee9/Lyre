@@ -474,6 +474,17 @@ impl WebRtcPeerConnectionHandle {
             .await
     }
 
+    pub async fn close(&self) -> Result<(), WebRtcStackError> {
+        self._peer_connection.close().await.map_err(|source| {
+            WebRtcStackError::ClosePeerConnection {
+                source: Box::new(source),
+            }
+        })?;
+        self.connection_state
+            .set_peer_connection_state(webrtc::peer_connection::RTCPeerConnectionState::Closed);
+        Ok(())
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn sent_egress_rtp_packets_for_test(&self) -> Vec<crate::ServerMediaEgressRtpPacket> {
         self.media_egress.sent_packets_for_test()
@@ -572,6 +583,11 @@ pub enum WebRtcStackError {
     },
     #[error("failed to create WebRTC answer")]
     CreateAnswer {
+        #[source]
+        source: Box<dyn Error + Send + Sync>,
+    },
+    #[error("failed to close WebRTC peer connection")]
+    ClosePeerConnection {
         #[source]
         source: Box<dyn Error + Send + Sync>,
     },

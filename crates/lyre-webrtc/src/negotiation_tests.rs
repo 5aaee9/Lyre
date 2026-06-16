@@ -1,6 +1,7 @@
 use std::{net::IpAddr, sync::Arc};
 
 use lyre_core::{RoomId, UserId};
+use webrtc::peer_connection::RTCPeerConnectionState;
 
 use crate::{
     egress::server_media_source_track_id, ServerMediaEgressError, ServerMediaIceCandidate,
@@ -168,6 +169,40 @@ async fn repeated_successful_offer_replaces_track_and_handle() {
     assert_eq!(sessions.sessions()[0].audio_track_id, "audio-retry");
     assert_eq!(negotiator.stored_peer_connection_count(), 1);
     assert_ne!(first_handle, second_handle);
+}
+
+#[tokio::test]
+async fn repeated_successful_offer_closes_replaced_peer_connection() {
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
+    let key = ServerMediaSessionKey {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("user_01"),
+    };
+
+    negotiator
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
+        .await
+        .unwrap();
+    let first_handle = negotiator.peer_connection_for_test(&key).unwrap();
+    negotiator
+        .answer_offer_for_sources(
+            offer("audio-retry", offer_sdp().await),
+            subscribed_sources(),
+        )
+        .await
+        .unwrap();
+    for _ in 0..32 {
+        if first_handle.connection_state().peer_connection_state == RTCPeerConnectionState::Closed {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    assert_eq!(
+        first_handle.connection_state().peer_connection_state,
+        RTCPeerConnectionState::Closed
+    );
 }
 
 #[tokio::test]
