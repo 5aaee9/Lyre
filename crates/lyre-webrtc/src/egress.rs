@@ -83,7 +83,6 @@ pub(crate) struct ServerMediaEgress {
 
 #[derive(Clone)]
 pub(crate) struct ServerMediaEgressSource {
-    track_id: String,
     track: Arc<TrackLocalStaticRTP>,
     encoder: Arc<Mutex<ServerMediaOpusEgress>>,
 }
@@ -95,13 +94,11 @@ impl ServerMediaEgress {
     ) -> Result<Self, ServerMediaEgressError> {
         let mut sources = BTreeMap::new();
         for source_user_id in source_user_ids {
-            let track_id = server_media_source_track_id(source_user_id);
             sources.insert(
                 source_user_id.clone(),
                 ServerMediaEgressSource {
-                    track_id: track_id.clone(),
                     track: Arc::new(TrackLocalStaticRTP::new(MediaStreamTrack::new(
-                        track_id,
+                        server_media_source_track_id(source_user_id),
                         "audio".to_owned(),
                         "audio".to_owned(),
                         RtpCodecKind::Audio,
@@ -141,8 +138,8 @@ impl ServerMediaEgress {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn track_ids_for_test(&self) -> Vec<String> {
         self.sources
-            .values()
-            .map(|source| source.track_id.clone())
+            .keys()
+            .map(server_media_source_track_id)
             .collect()
     }
 
