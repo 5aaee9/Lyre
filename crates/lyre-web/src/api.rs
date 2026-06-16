@@ -206,11 +206,13 @@ async fn leave_room(
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
     authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
-    let snapshot = state
+    let response = state
         .leave_room_persisted(&room_id, &request.user_id)
         .await?;
-    state.peers.user_left(&room_id, &request.user_id);
-    Ok(Json(snapshot))
+    if response.removed {
+        state.peers.user_left(&room_id, &request.user_id);
+    }
+    Ok(Json(response.room))
 }
 
 async fn media_relay_status(
@@ -343,5 +345,5 @@ async fn handle_socket(
         }
     }
 
-    state.peers.disconnect(&room_id, &user_id);
+    state.disconnect_room_socket(&room_id, &user_id).await;
 }

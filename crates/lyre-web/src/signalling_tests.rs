@@ -181,3 +181,28 @@ fn broadcast_excludes_sender_and_presence_events_emit() {
     assert_eq!(hub.user_left(&room_id, &sender_id).delivered, 1);
     assert_eq!(hub.disconnect(&room_id, &peer_id).delivered, 1);
 }
+
+#[test]
+fn remove_peer_drops_socket_without_presence_broadcast() {
+    let hub = PeerHub::new();
+    let registry = RoomRegistry::new();
+    let room_id = RoomId::default_room();
+    let leaving_id = UserId::from_external("leaving");
+    let peer_id = UserId::from_external("peer");
+    let (leaving_tx, mut leaving_rx) = mpsc::unbounded_channel();
+    let (peer_tx, mut peer_rx) = mpsc::unbounded_channel();
+    hub.connect(&registry, room_id.clone(), leaving_id.clone(), leaving_tx);
+    hub.connect(&registry, room_id.clone(), peer_id.clone(), peer_tx);
+
+    hub.remove_peer(&room_id, &leaving_id);
+    let delivered = hub.forward(SignalMessage::new(
+        room_id,
+        peer_id,
+        Some(leaving_id),
+        SignalPayload::Offer { sdp: "sdp".into() },
+    ));
+
+    assert_eq!(delivered.delivered, 0);
+    assert!(leaving_rx.try_recv().is_err());
+    assert!(peer_rx.try_recv().is_err());
+}

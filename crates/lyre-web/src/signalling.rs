@@ -158,10 +158,14 @@ impl PeerHub {
     }
 
     pub fn disconnect(&self, room_id: &RoomId, user_id: &UserId) -> SignalDelivery {
+        self.remove_peer(room_id, user_id);
+        self.user_left(room_id, user_id)
+    }
+
+    pub fn remove_peer(&self, room_id: &RoomId, user_id: &UserId) {
         if let Some(room) = self.peers.get(room_id) {
             room.remove(user_id);
         }
-        self.user_left(room_id, user_id)
     }
 
     pub fn user_joined(&self, room_id: &RoomId, user: UserProfile) -> SignalDelivery {

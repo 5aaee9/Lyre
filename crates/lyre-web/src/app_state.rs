@@ -272,7 +272,7 @@ impl AppState {
         &self,
         room_id: &RoomId,
         user_id: &lyre_core::UserId,
-    ) -> Result<lyre_core::RoomSnapshot, ApiError> {
+    ) -> Result<lyre_core::LeaveRoomResponse, ApiError> {
         let _guard = self.room_state_persistence_lock.lock().await;
         let persistence = self.room_state_persistence.lock().await.clone();
         let Some(persistence) = persistence else {
@@ -280,7 +280,7 @@ impl AppState {
             if response.removed {
                 self.metrics.record_leave();
             }
-            return Ok(response.room);
+            return Ok(response);
         };
         let rollback = self.registry.to_persisted();
         let response = self.registry.leave(room_id, user_id);
@@ -292,6 +292,28 @@ impl AppState {
         if response.removed {
             self.metrics.record_leave();
         }
-        Ok(response.room)
+        Ok(response)
+    }
+
+    pub async fn disconnect_room_socket(&self, room_id: &RoomId, user_id: &lyre_core::UserId) {
+        self.peers.remove_peer(room_id, user_id);
+        match self.leave_room_persisted(room_id, user_id).await {
+            Ok(response) if response.removed => {
+                self.peers.user_left(room_id, user_id);
+            }
+            Ok(_) => {}
+            Err(ApiError::Persistence(error)) => {
+                tracing::warn!(
+                    error = format_args!("{error:#}"),
+                    "failed to leave room after websocket disconnect"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    error = ?error,
+                    "failed to leave room after websocket disconnect"
+                );
+            }
+        }
     }
 }

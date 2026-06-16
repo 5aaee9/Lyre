@@ -82,6 +82,7 @@
 - Frontend server noise cancelling controls now live under Settings with provider-specific DPDFNet model selection, and Room no longer shows peer noise cancelling provider details.
 - Settings now use a reusable shadcn/Radix Dialog modal, and saving settings from Room updates server relay noise settings plus recreates browser user media so browser DSP changes take effect immediately.
 - Authenticated media relay settings updates can switch server-side noise cancellation between off and denoise providers without dropping registered relay tracks.
+- Authenticated room WebSocket disconnects now remove users from room membership, persist the leave, notify remaining peers, and clear stale frontend room sessions.
 - CI and Docker packaging now build the ONNX Runtime-backed DPDFNet path with explicit Nix dev shell runtime libraries and Debian trixie API image bases.
 
 ## Next

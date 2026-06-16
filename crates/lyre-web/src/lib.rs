@@ -44,6 +44,8 @@ mod signalling_tests;
 mod state_persistence_tests;
 #[cfg(test)]
 mod webrpc_tests;
+#[cfg(test)]
+mod websocket_disconnect_tests;
 
 pub use api::{router, router_with_cors};
 pub use app_state::AppState;

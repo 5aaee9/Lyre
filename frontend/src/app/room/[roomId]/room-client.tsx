@@ -66,6 +66,10 @@ function readRoomSession(roomId: string): RoomSession | null {
   }
 }
 
+function clearRoomSession() {
+  sessionStorage.removeItem("lyre.roomSession");
+}
+
 export function RoomClient({ roomId }: { roomId: string }) {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -113,7 +117,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
           return next.room ?? current;
         });
       };
-      socket.onclose = () => setStatus("Disconnected");
+      socket.onclose = () => {
+        clearRoomSession();
+        setStatus("Disconnected");
+      };
     }
 
     void enterRoom();
@@ -124,6 +131,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       audioStartedRef.current = false;
       serverMediaCleanupNeededRef.current = false;
       setAudioStarted(false);
+      clearRoomSession();
       socketRef.current?.close();
       socketRef.current = null;
     };
@@ -202,8 +210,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
     closeAudioSessions();
     audioStartedRef.current = false;
     setAudioStarted(false);
-    socketRef.current?.close();
-    socketRef.current = null;
     if (currentUser && accessToken) {
       if (shouldCloseServerMedia) {
         await closeServerMediaSession(roomId, currentUser.id, accessToken);
@@ -211,7 +217,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
       }
       await leaveRoom(roomId, currentUser.id, accessToken);
     }
-    sessionStorage.removeItem("lyre.roomSession");
+    clearRoomSession();
+    socketRef.current?.close();
+    socketRef.current = null;
     window.location.href = "/";
   }
 

@@ -145,6 +145,10 @@ describe("RoomClient", () => {
     expect(apiMocks.closeServerMediaSession.mock.invocationCallOrder[0]).toBeLessThan(
       apiMocks.leaveRoom.mock.invocationCallOrder[0]
     );
+    expect(apiMocks.leaveRoom.mock.invocationCallOrder[0]).toBeLessThan(
+      sockets[0].close.mock.invocationCallOrder[0]
+    );
+    expect(sessionStorage.getItem("lyre.roomSession")).toBeNull();
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
@@ -152,6 +156,10 @@ describe("RoomClient", () => {
   });
 
   it("keeps server relay unmount cleanup local without room mutations", async () => {
+    sessionStorage.setItem(
+      "lyre.roomSession",
+      JSON.stringify({ roomId: "DEFAULT", accessToken: "token_a", user: makeUser("user_a") })
+    );
     const rendered = render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Connect audio"));
@@ -166,6 +174,20 @@ describe("RoomClient", () => {
     expect(stopTrack).toHaveBeenCalledOnce();
     expect(removeAudio).toHaveBeenCalledOnce();
     expect(sockets[0].close).toHaveBeenCalledOnce();
+    expect(sessionStorage.getItem("lyre.roomSession")).toBeNull();
+  });
+
+  it("clears stored room session when websocket closes", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+    expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
+
+    act(() => {
+      sockets[0].onclose?.();
+    });
+
+    expect(sessionStorage.getItem("lyre.roomSession")).toBeNull();
+    expect(screen.getByText("Disconnected")).toBeInTheDocument();
   });
 
   it("cleans server relay startup failures after relay start without stopping the room relay", async () => {

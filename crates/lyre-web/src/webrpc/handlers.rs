@@ -53,9 +53,13 @@ pub(crate) async fn leave_room(
     let room_id = RoomId::parse_boundary(request.room_id)?;
     let user_id = UserId::from_external(request.user_id);
     authorize_room_user(&state, &room_id, &user_id, &headers)?;
-    let room = state.leave_room_persisted(&room_id, &user_id).await?;
-    state.peers.user_left(&room_id, &user_id);
-    Ok(Json(dto::LeaveRoomResponse { room: room.into() }))
+    let response = state.leave_room_persisted(&room_id, &user_id).await?;
+    if response.removed {
+        state.peers.user_left(&room_id, &user_id);
+    }
+    Ok(Json(dto::LeaveRoomResponse {
+        room: response.room.into(),
+    }))
 }
 
 pub(crate) async fn get_noise_providers() -> Json<dto::GetNoiseProvidersResponse> {
