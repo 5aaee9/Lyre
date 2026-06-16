@@ -122,7 +122,6 @@ async fn forward_new_packets(
                 continue;
             }
         };
-        let mut send_failed = false;
         for packet in packets.into_iter().skip(start) {
             for recipient_key in &recipient_keys {
                 if let Err(error) = negotiator
@@ -146,13 +145,10 @@ async fn forward_new_packets(
                         sequence_number = packet.sequence_number,
                         "raw Opus WebRTC egress send failed"
                     );
-                    send_failed = true;
                 }
             }
         }
-        if !send_failed {
-            forwarded.insert(source_key.clone(), packet_count);
-        }
+        forwarded.insert(source_key.clone(), packet_count);
     }
 }
 

@@ -89,6 +89,7 @@
 - Frontend room audio now starts server-relay audio automatically after join, reconnects local media on ICE interruption, and exposes local microphone `Mute` / `Unmute` instead of manual `Connect audio`.
 - Frontend room audio now supports per-remote-user mute and 0-150% volume controls backed by server-media source subscriptions and per-source WebRTC relay tracks.
 - Frontend server-media subscriptions now derive from registered relay participants and refresh after join races, avoiding 409s when a room user appears before their relay track registration completes.
+- Raw Opus server relay now drops failed realtime recipient sends instead of replaying historical RTP packets to healthy recipients.
 
 ## Next
 

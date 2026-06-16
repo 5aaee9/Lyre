@@ -565,6 +565,50 @@ async fn server_relay_off_noise_excludes_unsubscribed_raw_opus_recipient() {
     panic!("server relay audio RTP did not reach subscribed recipient peer connection");
 }
 
+#[tokio::test]
+async fn server_relay_off_noise_does_not_replay_history_when_one_recipient_is_missing() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    register_audio_track(&state, &room_id, "source");
+    register_audio_track(&state, &room_id, "subscribed");
+    register_audio_track(&state, &room_id, "missing");
+    for user_id in ["subscribed", "missing"] {
+        state
+            .media_relays
+            .update_subscriptions(
+                room_id.clone(),
+                lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                    user_id: UserId::from_external(user_id),
+                    source_user_ids: vec![UserId::from_external("source")],
+                },
+            )
+            .unwrap();
+    }
+    let source = connect_test_offer(&state, &room_id, "source").await;
+    let subscribed_key = ServerMediaSessionKey {
+        room_id: room_id.clone(),
+        user_id: UserId::from_external("subscribed"),
+    };
+    let _subscribed = connect_test_offer(&state, &room_id, "subscribed").await;
+
+    source.send_valid_opus_packets(1).await;
+
+    for _ in 0..150 {
+        let subscribed = state
+            .server_media_peer_connection_for_test(&subscribed_key)
+            .unwrap();
+        if !subscribed.sent_egress_rtp_packets_for_test().is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+            assert_eq!(subscribed.sent_egress_rtp_packets_for_test().len(), 1);
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("server relay audio RTP did not reach subscribed recipient peer connection");
+}
+
 async fn server_relay_noise_provider_reaches_recipient_with_audible_payload(
     provider: NoiseProvider,
 ) {
