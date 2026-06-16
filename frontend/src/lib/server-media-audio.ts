@@ -91,8 +91,14 @@ export class ServerMediaAudioSession {
       }
     };
     this.peer.ontrack = (event) => {
-      for (const track of event.streams[0]?.getTracks() ?? [event.track]) {
-        this.addRemoteTrack(track);
+      if (event.streams.length === 0) {
+        this.addRemoteTrack(event.track, event.track.id);
+        return;
+      }
+      for (const stream of event.streams) {
+        for (const track of stream.getTracks()) {
+          this.addRemoteTrack(track, stream.id);
+        }
       }
     };
     this.peer.oniceconnectionstatechange = () => {
@@ -223,9 +229,9 @@ export class ServerMediaAudioSession {
     }
   }
 
-  private addRemoteTrack(track: MediaStreamTrack): void {
+  private addRemoteTrack(track: MediaStreamTrack, sourceId: string): void {
     this.onTrackTrackIds.push(track.id);
-    const sourceUserId = parseServerMediaSourceTrackId(track.id);
+    const sourceUserId = parseServerMediaSourceTrackId(sourceId) ?? parseServerMediaSourceTrackId(track.id);
     if (!sourceUserId) {
       this.rejectedTrackIds.push(track.id);
       this.reportPlaybackError(`Ignored server media track with invalid id: ${track.id}`);

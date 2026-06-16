@@ -249,8 +249,11 @@ describe("RoomClient", () => {
     ]);
     act(() => {
       peerConnections[0].ontrack?.({
-        track: { id: "lyre-user:user_b:audio" },
-        streams: []
+        track: { id: "{f487de15-2380-429c-b975-21bc77253edc}" },
+        streams: [{
+          id: "lyre-user:user_b:audio",
+          getTracks: () => [{ id: "{f487de15-2380-429c-b975-21bc77253edc}" }]
+        }]
       } as unknown as RTCTrackEvent);
     });
 
@@ -261,7 +264,7 @@ describe("RoomClient", () => {
     expect(screen.getByText("890")).toBeInTheDocument();
     expect(screen.getByText("31 ms")).toBeInTheDocument();
     expect(screen.getAllByText("user_b, user_c")).toHaveLength(2);
-    expect(screen.getAllByText("lyre-user:user_b:audio")).toHaveLength(2);
+    expect(screen.getAllByText("{f487de15-2380-429c-b975-21bc77253edc}")).toHaveLength(2);
     expect(screen.getByText("lyre-user:user_b:audio, receiver-only-track")).toBeInTheDocument();
     expect(screen.getAllByText("none").length).toBeGreaterThanOrEqual(2);
     expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce();
