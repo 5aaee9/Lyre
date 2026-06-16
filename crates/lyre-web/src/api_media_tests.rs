@@ -229,6 +229,104 @@ async fn media_relay_start_registers_track_and_stop_clears_state() {
 }
 
 #[tokio::test]
+async fn media_relay_settings_update_switches_noise_on_and_off() {
+    let state = AppState::default();
+    let app = router(state.clone());
+    let (user_id, access_token) = join_for_test(app.clone(), "Alice").await;
+    app.clone()
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/start",
+            r#"{"noise":{"provider":"off","intensity":0.5,"voice_activity_threshold":0.35}}"#
+                .to_owned(),
+            &access_token,
+        ))
+        .await
+        .unwrap();
+    app.clone()
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/tracks",
+            serde_json::json!({
+                "user_id": user_id,
+                "track_id": "audio-main",
+                "kind": "audio",
+            })
+            .to_string(),
+            &access_token,
+        ))
+        .await
+        .unwrap();
+
+    let rnnoise = app
+        .clone()
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/settings",
+            serde_json::json!({
+                "user_id": user_id,
+                "noise": {
+                    "provider": "rnnoise",
+                    "intensity": 0.7,
+                    "voice_activity_threshold": 0.25
+                }
+            })
+            .to_string(),
+            &access_token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(rnnoise.status(), StatusCode::OK);
+    let rnnoise_body = body_json(rnnoise).await;
+    assert_eq!(rnnoise_body["noise"]["provider"], "rnnoise");
+    assert_eq!(
+        state
+            .media_relays
+            .require_track(
+                &RoomId::default_room(),
+                &UserId::from_external(&user_id),
+                "audio-main"
+            )
+            .unwrap()
+            .noise
+            .provider,
+        NoiseProvider::Rnnoise
+    );
+
+    let off = app
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/settings",
+            serde_json::json!({
+                "user_id": user_id,
+                "noise": {
+                    "provider": "off",
+                    "intensity": 0.5,
+                    "voice_activity_threshold": 0.35
+                }
+            })
+            .to_string(),
+            &access_token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(off.status(), StatusCode::OK);
+    let off_body = body_json(off).await;
+    assert_eq!(off_body["noise"]["provider"], "off");
+    assert_eq!(
+        state
+            .media_relays
+            .require_track(
+                &RoomId::default_room(),
+                &UserId::from_external(&user_id),
+                "audio-main"
+            )
+            .unwrap()
+            .noise
+            .provider,
+        NoiseProvider::Off
+    );
+}
+
+#[tokio::test]
 async fn media_relay_start_requires_bearer_token() {
     let app = router(AppState::default());
 

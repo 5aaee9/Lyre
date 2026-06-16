@@ -1,7 +1,8 @@
 use crate::{
     MediaRelayError, MediaRelayMode, MediaRelayRegistry, MediaRelayRegistryAggregate,
     MediaRelayStatus, MediaTrackKind, NoiseCancellationConfig, NoiseProvider,
-    RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
+    RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest, StopMediaRelayRequest,
+    UpdateMediaRelaySettingsRequest, UserId,
 };
 
 #[test]
@@ -36,6 +37,91 @@ fn start_records_default_and_custom_noise() {
         },
     );
     assert_eq!(status.noise, custom);
+}
+
+#[test]
+fn update_settings_changes_active_relay_noise_without_dropping_tracks() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = RoomId::default_room();
+    let user_id = UserId::from_external("user_01");
+    registry.start(
+        room_id.clone(),
+        StartMediaRelayRequest {
+            noise: Some(NoiseCancellationConfig {
+                provider: NoiseProvider::Rnnoise,
+                intensity: 0.8,
+                voice_activity_threshold: 0.2,
+                ..NoiseCancellationConfig::default()
+            }),
+        },
+    );
+    registry
+        .register_track(
+            room_id.clone(),
+            RegisterMediaTrackRequest {
+                user_id: user_id.clone(),
+                track_id: "audio-main".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
+
+    let off = NoiseCancellationConfig::default();
+    let status = registry
+        .update_settings(
+            room_id.clone(),
+            UpdateMediaRelaySettingsRequest {
+                user_id: user_id.clone(),
+                noise: off.clone(),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(status.status, MediaRelayStatus::Active);
+    assert_eq!(status.noise, off);
+    assert_eq!(status.participants[0].user_id, user_id);
+    assert_eq!(status.participants[0].tracks[0].track_id, "audio-main");
+    assert_eq!(
+        registry
+            .require_track(&room_id, &UserId::from_external("user_01"), "audio-main")
+            .unwrap()
+            .noise
+            .provider,
+        NoiseProvider::Off
+    );
+}
+
+#[test]
+fn update_settings_requires_active_relay_and_participant() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = RoomId::default_room();
+    let user_id = UserId::from_external("user_01");
+
+    assert_eq!(
+        registry.update_settings(
+            room_id.clone(),
+            UpdateMediaRelaySettingsRequest {
+                user_id: user_id.clone(),
+                noise: NoiseCancellationConfig::default(),
+            },
+        ),
+        Err(MediaRelayError::Inactive {
+            room_id: room_id.clone()
+        })
+    );
+
+    registry.start(room_id.clone(), StartMediaRelayRequest::default());
+
+    assert_eq!(
+        registry.update_settings(
+            room_id.clone(),
+            UpdateMediaRelaySettingsRequest {
+                user_id: user_id.clone(),
+                noise: NoiseCancellationConfig::default(),
+            },
+        ),
+        Err(MediaRelayError::ParticipantNotFound { room_id, user_id })
+    );
 }
 
 #[test]

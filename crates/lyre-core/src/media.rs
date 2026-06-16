@@ -69,6 +69,12 @@ pub struct RegisterMediaTrackRequest {
     pub kind: MediaTrackKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateMediaRelaySettingsRequest {
+    pub user_id: UserId,
+    pub noise: NoiseCancellationConfig,
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum MediaRelayError {
     #[error("media relay is not active for room `{room_id}`")]
@@ -155,6 +161,28 @@ impl MediaRelayRegistry {
             .entry(request.user_id)
             .or_default()
             .insert(request.track_id, request.kind);
+        drop(room);
+        Ok(self.snapshot(room_id))
+    }
+
+    pub fn update_settings(
+        &self,
+        room_id: RoomId,
+        request: UpdateMediaRelaySettingsRequest,
+    ) -> Result<MediaRelayRoomStatus, MediaRelayError> {
+        let Some(mut room) = self.rooms.get_mut(&room_id) else {
+            return Err(MediaRelayError::Inactive { room_id });
+        };
+        if !room.active {
+            return Err(MediaRelayError::Inactive { room_id });
+        }
+        if !room.participants.contains_key(&request.user_id) {
+            return Err(MediaRelayError::ParticipantNotFound {
+                room_id,
+                user_id: request.user_id,
+            });
+        }
+        room.noise = request.noise;
         drop(room);
         Ok(self.snapshot(room_id))
     }

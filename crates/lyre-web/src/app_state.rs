@@ -214,14 +214,35 @@ impl AppState {
         request: lyre_core::StartMediaRelayRequest,
     ) -> lyre_core::MediaRelayRoomStatus {
         let status = self.media_relays.start(room_id.clone(), request);
-        if status.noise.provider == lyre_core::NoiseProvider::Off {
-            self.processed_audio_webrtc_egress_pump.stop(&room_id);
-            self.raw_opus_webrtc_egress_pump.start(room_id);
-        } else {
-            self.raw_opus_webrtc_egress_pump.stop(&room_id);
-            self.processed_audio_webrtc_egress_pump.start(room_id);
-        }
+        self.apply_media_relay_noise(&room_id, &status.noise);
         status
+    }
+
+    pub fn update_media_relay_settings(
+        &self,
+        room_id: RoomId,
+        request: lyre_core::UpdateMediaRelaySettingsRequest,
+    ) -> Result<lyre_core::MediaRelayRoomStatus, MediaRelayError> {
+        let status = self
+            .media_relays
+            .update_settings(room_id.clone(), request)?;
+        self.apply_media_relay_noise(&room_id, &status.noise);
+        Ok(status)
+    }
+
+    fn apply_media_relay_noise(
+        &self,
+        room_id: &RoomId,
+        noise: &lyre_core::NoiseCancellationConfig,
+    ) {
+        if noise.provider == lyre_core::NoiseProvider::Off {
+            self.processed_audio_webrtc_egress_pump.stop(room_id);
+            self.raw_opus_webrtc_egress_pump.start(room_id.clone());
+        } else {
+            self.raw_opus_webrtc_egress_pump.stop(room_id);
+            self.processed_audio_webrtc_egress_pump
+                .start(room_id.clone());
+        }
     }
 
     pub async fn join_room_persisted(

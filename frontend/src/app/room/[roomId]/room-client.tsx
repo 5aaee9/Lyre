@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Settings } from "lucide-react";
+import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import {
   closeServerMediaSession,
@@ -10,6 +12,7 @@ import {
   registerMediaTrack,
   shareRoomUrl,
   startMediaRelay,
+  updateMediaRelaySettings,
   type RoomSnapshot,
   type UserProfile
 } from "@/lib/api";
@@ -21,6 +24,7 @@ import {
   type SignalMessage
 } from "@/lib/signalling";
 import { readNickname, readNoiseConfig } from "@/lib/storage";
+import type { SettingsSnapshot } from "@/lib/settings-store";
 import { openLocalAudioStream } from "@/lib/webrtc";
 
 type RoomSession = {
@@ -68,6 +72,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState("Joining");
   const [audioStarted, setAudioStarted] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const serverAudioSessionRef = useRef<ServerMediaAudioSession | null>(null);
   const audioStartedRef = useRef(false);
@@ -125,14 +130,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }, [closeAudioSessions, roomId]);
 
   async function connectAudio() {
-    await connectServerRelayAudio();
+    await connectServerRelayAudio({ updateRelay: false });
   }
 
-  async function connectServerRelayAudio() {
+  async function connectServerRelayAudio({ updateRelay }: { updateRelay: boolean }) {
     if (!currentUser || !accessToken) {
       return;
     }
-    if (audioStartedRef.current) {
+    if (audioStartedRef.current && !updateRelay) {
       return;
     }
     let stream: MediaStream | null = null;
@@ -143,10 +148,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
       const iceServers = await getIceServers();
       stream = await openLocalAudioStream();
       const noise = readNoiseConfig();
-      await startMediaRelay(roomId, noise, accessToken);
-      cleanupNeeded = true;
-      serverMediaCleanupNeededRef.current = true;
-      await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio", accessToken);
+      if (!updateRelay) {
+        await startMediaRelay(roomId, noise, accessToken);
+        cleanupNeeded = true;
+        serverMediaCleanupNeededRef.current = true;
+        await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio", accessToken);
+      }
       const session = new ServerMediaAudioSession({
         roomId,
         userId: currentUser.id,
@@ -181,6 +188,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
     }
   }
 
+  async function saveSettings(settings: SettingsSnapshot) {
+    if (!audioStartedRef.current || !currentUser || !accessToken) {
+      return;
+    }
+    closeAudioSessions();
+    await updateMediaRelaySettings(roomId, currentUser.id, settings.noise, accessToken);
+    await connectServerRelayAudio({ updateRelay: true });
+  }
+
   async function leave() {
     const shouldCloseServerMedia = serverMediaCleanupNeededRef.current && currentUser;
     closeAudioSessions();
@@ -207,10 +223,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
           <p className="mt-1 text-sm text-[#5c6a61]">{status}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+            <Settings className="h-4 w-4" />
+            <span className="ml-2">Settings</span>
+          </Button>
           <Button disabled={audioStarted} onClick={connectAudio}>Connect audio</Button>
           <Button className="bg-[#7a2f2f]" onClick={leave}>Leave</Button>
         </div>
       </div>
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} onSave={saveSettings} />
       <div className="rounded-md border border-[#d8ded6] bg-white p-4">
         <div className="text-xs text-[#5c6a61]">Share</div>
         <div className="mt-1 break-all text-sm">{link}</div>

@@ -80,6 +80,8 @@
 - DPDFNet server-side noise cancellation provider wired through ONNX Runtime with streaming STFT/ISTFT, model metadata state initialization, configurable model directory, and per-user DPDFNet model selection.
 - DPDFNet 16 kHz ONNX models now resample 48 kHz server PCM down before inference and back up after inference, so non-48 kHz DPDFNet selections are effective in the WebRTC relay path.
 - Frontend server noise cancelling controls now live under Settings with provider-specific DPDFNet model selection, and Room no longer shows peer noise cancelling provider details.
+- Settings now use a reusable shadcn/Radix Dialog modal, and saving settings from Room updates server relay noise settings plus recreates browser user media so browser DSP changes take effect immediately.
+- Authenticated media relay settings updates can switch server-side noise cancellation between off and denoise providers without dropping registered relay tracks.
 - CI and Docker packaging now build the ONNX Runtime-backed DPDFNet path with explicit Nix dev shell runtime libraries and Debian trixie API image bases.
 
 ## Next

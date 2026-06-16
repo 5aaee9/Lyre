@@ -16,7 +16,7 @@ pub use media::{
     MediaRelayError, MediaRelayMode, MediaRelayParticipant, MediaRelayRegistry,
     MediaRelayRegistryAggregate, MediaRelayRoomStatus, MediaRelayStatus, MediaRelayTrack,
     MediaRelayTrackLookup, MediaTrackKind, RegisterMediaTrackRequest, StartMediaRelayRequest,
-    StopMediaRelayRequest,
+    StopMediaRelayRequest, UpdateMediaRelaySettingsRequest,
 };
 pub use media_runtime::{
     AudioFrame, AudioFrameProcessor, MediaRuntime, PassthroughAudioFrameProcessor,

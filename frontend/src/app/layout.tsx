@@ -29,9 +29,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <Link className="text-lg font-semibold" href="/">
                 Lyre
               </Link>
-              <Link className="text-sm text-[#4c5b52]" href="/settings">
-                Settings
-              </Link>
             </nav>
           </header>
           <main className="mx-auto max-w-5xl px-5 py-6">{children}</main>

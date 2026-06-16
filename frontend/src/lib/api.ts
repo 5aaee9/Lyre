@@ -292,6 +292,20 @@ export async function registerMediaTrack(
   return jsonOrThrow(response, "failed to register media track");
 }
 
+export async function updateMediaRelaySettings(
+  roomId: string,
+  userId: string,
+  noise: NoiseCancellationConfig,
+  accessToken: string
+): Promise<MediaRelayRoomStatus> {
+  const response = await fetch(`${mediaRelayUrl(roomId)}/settings`, {
+    method: "POST",
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
+    body: JSON.stringify({ user_id: userId, noise })
+  });
+  return jsonOrThrow(response, "failed to update media relay settings");
+}
+
 export async function answerServerMediaOffer(
   roomId: string,
   userId: string,

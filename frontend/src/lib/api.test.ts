@@ -23,6 +23,7 @@ import {
   shareRoomUrl,
   startMediaRelay,
   stopMediaRelay,
+  updateMediaRelaySettings,
   type JoinRoomResponse,
   type MediaRelayRoomStatus,
   type MediaTopology,
@@ -310,6 +311,22 @@ describe("api", () => {
     });
   });
 
+  it("serializes media relay settings updates", async () => {
+    const noise = {
+      provider: "off" as const,
+      intensity: 0.5,
+      voice_activity_threshold: 0.35,
+      dpdfnet: defaultNoiseConfig.dpdfnet
+    };
+    await updateMediaRelaySettings("DEFAULT", "user_a", noise, "token_a");
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/settings", {
+      method: "POST",
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
+      body: JSON.stringify({ user_id: "user_a", noise })
+    });
+  });
+
   it("serializes media relay track registration request body", async () => {
     await registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio", "token_a");
 
@@ -380,6 +397,9 @@ describe("api", () => {
     await expect(startMediaRelay("DEFAULT", undefined, "token_a")).rejects.toThrow("failed to start media relay: 503");
     await expect(registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio", "token_a")).rejects.toThrow(
       "failed to register media track: 503"
+    );
+    await expect(updateMediaRelaySettings("DEFAULT", "user_a", defaultNoiseConfig, "token_a")).rejects.toThrow(
+      "failed to update media relay settings: 503"
     );
     await expect(answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0", "token_a")).rejects.toThrow(
       "failed to negotiate server media offer: 503"

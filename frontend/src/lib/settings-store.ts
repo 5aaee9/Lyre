@@ -8,7 +8,7 @@ export type AudioProcessingConfig = {
   noiseSuppression: boolean;
 };
 
-type SettingsState = {
+export type SettingsState = {
   rememberRoom: boolean;
   roomId: string;
   nickname: string;
@@ -20,6 +20,8 @@ type SettingsState = {
   setNoise: (noise: NoiseCancellationConfig) => void;
   setAudioProcessing: (audioProcessing: AudioProcessingConfig) => void;
 };
+
+export type SettingsSnapshot = SettingsState;
 
 export const defaultNoiseConfig: NoiseCancellationConfig = {
   provider: "off",

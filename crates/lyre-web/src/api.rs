@@ -91,6 +91,10 @@ fn base_router() -> Router<AppState> {
             "/api/rooms/{room_id}/media-relay/tracks",
             post(register_media_track),
         )
+        .route(
+            "/api/rooms/{room_id}/media-relay/settings",
+            post(update_media_relay_settings),
+        )
         .merge(crate::api_server_media::router())
         .merge(crate::webrpc::router())
         .route("/api/rooms/{room_id}/ws", get(room_ws))
@@ -248,6 +252,17 @@ async fn register_media_track(
     let room_id = RoomId::parse_boundary(room_id)?;
     authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     Ok(Json(state.media_relays.register_track(room_id, request)?))
+}
+
+async fn update_media_relay_settings(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<lyre_core::UpdateMediaRelaySettingsRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    Ok(Json(state.update_media_relay_settings(room_id, request)?))
 }
 
 async fn room_ws(
