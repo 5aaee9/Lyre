@@ -90,7 +90,6 @@
 - Frontend room audio now supports per-remote-user mute and 0-150% volume controls backed by server-media source subscriptions and per-source WebRTC relay tracks.
 - Frontend server-media subscriptions now derive from registered relay participants and refresh after join races, avoiding 409s when a room user appears before their relay track registration completes.
 - Frontend server-media playback now resumes suspended Web Audio contexts when remote source tracks arrive, preventing connected-but-silent relay playback after automatic room audio startup.
-- Frontend rooms now expose an explicit playback resume action that retries existing server-media Web Audio playback from a user gesture without rebuilding the relay connection.
 - Frontend settings can enable an in-room audio diagnostics panel with WebRTC connection state, RTP counters, relay participants, subscriptions, accepted remote tracks, receiver tracks, raw track events, rejected track IDs, and the last playback error for debugging silent calls.
 - Frontend server-media playback now maps browser UUID remote track IDs through the WebRTC stream ID that carries the Lyre source user, avoiding false rejected-track silence when browsers do not preserve server track IDs.
 - Raw Opus server relay now drops failed realtime recipient sends instead of replaying historical RTP packets to healthy recipients.

@@ -4,7 +4,6 @@ import type { NoiseCancellationConfig } from "@/lib/api";
 import { defaultNoiseConfig, useSettingsStore } from "@/lib/settings-store";
 import {
   apiMocks,
-  audioContexts,
   gainNodes,
   getUserMedia,
   localAudioTrack,
@@ -86,6 +85,7 @@ describe("RoomClient", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     expect(screen.queryByText("Connect audio")).not.toBeInTheDocument();
+    expect(screen.queryByText("Resume audio")).not.toBeInTheDocument();
     expect(screen.getByText("Mute")).toBeInTheDocument();
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
     expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
@@ -430,25 +430,6 @@ describe("RoomClient", () => {
     });
 
     expect(gainNodes[0].gain.value).toBe(1.25);
-  });
-
-  it("resumes remote playback from a user gesture without recreating server media", async () => {
-    render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
-    act(() => {
-      peerConnections[0].ontrack?.({
-        track: { id: "lyre-user:user_b:audio" },
-        streams: []
-      } as unknown as RTCTrackEvent);
-    });
-    audioContexts[0].state = "suspended";
-    audioContexts[0].resume.mockClear();
-
-    fireEvent.click(screen.getByText("Resume audio"));
-
-    await waitFor(() => expect(audioContexts[0].resume).toHaveBeenCalledOnce());
-    expect(peerConnections).toHaveLength(1);
-    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce();
   });
 
   it("cleans server relay local and server media on leave without stopping the room relay", async () => {

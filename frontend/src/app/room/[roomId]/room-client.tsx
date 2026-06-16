@@ -364,16 +364,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
     []
   );
 
-  async function resumeAudioPlayback() {
-    try {
-      await serverAudioSessionRef.current?.resumePlayback();
-      setAudioDiagnosticsRefreshKey((key) => key + 1);
-      setStatus("Server relay audio connected");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to resume audio playback");
-    }
-  }
-
   async function saveSettings(settings: SettingsSnapshot) {
     if (!audioStartedRef.current || !currentUser || !accessToken) {
       return;
@@ -498,7 +488,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <Settings className="h-4 w-4" />
             <span className="ml-2">Settings</span>
           </Button>
-          <Button disabled={!audioStarted} onClick={() => void resumeAudioPlayback()} variant="outline">Resume audio</Button>
           <Button disabled={!audioStarted} onClick={toggleMuted}>{muted ? "Unmute" : "Mute"}</Button>
           <Button onClick={leave} variant="destructive">Leave</Button>
         </div>
