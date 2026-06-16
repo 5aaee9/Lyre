@@ -4,9 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { joinRoom, parseNoiseProvider } from "@/lib/api";
+import { joinRoom } from "@/lib/api";
 import { useSettingsStore } from "@/lib/settings-store";
 
 export default function Home() {
@@ -18,7 +17,6 @@ export default function Home() {
   const setRemember = useSettingsStore((state) => state.setRememberRoom);
   const setStoredRoomId = useSettingsStore((state) => state.setRoomId);
   const setNickname = useSettingsStore((state) => state.setNickname);
-  const setNoise = useSettingsStore((state) => state.setNoise);
   const [roomId, setRoomId] = useState(() => (remember ? storedRoomId : "DEFAULT"));
   const [joining, setJoining] = useState(false);
 
@@ -50,28 +48,6 @@ export default function Home() {
         <label className="grid gap-2 text-sm font-medium">
           Nickname
           <Input value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder="Assigned automatically if blank" />
-        </label>
-        <label className="grid gap-2 text-sm font-medium">
-          Noise cancellation
-          <Select
-            value={noise.provider}
-            onValueChange={(value) =>
-              setNoise({
-                ...noise,
-                provider: parseNoiseProvider(value)
-              })
-            }
-          >
-            <SelectTrigger aria-label="Noise cancellation">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="off">Off</SelectItem>
-              <SelectItem value="rnnoise">RNNoise</SelectItem>
-              <SelectItem value="deepfilternet">DeepFilterNet</SelectItem>
-              <SelectItem value="dpdfnet">DPDFNet</SelectItem>
-            </SelectContent>
-          </Select>
         </label>
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={remember} onCheckedChange={setRemember} />

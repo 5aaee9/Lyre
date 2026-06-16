@@ -46,9 +46,9 @@ describe("Home", () => {
     });
   });
 
-  it("keeps stored noise numeric parameters when changing provider before joining", async () => {
+  it("joins with stored noise settings without showing noise controls", async () => {
     useSettingsStore.getState().setNoise({
-      provider: "rnnoise",
+      provider: "deepfilternet",
       intensity: 0.8,
       voice_activity_threshold: 0.15,
       dpdfnet: defaultNoiseConfig.dpdfnet
@@ -56,8 +56,7 @@ describe("Home", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("combobox", { name: "Noise cancellation" }));
-    fireEvent.click(await screen.findByRole("option", { name: "DeepFilterNet" }));
+    expect(screen.queryByText("Noise cancellation")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Join"));
 
     await waitFor(() => {
