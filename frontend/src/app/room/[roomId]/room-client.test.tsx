@@ -218,6 +218,75 @@ describe("RoomClient", () => {
     expect(screen.getByText("Unmute Bob")).toBeInTheDocument();
   });
 
+  it("subscribes only to registered relay participants after joining", async () => {
+    apiMocks.getMediaRelay.mockResolvedValueOnce({
+      room_id: "DEFAULT",
+      status: "active",
+      mode: "media_relay",
+      server_side_audio_processing: true,
+      server_side_noise_cancelling: true,
+      noise: defaultNoiseConfig,
+      participants: [{
+        user_id: "user_a",
+        tracks: [{ track_id: "audio-main", kind: "audio" }]
+      }]
+    });
+
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenCalledWith(
+      "DEFAULT",
+      "user_a",
+      [],
+      "token_a"
+    );
+    expect(screen.queryByText("failed to update media relay subscriptions: 409")).not.toBeInTheDocument();
+  });
+
+  it("refreshes relay participants after a joined user finishes track registration", async () => {
+    apiMocks.getMediaRelay
+      .mockResolvedValueOnce({
+        room_id: "DEFAULT",
+        status: "active",
+        mode: "media_relay",
+        server_side_audio_processing: true,
+        server_side_noise_cancelling: true,
+        noise: defaultNoiseConfig,
+        participants: [{
+          user_id: "user_a",
+          tracks: [{ track_id: "audio-main", kind: "audio" }]
+        }]
+      })
+      .mockResolvedValue({
+        room_id: "DEFAULT",
+        status: "active",
+        mode: "media_relay",
+        server_side_audio_processing: true,
+        server_side_noise_cancelling: true,
+        noise: defaultNoiseConfig,
+        participants: ["user_a", "user_b", "user_c"].map((userId) => ({
+          user_id: userId,
+          tracks: [{ track_id: "audio-main", kind: "audio" }]
+        }))
+      });
+
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenCalledWith(
+      "DEFAULT",
+      "user_a",
+      [],
+      "token_a"
+    ));
+
+    await waitFor(() => expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenLastCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_b", "user_c"],
+      "token_a"
+    ), { timeout: 2_000 });
+  });
+
   it("muting a remote user updates subscriptions and recreates server media without toggling microphone mute", async () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());

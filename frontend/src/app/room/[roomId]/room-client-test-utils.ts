@@ -14,6 +14,7 @@ const gainNodes: MockGainNode[] = [];
 const apiMocks = vi.hoisted(() => ({
   answerServerMediaOffer: vi.fn(),
   closeServerMediaSession: vi.fn(),
+  getMediaRelay: vi.fn(),
   getIceServers: vi.fn(async () => [{ urls: ["stun:stun.example:3478"], username: null, credential: null }]),
   leaveRoom: vi.fn(),
   registerMediaTrack: vi.fn(),
@@ -109,6 +110,7 @@ vi.mock("@/lib/api", async () => {
       user: users[0],
       room: { room_id: "DEFAULT", users }
     })),
+    getMediaRelay: apiMocks.getMediaRelay,
     getIceServers: apiMocks.getIceServers,
     leaveRoom: apiMocks.leaveRoom,
     startMediaRelay: apiMocks.startMediaRelay,
@@ -165,6 +167,19 @@ beforeEach(() => {
   apiMocks.getIceServers.mockResolvedValue([
     { urls: ["stun:stun.example:3478"], username: null, credential: null }
   ]);
+  apiMocks.getMediaRelay.mockReset();
+  apiMocks.getMediaRelay.mockResolvedValue({
+    room_id: "DEFAULT",
+    status: "active",
+    mode: "media_relay",
+    server_side_audio_processing: true,
+    server_side_noise_cancelling: true,
+    noise: defaultNoiseConfig,
+    participants: users.map((user) => ({
+      user_id: user.id,
+      tracks: [{ track_id: "audio-main", kind: "audio" }]
+    }))
+  });
   apiMocks.answerServerMediaOffer.mockReset();
   apiMocks.answerServerMediaOffer.mockResolvedValue({
     room_id: "DEFAULT",

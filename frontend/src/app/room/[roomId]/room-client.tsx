@@ -6,6 +6,7 @@ import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import {
   closeServerMediaSession,
+  getMediaRelay,
   getIceServers,
   joinRoom,
   leaveRoom,
@@ -72,6 +73,7 @@ function clearRoomSession() {
 }
 
 const AUDIO_RECONNECT_RETRY_MS = 1_000;
+const RELAY_SOURCE_REFRESH_RETRY_MS = 1_000;
 const DEFAULT_USER_AUDIO_SETTINGS: UserAudioSettings = { muted: false, volumePercent: 100 };
 
 export function RoomClient({ roomId }: { roomId: string }) {
@@ -83,6 +85,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [muted, setMuted] = useState(false);
   const [socketOpen, setSocketOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [relaySourceIds, setRelaySourceIds] = useState<string[]>([]);
   const userAudio = useSettingsStore((state) => state.userAudio);
   const setUserAudioSettings = useSettingsStore((state) => state.setUserAudioSettings);
   const socketRef = useRef<WebSocket | null>(null);
@@ -91,18 +94,40 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const relayStartedRef = useRef(false);
   const reconnectingAudioRef = useRef(false);
   const reconnectRetryRef = useRef<number | null>(null);
+  const relaySourceRefreshRetryRef = useRef<number | null>(null);
   const reconnectServerRelayAudioRef = useRef<() => void>(() => undefined);
   const serverMediaCleanupNeededRef = useRef(false);
   const lastSubscribedSourceIdsRef = useRef<string[]>([]);
+  const [relaySourceRefreshTick, setRelaySourceRefreshTick] = useState(0);
   const link = useMemo(() => shareRoomUrl(roomId), [roomId]);
   const remoteUsers = useMemo(
     () => (room?.users ?? []).filter((user) => user.id !== currentUser?.id),
     [currentUser?.id, room?.users]
   );
   const subscribedSourceIds = useMemo(
-    () => remoteUsers.filter((user) => !userAudio[user.id]?.muted).map((user) => user.id),
-    [remoteUsers, userAudio]
+    () => remoteUsers
+      .filter((user) => relaySourceIds.includes(user.id))
+      .filter((user) => !userAudio[user.id]?.muted)
+      .map((user) => user.id),
+    [relaySourceIds, remoteUsers, userAudio]
   );
+
+  const refreshRelaySourceIds = useCallback(async () => {
+    if (!currentUser) {
+      return [];
+    }
+    const status = await getMediaRelay(roomId);
+    const sourceIds = status.participants
+      .map((participant) => participant.user_id)
+      .filter((userId) => userId !== currentUser.id);
+    setRelaySourceIds((current) => arraysEqual(current, sourceIds) ? current : sourceIds);
+    return sourceIds;
+  }, [currentUser, roomId]);
+
+  const subscribedSourceIdsFromRelaySources = useCallback((
+    sourceIds: string[],
+    audioSettings: Record<string, UserAudioSettings> = userAudio
+  ) => sourceIds.filter((userId) => !audioSettings[userId]?.muted), [userAudio]);
 
   const closeAudioSessions = useCallback(() => {
     serverAudioSessionRef.current?.close();
@@ -114,6 +139,23 @@ export function RoomClient({ roomId }: { roomId: string }) {
       window.clearTimeout(reconnectRetryRef.current);
       reconnectRetryRef.current = null;
     }
+  }, []);
+
+  const clearRelaySourceRefreshRetry = useCallback(() => {
+    if (relaySourceRefreshRetryRef.current !== null) {
+      window.clearTimeout(relaySourceRefreshRetryRef.current);
+      relaySourceRefreshRetryRef.current = null;
+    }
+  }, []);
+
+  const scheduleRelaySourceRefreshRetry = useCallback(() => {
+    if (relaySourceRefreshRetryRef.current !== null) {
+      return;
+    }
+    relaySourceRefreshRetryRef.current = window.setTimeout(() => {
+      relaySourceRefreshRetryRef.current = null;
+      setRelaySourceRefreshTick((tick) => tick + 1);
+    }, RELAY_SOURCE_REFRESH_RETRY_MS);
   }, []);
 
   useEffect(() => {
@@ -165,19 +207,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
       relayStartedRef.current = false;
       reconnectingAudioRef.current = false;
       clearReconnectRetry();
+      clearRelaySourceRefreshRetry();
       serverMediaCleanupNeededRef.current = false;
       lastSubscribedSourceIdsRef.current = [];
+      setRelaySourceIds([]);
       setAudioStarted(false);
       setSocketOpen(false);
       clearRoomSession();
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [clearReconnectRetry, closeAudioSessions, roomId]);
+  }, [clearReconnectRetry, clearRelaySourceRefreshRetry, closeAudioSessions, roomId]);
 
   const connectServerRelayAudio = useCallback(async ({
     updateRelay,
-    sourceIds = subscribedSourceIds,
+    sourceIds,
     audioSettings = userAudio
   }: {
     updateRelay: boolean;
@@ -206,8 +250,18 @@ export function RoomClient({ roomId }: { roomId: string }) {
         await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio", accessToken);
         relayStartedRef.current = true;
       }
-      await updateMediaRelaySubscriptions(roomId, currentUser.id, sourceIds, accessToken);
-      lastSubscribedSourceIdsRef.current = sourceIds;
+      const activeSourceIds = await refreshRelaySourceIds();
+      const waitingForRelaySources = remoteUsers.some((user) => !activeSourceIds.includes(user.id));
+      if (waitingForRelaySources) {
+        scheduleRelaySourceRefreshRetry();
+      } else {
+        clearRelaySourceRefreshRetry();
+      }
+      const nextSourceIds = sourceIds
+        ? sourceIds.filter((sourceId) => activeSourceIds.includes(sourceId))
+        : subscribedSourceIdsFromRelaySources(activeSourceIds, audioSettings);
+      await updateMediaRelaySubscriptions(roomId, currentUser.id, nextSourceIds, accessToken);
+      lastSubscribedSourceIdsRef.current = nextSourceIds;
       const socket = socketRef.current;
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         throw new Error("Audio signalling websocket is not connected");
@@ -253,7 +307,19 @@ export function RoomClient({ roomId }: { roomId: string }) {
       }
       setStatus(error instanceof Error ? error.message : "Audio connection failed");
     }
-  }, [accessToken, clearReconnectRetry, currentUser, muted, roomId, subscribedSourceIds, userAudio]);
+  }, [
+    accessToken,
+    clearReconnectRetry,
+    clearRelaySourceRefreshRetry,
+    currentUser,
+    muted,
+    refreshRelaySourceIds,
+    remoteUsers,
+    roomId,
+    scheduleRelaySourceRefreshRetry,
+    subscribedSourceIdsFromRelaySources,
+    userAudio
+  ]);
 
   useEffect(() => {
     reconnectServerRelayAudioRef.current = () => {
@@ -313,17 +379,17 @@ export function RoomClient({ roomId }: { roomId: string }) {
       serverAudioSessionRef.current?.setUserAudioSettings(userId, next);
       return;
     }
-    const nextSourceIds = remoteUsers
-      .filter((user) => user.id !== userId || !next.muted)
-      .filter((user) => user.id === userId || !userAudio[user.id]?.muted)
-      .map((user) => user.id);
+    const nextRelaySourceIds = relaySourceIds.includes(userId)
+      ? relaySourceIds
+      : await refreshRelaySourceIds();
+    const nextUserAudio = {
+      ...userAudio,
+      [userId]: next
+    };
+    const nextSourceIds = subscribedSourceIdsFromRelaySources(nextRelaySourceIds, nextUserAudio);
     try {
       await updateMediaRelaySubscriptions(roomId, currentUser.id, nextSourceIds, accessToken);
       lastSubscribedSourceIdsRef.current = nextSourceIds;
-      const nextUserAudio = {
-        ...userAudio,
-        [userId]: next
-      };
       setUserAudioSettings(userId, settings);
       serverAudioSessionRef.current?.setUserAudioSettings(userId, next);
       if (audioStartedRef.current) {
@@ -343,24 +409,46 @@ export function RoomClient({ roomId }: { roomId: string }) {
     if (!currentUser || !accessToken || !audioStartedRef.current) {
       return;
     }
-    if (arraysEqual(lastSubscribedSourceIdsRef.current, subscribedSourceIds)) {
-      return;
-    }
     void (async () => {
       try {
-        await updateMediaRelaySubscriptions(roomId, currentUser.id, subscribedSourceIds, accessToken);
-        lastSubscribedSourceIdsRef.current = subscribedSourceIds;
+        const activeSourceIds = await refreshRelaySourceIds();
+        const nextSourceIds = subscribedSourceIdsFromRelaySources(activeSourceIds);
+        const waitingForRelaySources = remoteUsers.some((user) => !activeSourceIds.includes(user.id));
+        if (waitingForRelaySources) {
+          scheduleRelaySourceRefreshRetry();
+        } else {
+          clearRelaySourceRefreshRetry();
+        }
+        if (arraysEqual(lastSubscribedSourceIdsRef.current, nextSourceIds)) {
+          return;
+        }
+        await updateMediaRelaySubscriptions(roomId, currentUser.id, nextSourceIds, accessToken);
+        lastSubscribedSourceIdsRef.current = nextSourceIds;
         closeAudioSessions();
-        await connectServerRelayAudio({ updateRelay: true });
+        await connectServerRelayAudio({ updateRelay: true, sourceIds: nextSourceIds });
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Failed to update audio subscription");
       }
     })();
-  }, [accessToken, closeAudioSessions, connectServerRelayAudio, currentUser, roomId, subscribedSourceIds]);
+  }, [
+    accessToken,
+    closeAudioSessions,
+    clearRelaySourceRefreshRetry,
+    connectServerRelayAudio,
+    currentUser,
+    refreshRelaySourceIds,
+    remoteUsers,
+    relaySourceRefreshTick,
+    roomId,
+    scheduleRelaySourceRefreshRetry,
+    subscribedSourceIds,
+    subscribedSourceIdsFromRelaySources
+  ]);
 
   async function leave() {
     const shouldCloseServerMedia = serverMediaCleanupNeededRef.current && currentUser;
     clearReconnectRetry();
+    clearRelaySourceRefreshRetry();
     closeAudioSessions();
     audioStartedRef.current = false;
     relayStartedRef.current = false;
