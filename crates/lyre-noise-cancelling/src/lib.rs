@@ -9,9 +9,10 @@ pub use deepfilternet::{
     DEEPFILTERNET_DEFAULT_MIN_ERB_FREQS, DEEPFILTERNET_FRAME_SIZE, DEEPFILTERNET_SAMPLE_RATE_HZ,
 };
 pub use dpdfnet::{
-    dpdfnet_default_intra_threads, DpdfNetModelSpec, DpdfNetNoiseCanceller, DpdfNetRuntimeConfig,
-    DPDFNET_CHANNELS, DPDFNET_DEFAULT_INTER_THREADS, DPDFNET_DEFAULT_MODEL,
-    DPDFNET_DEFAULT_MODEL_DIR, DPDFNET_SUPPORTED_MODELS,
+    dpdfnet_available_parallelism, dpdfnet_default_intra_threads, DpdfNetModelSpec,
+    DpdfNetNoiseCanceller, DpdfNetRuntimeConfig, DPDFNET_CHANNELS, DPDFNET_DEFAULT_INTER_THREADS,
+    DPDFNET_DEFAULT_INTRA_THREADS, DPDFNET_DEFAULT_MODEL, DPDFNET_DEFAULT_MODEL_DIR,
+    DPDFNET_SUPPORTED_MODELS,
 };
 
 use lyre_core::{AudioFrame, AudioFrameProcessor};
@@ -304,6 +305,7 @@ impl NoiseConfigKey {
 
 pub struct NoiseCancellingAudioFrameProcessor {
     cancellers: Mutex<HashMap<NoiseConfigKey, SharedNoiseCanceller>>,
+    dpdfnet_inference: Mutex<()>,
     model_runtime: NoiseModelRuntimeConfig,
 }
 
@@ -320,6 +322,7 @@ impl NoiseCancellingAudioFrameProcessor {
     pub fn with_model_runtime(model_runtime: NoiseModelRuntimeConfig) -> Self {
         Self {
             cancellers: Mutex::new(HashMap::new()),
+            dpdfnet_inference: Mutex::new(()),
             model_runtime,
         }
     }
@@ -370,6 +373,11 @@ impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
         let mut canceller = canceller
             .lock()
             .expect("noise canceller state mutex poisoned");
+        let _dpdfnet_inference = (noise.provider == NoiseProvider::Dpdfnet).then(|| {
+            self.dpdfnet_inference
+                .lock()
+                .expect("DPDFNet inference mutex poisoned")
+        });
         match canceller.process_frame(NoiseFrame {
             sample_rate_hz: frame.sample_rate_hz,
             channels: frame.channels,

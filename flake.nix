@@ -136,6 +136,10 @@
             openssl
             pkg-config
           ];
+
+          LD_LIBRARY_PATH = commonArgs.LD_LIBRARY_PATH;
+          ORT_LIB_PATH = commonArgs.ORT_LIB_PATH;
+          ORT_PREFER_DYNAMIC_LINK = commonArgs.ORT_PREFER_DYNAMIC_LINK;
         };
 
         formatter = pkgs.nixfmt;

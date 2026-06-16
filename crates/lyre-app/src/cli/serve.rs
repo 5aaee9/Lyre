@@ -141,7 +141,7 @@ pub struct ServeArgs {
     #[arg(
         long,
         env = "LYRE_DPDFNET_INTRA_THREADS",
-        help = "ONNX Runtime intra-op threads for DPDFNet; defaults to the cgroup-aware available CPU count"
+        help = "ONNX Runtime intra-op threads for DPDFNet; defaults to 1 to keep per-participant CPU bounded"
     )]
     pub dpdfnet_intra_threads: Option<usize>,
     #[arg(

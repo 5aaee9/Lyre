@@ -1,4 +1,4 @@
-FROM rust:1-bookworm AS rust-build
+FROM rust:1-trixie AS rust-build
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libopus-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -8,7 +8,7 @@ COPY Cargo.lock ./
 COPY crates ./crates
 RUN cargo build --release -p lyre-app
 
-FROM debian:bookworm-slim AS api
+FROM debian:trixie-slim AS api
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libopus0 \
     && rm -rf /var/lib/apt/lists/*

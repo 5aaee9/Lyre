@@ -5,7 +5,7 @@ use crate::{
 };
 use ort::{
     inputs,
-    session::{ModelMetadata, Session},
+    session::{builder::GraphOptimizationLevel, ModelMetadata, Session},
     value::TensorRef,
 };
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ mod streaming;
 pub const DPDFNET_CHANNELS: u16 = 1;
 pub const DPDFNET_DEFAULT_MODEL: &str = "dpdfnet2_48khz_hr";
 pub const DPDFNET_DEFAULT_MODEL_DIR: &str = "dpdfnet/onnx";
+pub const DPDFNET_DEFAULT_INTRA_THREADS: usize = 1;
 pub const DPDFNET_DEFAULT_INTER_THREADS: usize = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -75,7 +76,7 @@ impl Default for DpdfNetRuntimeConfig {
     fn default() -> Self {
         Self {
             model_dir: PathBuf::from(DPDFNET_DEFAULT_MODEL_DIR),
-            intra_threads: dpdfnet_default_intra_threads(),
+            intra_threads: DPDFNET_DEFAULT_INTRA_THREADS,
             inter_threads: DPDFNET_DEFAULT_INTER_THREADS,
         }
     }
@@ -88,6 +89,10 @@ impl DpdfNetRuntimeConfig {
 }
 
 pub fn dpdfnet_default_intra_threads() -> usize {
+    DPDFNET_DEFAULT_INTRA_THREADS
+}
+
+pub fn dpdfnet_available_parallelism() -> usize {
     std::thread::available_parallelism()
         .map(usize::from)
         .unwrap_or(1)
@@ -118,6 +123,12 @@ impl DpdfNetNoiseCanceller {
         }
 
         let session = Session::builder()
+            .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
+            .with_optimization_level(GraphOptimizationLevel::All)
+            .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
+            .with_inter_op_spinning(false)
+            .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
+            .with_intra_op_spinning(false)
             .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
             .with_intra_threads(runtime.intra_threads)
             .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?

@@ -130,7 +130,7 @@ fn dpdfnet_thread_env_enables_config() {
 }
 
 #[test]
-fn dpdfnet_intra_threads_defaults_to_available_parallelism() {
+fn dpdfnet_intra_threads_defaults_to_low_cpu_single_thread() {
     let _guard = ENV_LOCK.lock().unwrap();
     let _intra_threads = EnvVarGuard::remove("LYRE_DPDFNET_INTRA_THREADS");
 
@@ -141,8 +141,9 @@ fn dpdfnet_intra_threads_defaults_to_available_parallelism() {
             let runtime = args.effective_noise_model_runtime().unwrap();
             assert_eq!(
                 runtime.dpdfnet.intra_threads,
-                lyre_noise_cancelling::dpdfnet_default_intra_threads()
+                lyre_noise_cancelling::DPDFNET_DEFAULT_INTRA_THREADS
             );
+            assert!(lyre_noise_cancelling::dpdfnet_available_parallelism() >= 1);
         }
         Commands::Config(_) => panic!("expected serve"),
     }
