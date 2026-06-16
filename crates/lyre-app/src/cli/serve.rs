@@ -31,6 +31,13 @@ pub struct ServeArgs {
     )]
     pub cors_allowed_origins: Vec<String>,
     #[arg(
+        long = "enable-prof",
+        default_value_t = false,
+        env = "LYRE_ENABLE_PROF",
+        help = "Enable API CPU profiling routes"
+    )]
+    pub enable_prof: bool,
+    #[arg(
         long,
         env = "LYRE_TURN_REST_SECRET",
         help = "Shared secret for issuing TURN REST credentials"

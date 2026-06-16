@@ -30,6 +30,7 @@ http-body-util = "0.1"
 nnnoiseless = { version = "0.5.2", default-features = false }
 opus-rs = "0.1.22"
 ort = "2.0.0-rc.12"
+pprof = { version = "0.15", default-features = false, features = ["prost-codec"] }
 rand = "0.9"
 rtc = "0.20.0-alpha.1"
 rubato = "3.0.0"

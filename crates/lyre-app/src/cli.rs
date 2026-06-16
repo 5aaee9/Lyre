@@ -59,6 +59,7 @@ mod tests {
             "TCP port for the API listener",
             "ICE server exposed to WebRTC clients",
             "Browser origin allowed to call the API with CORS",
+            "Enable API CPU profiling routes",
             "Shared secret for issuing TURN REST credentials",
             "Seconds before generated TURN REST credentials expire",
             "Identity prefix used when generating TURN REST credentials",

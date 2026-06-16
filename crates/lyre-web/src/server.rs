@@ -1,4 +1,4 @@
-use crate::{api::AppState, router, state_persistence::RoomStatePersistence};
+use crate::{api::AppState, state_persistence::RoomStatePersistence};
 use anyhow::{Context, Result};
 use lyre_core::{IceServerConfig, TurnRestCredentialsConfig};
 use lyre_noise_cancelling::NoiseModelRuntimeConfig;
@@ -21,6 +21,7 @@ pub struct ServeConfig {
     pub state_file: Option<PathBuf>,
     pub model_runtime: NoiseModelRuntimeConfig,
     pub cors_allowed_origins: Vec<String>,
+    pub enable_prof: bool,
 }
 
 impl ServeConfig {
@@ -47,10 +48,14 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
     )
     .context("failed to initialize Lyre room state")?;
     let router = if config.cors_allowed_origins.is_empty() {
-        router(state)
+        crate::api::router_with_profile(state, config.enable_prof)
     } else {
-        crate::router_with_cors(state, config.cors_allowed_origins)
-            .context("failed to configure CORS allowed origins")?
+        crate::api::router_with_cors_and_profile(
+            state,
+            config.cors_allowed_origins,
+            config.enable_prof,
+        )
+        .context("failed to configure CORS allowed origins")?
     };
     let api = async move {
         axum::serve(listener, router)
@@ -146,6 +151,22 @@ mod tests {
             response.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn profile_router_is_enabled_from_serve_config() {
+        let response = crate::api::router_with_profile(AppState::default(), true)
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/debug/pprof/profile?seconds=1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

@@ -41,16 +41,22 @@ struct WsQuery {
 }
 
 pub fn router(state: AppState) -> Router {
-    base_router()
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(make_request_span)
-                .on_response(DefaultOnResponse::new()),
-        )
-        .with_state(state)
+    router_with_profile(state, crate::profile::enabled_from_env())
+}
+
+pub fn router_with_profile(state: AppState, profile_enabled: bool) -> Router {
+    router_from_base(profiled_base_router(profile_enabled), state)
 }
 
 pub fn router_with_cors(state: AppState, allowed_origins: Vec<String>) -> anyhow::Result<Router> {
+    router_with_cors_and_profile(state, allowed_origins, crate::profile::enabled_from_env())
+}
+
+pub fn router_with_cors_and_profile(
+    state: AppState,
+    allowed_origins: Vec<String>,
+    profile_enabled: bool,
+) -> anyhow::Result<Router> {
     let allowed_origins = allowed_origins
         .into_iter()
         .map(|origin| HeaderValue::from_str(origin.trim()))
@@ -60,14 +66,29 @@ pub fn router_with_cors(state: AppState, allowed_origins: Vec<String>) -> anyhow
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
-    Ok(base_router()
-        .layer(cors)
+    Ok(router_from_base(
+        profiled_base_router(profile_enabled).layer(cors),
+        state,
+    ))
+}
+
+fn router_from_base(router: Router<AppState>, state: AppState) -> Router {
+    router
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(make_request_span)
                 .on_response(DefaultOnResponse::new()),
         )
-        .with_state(state))
+        .with_state(state)
+}
+
+fn profiled_base_router(profile_enabled: bool) -> Router<AppState> {
+    let router = base_router();
+    if profile_enabled {
+        router.merge(crate::profile::router())
+    } else {
+        router
+    }
 }
 
 fn base_router() -> Router<AppState> {

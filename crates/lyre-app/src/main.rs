@@ -25,6 +25,7 @@ async fn main() -> Result<()> {
                 .map(lyre_web::ServerMediaPortRange::from);
             let model_runtime = args.effective_noise_model_runtime()?;
             let cors_allowed_origins = args.effective_cors_allowed_origins();
+            let enable_prof = args.enable_prof;
             lyre_web::serve(ServeConfig {
                 host,
                 port,
@@ -36,6 +37,7 @@ async fn main() -> Result<()> {
                 state_file,
                 model_runtime,
                 cors_allowed_origins,
+                enable_prof,
             })
             .await
             .context("failed to run Lyre server")?;

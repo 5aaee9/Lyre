@@ -90,11 +90,41 @@
             pname = "lyre-api";
           }
         );
+
+        debugArgs = apiArgs // {
+          CARGO_PROFILE_RELEASE_DEBUG = "true";
+          RUSTFLAGS = "-C force-frame-pointers=yes";
+        };
+
+        lyre-debug = craneLib.buildPackage (
+          debugArgs
+          // {
+            inherit cargoArtifacts;
+            pname = "lyre-debug";
+            dontStrip = true;
+            postInstall = ''
+              wrapper="$out/bin/lyre-debug"
+              printf '%s\n' \
+                '#!${pkgs.runtimeShell}' \
+                'set -eu' \
+                "" \
+                'if [ "''${1:-}" = "serve" ]; then' \
+                '  shift' \
+                '  exec "$(dirname "$0")/lyre" serve --enable-prof "$@"' \
+                'fi' \
+                "" \
+                'exec "$(dirname "$0")/lyre" "$@"' \
+                > "$wrapper"
+              chmod +x "$wrapper"
+            '';
+            meta.mainProgram = "lyre-debug";
+          }
+        );
       in
       {
         packages = {
           default = lyre-api;
-          inherit lyre-api;
+          inherit lyre-api lyre-debug;
         };
 
         checks = {

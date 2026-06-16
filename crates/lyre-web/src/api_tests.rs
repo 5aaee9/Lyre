@@ -75,6 +75,40 @@ async fn health_route_returns_ok() {
 }
 
 #[tokio::test]
+async fn profile_route_is_not_registered_by_default() {
+    let response = router(AppState::default())
+        .oneshot(
+            Request::builder()
+                .uri("/debug/pprof/profile")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn profile_route_is_registered_when_enabled() {
+    let response = crate::api::router_with_profile(AppState::default(), true)
+        .oneshot(
+            Request::builder()
+                .uri("/debug/pprof/profile?seconds=1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "application/octet-stream"
+    );
+}
+
+#[tokio::test]
 async fn room_routes_join_snapshot_and_leave() {
     let app = router(AppState::default());
     let join = app

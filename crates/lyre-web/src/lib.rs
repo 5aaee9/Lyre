@@ -7,6 +7,7 @@ pub mod media_egress;
 pub mod media_runtime;
 pub mod metrics;
 pub mod processed_audio_webrtc_egress_pump;
+pub mod profile;
 pub mod raw_opus_webrtc_egress_pump;
 pub mod server;
 mod server_media_ice_diagnostics;

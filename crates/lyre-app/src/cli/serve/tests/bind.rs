@@ -6,6 +6,7 @@ use clap::Parser;
 #[test]
 fn parses_default_serve_args() {
     let _guard = ENV_LOCK.lock().unwrap();
+    let _enable_prof = EnvVarGuard::remove("LYRE_ENABLE_PROF");
     let _embedded_turn = EnvVarGuard::remove("LYRE_EMBEDDED_TURN");
     let cli = Cli::try_parse_from(["lyre", "serve"]).unwrap();
     match cli.command {
@@ -14,6 +15,7 @@ fn parses_default_serve_args() {
             assert_eq!(args.port, 8080);
             assert!(args.ice_servers.is_empty());
             assert!(!args.embedded_turn);
+            assert!(!args.enable_prof);
         }
         Commands::Config(_) => panic!("expected serve"),
     }
@@ -30,6 +32,28 @@ fn parses_custom_serve_args() {
             assert_eq!(args.host, "127.0.0.1");
             assert_eq!(args.port, 9000);
         }
+        Commands::Config(_) => panic!("expected serve"),
+    }
+}
+
+#[test]
+fn parses_enable_prof_cli_arg() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let _enable_prof = EnvVarGuard::remove("LYRE_ENABLE_PROF");
+    let cli = Cli::try_parse_from(["lyre", "serve", "--enable-prof"]).unwrap();
+    match cli.command {
+        Commands::Serve(args) => assert!(args.enable_prof),
+        Commands::Config(_) => panic!("expected serve"),
+    }
+}
+
+#[test]
+fn enable_prof_env_enables_profile_routes() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let _enable_prof = EnvVarGuard::set("LYRE_ENABLE_PROF", "true");
+    let cli = Cli::try_parse_from(["lyre", "serve"]).unwrap();
+    match cli.command {
+        Commands::Serve(args) => assert!(args.enable_prof),
         Commands::Config(_) => panic!("expected serve"),
     }
 }
