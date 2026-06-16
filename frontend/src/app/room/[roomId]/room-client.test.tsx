@@ -4,11 +4,13 @@ import type { NoiseCancellationConfig } from "@/lib/api";
 import { defaultNoiseConfig, useSettingsStore } from "@/lib/settings-store";
 import {
   apiMocks,
+  audioContexts,
   gainNodes,
   getUserMedia,
   localAudioTrack,
   makeUser,
   peerConnections,
+  peerStatsReports,
   send,
   sockets,
   stopTrack
@@ -203,6 +205,62 @@ describe("RoomClient", () => {
     expect(screen.getByLabelText("Cam volume")).toHaveValue("100");
   });
 
+  it("hides audio diagnostics until enabled in settings", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    expect(screen.queryByText("Audio diagnostics")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Settings"));
+    fireEvent.click(screen.getByLabelText("Audio diagnostics"));
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(screen.getByText("Audio diagnostics")).toBeInTheDocument());
+  });
+
+  it("shows WebRTC audio counters when diagnostics are enabled", async () => {
+    useSettingsStore.getState().setAudioDiagnosticsEnabled(true);
+    peerStatsReports[0] = new Map([
+      ["outbound-audio", {
+        type: "outbound-rtp",
+        kind: "audio",
+        packetsSent: 12,
+        bytesSent: 3456
+      }],
+      ["inbound-audio", {
+        type: "inbound-rtp",
+        kind: "audio",
+        packetsReceived: 7,
+        bytesReceived: 890,
+        packetsLost: 1
+      }],
+      ["remote-inbound-audio", {
+        type: "remote-inbound-rtp",
+        kind: "audio",
+        packetsLost: 2,
+        roundTripTime: 0.031
+      }]
+    ]);
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    act(() => {
+      peerConnections[0].ontrack?.({
+        track: { id: "lyre-user:user_b:audio" },
+        streams: []
+      } as unknown as RTCTrackEvent);
+    });
+
+    await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
+
+    expect(screen.getByText("3456")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("890")).toBeInTheDocument();
+    expect(screen.getByText("31 ms")).toBeInTheDocument();
+    expect(screen.getAllByText("user_b, user_c")).toHaveLength(2);
+    expect(screen.getByText("lyre-user:user_b:audio")).toBeInTheDocument();
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce();
+  });
+
   it("uses persisted muted users before first server-media connect", async () => {
     useSettingsStore.getState().setUserAudioSettings("user_b", { muted: true });
 
@@ -345,6 +403,25 @@ describe("RoomClient", () => {
     });
 
     expect(gainNodes[0].gain.value).toBe(1.25);
+  });
+
+  it("resumes remote playback from a user gesture without recreating server media", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    act(() => {
+      peerConnections[0].ontrack?.({
+        track: { id: "lyre-user:user_b:audio" },
+        streams: []
+      } as unknown as RTCTrackEvent);
+    });
+    audioContexts[0].state = "suspended";
+    audioContexts[0].resume.mockClear();
+
+    fireEvent.click(screen.getByText("Resume audio"));
+
+    await waitFor(() => expect(audioContexts[0].resume).toHaveBeenCalledOnce());
+    expect(peerConnections).toHaveLength(1);
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce();
   });
 
   it("cleans server relay local and server media on leave without stopping the room relay", async () => {

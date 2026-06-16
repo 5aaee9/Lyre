@@ -30,9 +30,11 @@ type SettingsDialogProps = {
 
 export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogProps) {
   const nickname = useSettingsStore((state) => state.nickname);
+  const audioDiagnosticsEnabled = useSettingsStore((state) => state.audioDiagnosticsEnabled);
   const noise = useSettingsStore((state) => state.noise);
   const audioProcessing = useSettingsStore((state) => state.audioProcessing);
   const setNickname = useSettingsStore((state) => state.setNickname);
+  const setAudioDiagnosticsEnabled = useSettingsStore((state) => state.setAudioDiagnosticsEnabled);
   const setNoise = useSettingsStore((state) => state.setNoise);
   const setAudioProcessing = useSettingsStore((state) => state.setAudioProcessing);
   const [saving, setSaving] = useState(false);
@@ -174,6 +176,18 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
           </div>
           <div className="grid gap-4 border-t border-neutral-200 pt-4">
             <div className="text-sm font-medium">Browser Audio Processing</div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label className="text-right text-sm font-medium" htmlFor="settings-audio-diagnostics">
+                Diagnostics
+              </label>
+              <Switch
+                aria-label="Audio diagnostics"
+                className="col-span-3"
+                id="settings-audio-diagnostics"
+                checked={audioDiagnosticsEnabled}
+                onCheckedChange={setAudioDiagnosticsEnabled}
+              />
+            </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <label className="text-right text-sm font-medium" htmlFor="settings-echo-cancellation">
                 Echo

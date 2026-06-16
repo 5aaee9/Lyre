@@ -17,12 +17,14 @@ export type SettingsState = {
   rememberRoom: boolean;
   roomId: string;
   nickname: string;
+  audioDiagnosticsEnabled: boolean;
   noise: NoiseCancellationConfig;
   audioProcessing: AudioProcessingConfig;
   userAudio: Record<string, UserAudioSettings>;
   setRememberRoom: (rememberRoom: boolean) => void;
   setRoomId: (roomId: string) => void;
   setNickname: (nickname: string) => void;
+  setAudioDiagnosticsEnabled: (audioDiagnosticsEnabled: boolean) => void;
   setNoise: (noise: NoiseCancellationConfig) => void;
   setAudioProcessing: (audioProcessing: AudioProcessingConfig) => void;
   setUserAudioSettings: (userId: string, settings: Partial<UserAudioSettings>) => void;
@@ -50,6 +52,7 @@ export const defaultSettingsState = {
   rememberRoom: false,
   roomId: "DEFAULT",
   nickname: "",
+  audioDiagnosticsEnabled: false,
   noise: defaultNoiseConfig,
   audioProcessing: defaultAudioProcessingConfig,
   userAudio: {}
@@ -88,6 +91,7 @@ export const useSettingsStore = create<SettingsState>()(
       setRememberRoom: (rememberRoom) => set({ rememberRoom }),
       setRoomId: (roomId) => set({ roomId }),
       setNickname: (nickname) => set({ nickname }),
+      setAudioDiagnosticsEnabled: (audioDiagnosticsEnabled) => set({ audioDiagnosticsEnabled }),
       setNoise: (noise) => set({ noise }),
       setAudioProcessing: (audioProcessing) => set({ audioProcessing }),
       setUserAudioSettings: (userId, settings) =>

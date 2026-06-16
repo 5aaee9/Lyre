@@ -19,6 +19,7 @@ const removeAudio = vi.fn();
 const append = vi.fn();
 const socketSend = vi.fn();
 const peerConnections: MockPeerConnection[] = [];
+const peerStatsReports: Map<string, unknown>[] = [];
 const audioContexts: MockAudioContext[] = [];
 const mediaStreamSources: MockAudioSource[] = [];
 const gainNodes: MockGainNode[] = [];
@@ -34,6 +35,7 @@ class MockMediaStream {
   addTrack = vi.fn((track: unknown) => {
     this.tracks.push(track);
   });
+  getAudioTracks = () => this.tracks;
 }
 
 class MockGainNode {
@@ -71,7 +73,9 @@ class MockAudioContext {
 }
 
 class MockPeerConnection {
+  connectionState: RTCPeerConnectionState = "connected";
   iceConnectionState: RTCIceConnectionState = "new";
+  signalingState: RTCSignalingState = "stable";
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
@@ -79,6 +83,7 @@ class MockPeerConnection {
   addTrack = vi.fn();
   close = vi.fn();
   createOffer = vi.fn(async () => ({ type: "offer", sdp: "local-offer" }));
+  getStats = vi.fn(async () => peerStatsReports[peerConnections.indexOf(this)] ?? new Map());
   setLocalDescription = vi.fn();
   setRemoteDescription = vi.fn();
 
@@ -121,6 +126,7 @@ describe("ServerMediaAudioSession", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     peerConnections.length = 0;
+    peerStatsReports.length = 0;
     audioContexts.length = 0;
     mediaStreamSources.length = 0;
     gainNodes.length = 0;
@@ -299,6 +305,68 @@ describe("ServerMediaAudioSession", () => {
     } as unknown as RTCTrackEvent);
 
     expect(audioContexts[0].resume).toHaveBeenCalledOnce();
+  });
+
+  it("can resume existing remote playback from a later user gesture", async () => {
+    const session = makeSession();
+    await session.start();
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    audioContexts[0].state = "suspended";
+    audioContexts[0].resume.mockClear();
+
+    await session.resumePlayback();
+
+    expect(audioContexts[0].resume).toHaveBeenCalledOnce();
+  });
+
+  it("summarizes WebRTC audio diagnostics", async () => {
+    peerStatsReports[0] = new Map([
+      ["outbound-audio", {
+        type: "outbound-rtp",
+        kind: "audio",
+        packetsSent: 12,
+        bytesSent: 3456
+      }],
+      ["inbound-audio", {
+        type: "inbound-rtp",
+        kind: "audio",
+        packetsReceived: 7,
+        bytesReceived: 890,
+        packetsLost: 1
+      }],
+      ["remote-inbound-audio", {
+        type: "remote-inbound-rtp",
+        kind: "audio",
+        packetsLost: 2,
+        roundTripTime: 0.031
+      }]
+    ]);
+    const session = makeSession();
+    await session.start();
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    const diagnostics = await session.diagnostics();
+
+    expect(diagnostics.connectionState).toBe("connected");
+    expect(diagnostics.iceConnectionState).toBe("new");
+    expect(diagnostics.signalingState).toBe("stable");
+    expect(diagnostics.audioContextState).toBe("running");
+    expect(diagnostics.remoteTrackIds).toEqual(["lyre-user:user_b:audio"]);
+    expect(diagnostics.stats).toEqual({
+      packetsSent: 12,
+      bytesSent: 3456,
+      packetsReceived: 7,
+      bytesReceived: 890,
+      packetsLost: 1,
+      remotePacketsLost: 2,
+      roundTripTimeMs: 31
+    });
   });
 
   it("clamps applied per-user gain at the audio boundary", async () => {

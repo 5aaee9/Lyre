@@ -11,6 +11,7 @@ const addRemoteTrack = vi.fn();
 const removeAudio = vi.fn();
 const playAudio = vi.fn();
 const gainNodes: MockGainNode[] = [];
+const audioContexts: MockAudioContext[] = [];
 const apiMocks = vi.hoisted(() => ({
   answerServerMediaOffer: vi.fn(),
   closeServerMediaSession: vi.fn(),
@@ -24,6 +25,7 @@ const apiMocks = vi.hoisted(() => ({
   updateMediaRelaySubscriptions: vi.fn()
 }));
 const peerConnections: MockPeerConnection[] = [];
+const peerStatsReports: Map<string, unknown>[] = [];
 const createOfferMock = vi.fn(async (peer: MockPeerConnection) => ({
   type: "offer",
   sdp: `local-offer-${peerConnections.indexOf(peer)}`
@@ -57,7 +59,9 @@ class MockWebSocket {
 }
 
 class MockPeerConnection {
+  connectionState: RTCPeerConnectionState = "connected";
   iceConnectionState: RTCIceConnectionState = "new";
+  signalingState: RTCSignalingState = "stable";
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
@@ -66,6 +70,7 @@ class MockPeerConnection {
   close = vi.fn();
   createAnswer = vi.fn(async () => ({ type: "answer", sdp: `local-answer-${this.remoteUserId}` }));
   createOffer = vi.fn(async () => createOfferMock(this));
+  getStats = vi.fn(async () => peerStatsReports[peerConnections.indexOf(this)] ?? new Map());
   setLocalDescription = vi.fn();
   setRemoteDescription = vi.fn();
   remoteUserId?: string;
@@ -76,7 +81,16 @@ class MockPeerConnection {
 }
 
 class MockMediaStream {
+  tracks: unknown[] = [];
   addTrack = addRemoteTrack;
+  getAudioTracks = () => this.tracks;
+
+  constructor() {
+    this.addTrack = vi.fn((track: unknown) => {
+      addRemoteTrack(track);
+      this.tracks.push(track);
+    });
+  }
 }
 
 class MockGainNode {
@@ -95,10 +109,18 @@ class MockAudioSource {
 }
 
 class MockAudioContext {
+  state = "suspended";
   destination = {};
   createMediaStreamSource = vi.fn(() => new MockAudioSource());
   createGain = vi.fn(() => new MockGainNode());
   close = vi.fn();
+  resume = vi.fn(async () => {
+    this.state = "running";
+  });
+
+  constructor() {
+    audioContexts.push(this);
+  }
 }
 
 vi.mock("@/lib/api", async () => {
@@ -127,11 +149,13 @@ vi.mock("@/lib/api", async () => {
 export {
   addRemoteTrack,
   apiMocks,
+  audioContexts,
   gainNodes,
   getUserMedia,
   localAudioTrack,
   makeUser,
   peerConnections,
+  peerStatsReports,
   playAudio,
   removeAudio,
   send,
@@ -146,7 +170,9 @@ afterEach(() => {
 beforeEach(() => {
   sockets.length = 0;
   peerConnections.length = 0;
+  peerStatsReports.length = 0;
   gainNodes.length = 0;
+  audioContexts.length = 0;
   localStorage.clear();
   sessionStorage.clear();
   resetSettingsStoreForTests();

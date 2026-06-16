@@ -23,6 +23,7 @@ type ServerMediaAudioSessionInput = {
   pollIntervalMs?: number;
   onError?: (message: string) => void;
   onConnectionInterrupted?: () => void;
+  onRemoteTrack?: () => void;
 };
 
 type RemotePlayback = {
@@ -31,9 +32,38 @@ type RemotePlayback = {
   gain: GainNode;
 };
 
+export type ServerMediaAudioStats = {
+  packetsSent: number;
+  bytesSent: number;
+  packetsReceived: number;
+  bytesReceived: number;
+  packetsLost: number;
+  remotePacketsLost: number;
+  roundTripTimeMs: number | null;
+};
+
+export type ServerMediaAudioDiagnostics = {
+  connectionState: RTCPeerConnectionState;
+  iceConnectionState: RTCIceConnectionState;
+  signalingState: RTCSignalingState;
+  audioContextState: AudioContextState | "uncreated";
+  remoteTrackIds: string[];
+  stats: ServerMediaAudioStats;
+};
+
 const DEFAULT_AUDIO_TRACK_ID = "audio-main";
 const DEFAULT_CANDIDATE_POLL_INTERVAL_MS = 1_000;
 const SOCKET_NOT_CONNECTED_ERROR = "Audio signalling websocket is not connected";
+
+const EMPTY_AUDIO_STATS: ServerMediaAudioStats = {
+  packetsSent: 0,
+  bytesSent: 0,
+  packetsReceived: 0,
+  bytesReceived: 0,
+  packetsLost: 0,
+  remotePacketsLost: 0,
+  roundTripTimeMs: null
+};
 
 export class ServerMediaAudioSession {
   private readonly audioTrackId: string;
@@ -88,6 +118,26 @@ export class ServerMediaAudioSession {
     for (const track of this.input.stream.getAudioTracks()) {
       track.enabled = !muted;
     }
+  }
+
+  async resumePlayback(): Promise<void> {
+    if (this.audioContext?.state === "suspended") {
+      await this.audioContext.resume();
+    }
+  }
+
+  async diagnostics(): Promise<ServerMediaAudioDiagnostics> {
+    const stats = summarizeAudioStats(await this.peer.getStats());
+    return {
+      connectionState: this.peer.connectionState,
+      iceConnectionState: this.peer.iceConnectionState,
+      signalingState: this.peer.signalingState,
+      audioContextState: this.audioContext?.state ?? "uncreated",
+      remoteTrackIds: [...this.remotePlayback.values()].flatMap((playback) =>
+        playback.stream.getAudioTracks().map((track) => track.id)
+      ),
+      stats
+    };
   }
 
   setUserAudioSettings(userId: string, settings: UserAudioSettings): void {
@@ -183,6 +233,7 @@ export class ServerMediaAudioSession {
       sourceUserId,
       this.input.userAudio?.[sourceUserId] ?? { muted: false, volumePercent: 100 }
     );
+    this.input.onRemoteTrack?.();
   }
 
   private requestServerCandidates({ report = true }: { report?: boolean } = {}): void {
@@ -248,4 +299,46 @@ function candidateKey(candidate: ServerMediaIceCandidate): string {
     candidate.sdp_mline_index ?? "",
     candidate.username_fragment ?? ""
   ].join("|");
+}
+
+function summarizeAudioStats(report: RTCStatsReport): ServerMediaAudioStats {
+  const summary = { ...EMPTY_AUDIO_STATS };
+  for (const stat of report.values()) {
+    if (!isAudioRtpStats(stat)) {
+      continue;
+    }
+    if (stat.type === "outbound-rtp") {
+      summary.packetsSent += stat.packetsSent ?? 0;
+      summary.bytesSent += stat.bytesSent ?? 0;
+    }
+    if (stat.type === "inbound-rtp") {
+      summary.packetsReceived += stat.packetsReceived ?? 0;
+      summary.bytesReceived += stat.bytesReceived ?? 0;
+      summary.packetsLost += stat.packetsLost ?? 0;
+    }
+    if (stat.type === "remote-inbound-rtp") {
+      summary.remotePacketsLost += stat.packetsLost ?? 0;
+      if (typeof stat.roundTripTime === "number") {
+        summary.roundTripTimeMs = Math.round(stat.roundTripTime * 1000);
+      }
+    }
+  }
+  return summary;
+}
+
+type AudioRtpStats = RTCStats & {
+  kind?: string;
+  packetsSent?: number;
+  bytesSent?: number;
+  packetsReceived?: number;
+  bytesReceived?: number;
+  packetsLost?: number;
+  roundTripTime?: number;
+};
+
+function isAudioRtpStats(stat: RTCStats): stat is AudioRtpStats {
+  if (stat.type !== "inbound-rtp" && stat.type !== "outbound-rtp" && stat.type !== "remote-inbound-rtp") {
+    return false;
+  }
+  return !("kind" in stat) || stat.kind === "audio";
 }

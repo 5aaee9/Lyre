@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Settings } from "lucide-react";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
+import { RoomAudioDiagnostics } from "./room-audio-diagnostics";
 import {
   closeServerMediaSession,
   getMediaRelay,
@@ -86,6 +87,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [socketOpen, setSocketOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [relaySourceIds, setRelaySourceIds] = useState<string[]>([]);
+  const [audioDiagnosticsRefreshKey, setAudioDiagnosticsRefreshKey] = useState(0);
+  const audioDiagnosticsEnabled = useSettingsStore((state) => state.audioDiagnosticsEnabled);
   const userAudio = useSettingsStore((state) => state.userAudio);
   const setUserAudioSettings = useSettingsStore((state) => state.setUserAudioSettings);
   const socketRef = useRef<WebSocket | null>(null);
@@ -275,13 +278,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
         stream,
         userAudio: audioSettings,
         onError: setStatus,
-        onConnectionInterrupted: () => reconnectServerRelayAudioRef.current()
+        onConnectionInterrupted: () => reconnectServerRelayAudioRef.current(),
+        onRemoteTrack: () => setAudioDiagnosticsRefreshKey((key) => key + 1)
       });
       session.setMuted(muted);
       serverAudioSessionRef.current = session;
       stream = null;
       await session.start();
       clearReconnectRetry();
+      setAudioDiagnosticsRefreshKey((key) => key + 1);
       setStatus("Server relay audio connected");
     } catch (error) {
       if (!updateRelay) {
@@ -352,6 +357,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
     const nextMuted = !muted;
     setMuted(nextMuted);
     serverAudioSessionRef.current?.setMuted(nextMuted);
+  }
+
+  const loadAudioDiagnostics = useCallback(
+    () => serverAudioSessionRef.current?.diagnostics() ?? Promise.resolve(null),
+    []
+  );
+
+  async function resumeAudioPlayback() {
+    try {
+      await serverAudioSessionRef.current?.resumePlayback();
+      setAudioDiagnosticsRefreshKey((key) => key + 1);
+      setStatus("Server relay audio connected");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to resume audio playback");
+    }
   }
 
   async function saveSettings(settings: SettingsSnapshot) {
@@ -478,6 +498,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <Settings className="h-4 w-4" />
             <span className="ml-2">Settings</span>
           </Button>
+          <Button disabled={!audioStarted} onClick={() => void resumeAudioPlayback()} variant="outline">Resume audio</Button>
           <Button disabled={!audioStarted} onClick={toggleMuted}>{muted ? "Unmute" : "Mute"}</Button>
           <Button onClick={leave} variant="destructive">Leave</Button>
         </div>
@@ -487,6 +508,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <div className="text-xs text-[#5c6a61]">Share</div>
         <div className="mt-1 break-all text-sm">{link}</div>
       </div>
+      {audioDiagnosticsEnabled ? (
+        <RoomAudioDiagnostics
+          loadDiagnostics={loadAudioDiagnostics}
+          relaySourceIds={relaySourceIds}
+          refreshKey={audioDiagnosticsRefreshKey}
+          subscribedSourceIds={subscribedSourceIds}
+        />
+      ) : null}
       <div className="rounded-md border border-[#d8ded6] bg-white">
         <div className="border-b border-[#d8ded6] px-4 py-3 text-sm font-semibold">Users</div>
         <ul className="divide-y divide-[#edf0ec]">
