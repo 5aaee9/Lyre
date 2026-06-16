@@ -21,8 +21,10 @@ const append = vi.fn();
 const socketSend = vi.fn();
 const peerConnections: MockPeerConnection[] = [];
 
+const localAudioTrack = { id: "local-audio", enabled: true, stop: stopTrack };
+
 const stream = {
-  getAudioTracks: () => [{ id: "local-audio", stop: stopTrack }]
+  getAudioTracks: () => [localAudioTrack]
 } as unknown as MediaStream;
 
 class MockMediaStream {
@@ -30,7 +32,9 @@ class MockMediaStream {
 }
 
 class MockPeerConnection {
+  iceConnectionState: RTCIceConnectionState = "new";
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
+  oniceconnectionstatechange: (() => void) | null = null;
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
   addIceCandidate = vi.fn();
   addTrack = vi.fn();
@@ -78,6 +82,7 @@ describe("ServerMediaAudioSession", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     peerConnections.length = 0;
+    localAudioTrack.enabled = true;
     stopTrack.mockClear();
     addRemoteTrack.mockClear();
     play.mockReset();
@@ -228,6 +233,45 @@ describe("ServerMediaAudioSession", () => {
 
     expect(addRemoteTrack).toHaveBeenCalledWith({ id: "remote-track" });
     expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it("toggles local microphone tracks without closing the session", async () => {
+    const session = makeSession();
+    await session.start();
+
+    session.setMuted(true);
+
+    expect(localAudioTrack.enabled).toBe(false);
+    expect(peerConnections[0].close).not.toHaveBeenCalled();
+    expect(stopTrack).not.toHaveBeenCalled();
+
+    session.setMuted(false);
+
+    expect(localAudioTrack.enabled).toBe(true);
+  });
+
+  it("reports ICE disconnection and failure through the interruption callback", async () => {
+    const onConnectionInterrupted = vi.fn();
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      pollIntervalMs: 10,
+      onConnectionInterrupted
+    });
+    await session.start();
+
+    peerConnections[0].iceConnectionState = "connected";
+    peerConnections[0].oniceconnectionstatechange?.();
+    peerConnections[0].iceConnectionState = "disconnected";
+    peerConnections[0].oniceconnectionstatechange?.();
+    peerConnections[0].iceConnectionState = "failed";
+    peerConnections[0].oniceconnectionstatechange?.();
+
+    expect(onConnectionInterrupted).toHaveBeenCalledTimes(2);
   });
 
   it("deduplicates repeated server ICE candidates", async () => {

@@ -34,4 +34,4 @@ Routes:
 - `/room/[roomId]`
 - `/settings`
 
-The settings page stores nickname, preferred room, noise-cancellation settings, and browser audio-processing controls through the Zustand settings store. The room page keeps microphone access behind the `Connect audio` button.
+The settings page stores nickname, preferred room, noise-cancellation settings, and browser audio-processing controls through the Zustand settings store. After joining a room, the room page starts server-relay audio automatically and exposes `Mute` / `Unmute` for the local microphone only.

@@ -16,8 +16,6 @@ describe("RoomClient settings", () => {
 
   it("updates server noise settings and recreates server media after saving settings while audio is connected", async () => {
     render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Connect audio"));
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));
@@ -58,8 +56,6 @@ describe("RoomClient settings", () => {
       dpdfnet: defaultNoiseConfig.dpdfnet
     });
     render(<RoomClient roomId="DEFAULT" />);
-    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Connect audio"));
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));

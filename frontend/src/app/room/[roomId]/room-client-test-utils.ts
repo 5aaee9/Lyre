@@ -6,6 +6,7 @@ const send = vi.fn();
 const sockets: MockWebSocket[] = [];
 const getUserMedia = vi.fn();
 const stopTrack = vi.fn();
+const localAudioTrack = { id: "track", enabled: true, stop: stopTrack };
 const addRemoteTrack = vi.fn();
 const removeAudio = vi.fn();
 const playAudio = vi.fn();
@@ -53,7 +54,9 @@ class MockWebSocket {
 }
 
 class MockPeerConnection {
+  iceConnectionState: RTCIceConnectionState = "new";
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
+  oniceconnectionstatechange: (() => void) | null = null;
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
   addTrack = vi.fn();
   addIceCandidate = vi.fn();
@@ -98,6 +101,7 @@ export {
   addRemoteTrack,
   apiMocks,
   getUserMedia,
+  localAudioTrack,
   makeUser,
   peerConnections,
   playAudio,
@@ -119,6 +123,7 @@ beforeEach(() => {
   resetSettingsStoreForTests();
   send.mockClear();
   getUserMedia.mockReset();
+  localAudioTrack.enabled = true;
   stopTrack.mockClear();
   addRemoteTrack.mockClear();
   removeAudio.mockClear();
@@ -152,7 +157,7 @@ beforeEach(() => {
   apiMocks.updateMediaRelaySettings.mockReset();
   apiMocks.updateMediaRelaySettings.mockResolvedValue({});
   getUserMedia.mockResolvedValue({
-    getAudioTracks: () => [{ id: "track", stop: stopTrack }]
+    getAudioTracks: () => [localAudioTrack]
   });
   vi.stubGlobal("WebSocket", MockWebSocket);
   vi.stubGlobal("RTCPeerConnection", MockPeerConnection);

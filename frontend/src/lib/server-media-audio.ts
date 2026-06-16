@@ -20,6 +20,7 @@ type ServerMediaAudioSessionInput = {
   stream: MediaStream;
   pollIntervalMs?: number;
   onError?: (message: string) => void;
+  onConnectionInterrupted?: () => void;
 };
 
 const DEFAULT_AUDIO_TRACK_ID = "audio-main";
@@ -56,6 +57,11 @@ export class ServerMediaAudioSession {
       }
       void this.audio.play().catch((error: unknown) => this.reportError(error));
     };
+    this.peer.oniceconnectionstatechange = () => {
+      if (this.peer.iceConnectionState === "disconnected" || this.peer.iceConnectionState === "failed") {
+        this.input.onConnectionInterrupted?.();
+      }
+    };
   }
 
   async start(): Promise<void> {
@@ -76,6 +82,12 @@ export class ServerMediaAudioSession {
     this.candidatePoll = window.setInterval(() => {
       this.requestServerCandidates();
     }, this.input.pollIntervalMs ?? DEFAULT_CANDIDATE_POLL_INTERVAL_MS);
+  }
+
+  setMuted(muted: boolean): void {
+    for (const track of this.input.stream.getAudioTracks()) {
+      track.enabled = !muted;
+    }
   }
 
   close(): void {

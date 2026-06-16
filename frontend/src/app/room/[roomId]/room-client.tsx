@@ -70,22 +70,37 @@ function clearRoomSession() {
   sessionStorage.removeItem("lyre.roomSession");
 }
 
+const AUDIO_RECONNECT_RETRY_MS = 1_000;
+
 export function RoomClient({ roomId }: { roomId: string }) {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState("Joining");
   const [audioStarted, setAudioStarted] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [socketOpen, setSocketOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const serverAudioSessionRef = useRef<ServerMediaAudioSession | null>(null);
   const audioStartedRef = useRef(false);
+  const relayStartedRef = useRef(false);
+  const reconnectingAudioRef = useRef(false);
+  const reconnectRetryRef = useRef<number | null>(null);
+  const reconnectServerRelayAudioRef = useRef<() => void>(() => undefined);
   const serverMediaCleanupNeededRef = useRef(false);
   const link = useMemo(() => shareRoomUrl(roomId), [roomId]);
 
   const closeAudioSessions = useCallback(() => {
     serverAudioSessionRef.current?.close();
     serverAudioSessionRef.current = null;
+  }, []);
+
+  const clearReconnectRetry = useCallback(() => {
+    if (reconnectRetryRef.current !== null) {
+      window.clearTimeout(reconnectRetryRef.current);
+      reconnectRetryRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -106,7 +121,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setAccessToken(session.accessToken);
       const socket = createRoomSocket(roomId, session.user.id, session.accessToken);
       socketRef.current = socket;
-      socket.onopen = () => setStatus("Connected");
+      socket.onopen = () => {
+        setStatus("Connected");
+        setSocketOpen(true);
+      };
       socket.onmessage = (event) => {
         const signal = JSON.parse(event.data as string) as SignalMessage;
         void serverAudioSessionRef.current?.handleSignal(signal);
@@ -119,6 +137,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         });
       };
       socket.onclose = () => {
+        setSocketOpen(false);
         clearRoomSession();
         setStatus("Disconnected");
       };
@@ -130,19 +149,19 @@ export function RoomClient({ roomId }: { roomId: string }) {
       cancelled = true;
       closeAudioSessions();
       audioStartedRef.current = false;
+      relayStartedRef.current = false;
+      reconnectingAudioRef.current = false;
+      clearReconnectRetry();
       serverMediaCleanupNeededRef.current = false;
       setAudioStarted(false);
+      setSocketOpen(false);
       clearRoomSession();
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [closeAudioSessions, roomId]);
+  }, [clearReconnectRetry, closeAudioSessions, roomId]);
 
-  async function connectAudio() {
-    await connectServerRelayAudio({ updateRelay: false });
-  }
-
-  async function connectServerRelayAudio({ updateRelay }: { updateRelay: boolean }) {
+  const connectServerRelayAudio = useCallback(async ({ updateRelay }: { updateRelay: boolean }) => {
     if (!currentUser || !accessToken) {
       return;
     }
@@ -157,11 +176,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
       const iceServers = await getIceServers();
       stream = await openLocalAudioStream();
       const noise = readNoiseConfig();
-      if (!updateRelay) {
+      const shouldStartRelay = !updateRelay && !relayStartedRef.current;
+      if (shouldStartRelay) {
         await startMediaRelay(roomId, noise, accessToken);
         cleanupNeeded = true;
         serverMediaCleanupNeededRef.current = true;
         await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio", accessToken);
+        relayStartedRef.current = true;
       }
       const socket = socketRef.current;
       if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -174,15 +195,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
         socket,
         iceServers,
         stream,
-        onError: setStatus
+        onError: setStatus,
+        onConnectionInterrupted: () => reconnectServerRelayAudioRef.current()
       });
+      session.setMuted(muted);
       serverAudioSessionRef.current = session;
       stream = null;
       await session.start();
+      clearReconnectRetry();
       setStatus("Server relay audio connected");
     } catch (error) {
-      audioStartedRef.current = false;
-      setAudioStarted(false);
+      if (!updateRelay) {
+        audioStartedRef.current = false;
+        setAudioStarted(false);
+      }
       serverAudioSessionRef.current?.close();
       serverAudioSessionRef.current = null;
       if (stream) {
@@ -197,9 +223,43 @@ export function RoomClient({ roomId }: { roomId: string }) {
           // Keep the original startup error visible.
         }
         serverMediaCleanupNeededRef.current = false;
+        relayStartedRef.current = false;
       }
       setStatus(error instanceof Error ? error.message : "Audio connection failed");
     }
+  }, [accessToken, clearReconnectRetry, currentUser, muted, roomId]);
+
+  useEffect(() => {
+    reconnectServerRelayAudioRef.current = () => {
+      if (reconnectingAudioRef.current || !audioStartedRef.current) {
+        return;
+      }
+      reconnectingAudioRef.current = true;
+      setStatus("Reconnecting audio");
+      closeAudioSessions();
+      void connectServerRelayAudio({ updateRelay: true }).finally(() => {
+        reconnectingAudioRef.current = false;
+        if (audioStartedRef.current && !serverAudioSessionRef.current && socketRef.current?.readyState === WebSocket.OPEN) {
+          reconnectRetryRef.current = window.setTimeout(() => {
+            reconnectRetryRef.current = null;
+            reconnectServerRelayAudioRef.current();
+          }, AUDIO_RECONNECT_RETRY_MS);
+        }
+      });
+    };
+  }, [closeAudioSessions, connectServerRelayAudio]);
+
+  useEffect(() => {
+    if (!currentUser || !accessToken || !socketOpen || audioStartedRef.current) {
+      return;
+    }
+    void connectServerRelayAudio({ updateRelay: false });
+  }, [accessToken, connectServerRelayAudio, currentUser, socketOpen]);
+
+  function toggleMuted() {
+    const nextMuted = !muted;
+    setMuted(nextMuted);
+    serverAudioSessionRef.current?.setMuted(nextMuted);
   }
 
   async function saveSettings(settings: SettingsSnapshot) {
@@ -213,8 +273,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   async function leave() {
     const shouldCloseServerMedia = serverMediaCleanupNeededRef.current && currentUser;
+    clearReconnectRetry();
     closeAudioSessions();
     audioStartedRef.current = false;
+    relayStartedRef.current = false;
     setAudioStarted(false);
     if (currentUser && accessToken) {
       if (shouldCloseServerMedia) {
@@ -241,7 +303,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <Settings className="h-4 w-4" />
             <span className="ml-2">Settings</span>
           </Button>
-          <Button disabled={audioStarted} onClick={connectAudio}>Connect audio</Button>
+          <Button disabled={!audioStarted} onClick={toggleMuted}>{muted ? "Unmute" : "Mute"}</Button>
           <Button onClick={leave} variant="destructive">Leave</Button>
         </div>
       </div>

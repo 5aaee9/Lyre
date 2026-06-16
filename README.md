@@ -27,7 +27,7 @@ npm install
 APP_BASE_URL=http://localhost:3000 APP_API_URL=http://localhost:8080 npm run dev
 ```
 
-Open `http://localhost:3000`, create or join a room, then use `Connect audio` to start microphone capture.
+Open `http://localhost:3000` and create or join a room. The room connects server-relay audio automatically after joining; use `Mute` / `Unmute` to control only your local microphone.
 
 ## Common Commands
 
