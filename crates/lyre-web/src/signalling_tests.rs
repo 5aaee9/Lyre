@@ -62,6 +62,71 @@ fn serializes_all_server_payloads() {
 }
 
 #[test]
+fn serializes_server_media_ice_payloads() {
+    let room_id = RoomId::default_room();
+    let user_id = UserId::from_external("user_a");
+    let candidate = lyre_webrtc::ServerMediaIceCandidate {
+        room_id: room_id.clone(),
+        user_id: user_id.clone(),
+        candidate: "candidate:server".into(),
+        sdp_mid: Some("0".into()),
+        sdp_mline_index: Some(0),
+        username_fragment: Some("ufrag".into()),
+    };
+
+    let message = SignalMessage::to_self(
+        room_id.clone(),
+        user_id.clone(),
+        SignalPayload::ServerMediaIceCandidate {
+            candidate: "candidate:local".into(),
+            sdp_mid: Some("0".into()),
+            sdp_mline_index: Some(0),
+            username_fragment: Some("ufrag".into()),
+        },
+    );
+    let json = serde_json::to_value(&message).unwrap();
+    assert_eq!(json["type"], "server-media-ice-candidate");
+    assert_eq!(json["payload"]["type"], "server-media-ice-candidate");
+    assert_eq!(json["payload"]["sdp_mline_index"], 0);
+    let decoded: SignalMessage = serde_json::from_value(json).unwrap();
+    assert_eq!(decoded.payload, message.payload);
+
+    let request = SignalMessage::to_self(
+        room_id.clone(),
+        user_id.clone(),
+        SignalPayload::ServerMediaIceCandidatesRequest,
+    );
+    let request_json = serde_json::to_value(&request).unwrap();
+    assert_eq!(request_json["type"], "server-media-ice-candidates-request");
+    assert_eq!(
+        request_json["payload"]["type"],
+        "server-media-ice-candidates-request"
+    );
+    let decoded_request: SignalMessage = serde_json::from_value(request_json).unwrap();
+    assert_eq!(decoded_request.payload, request.payload);
+
+    let response = SignalMessage::to_self(
+        room_id,
+        user_id,
+        SignalPayload::ServerMediaIceCandidates {
+            candidates: vec![candidate],
+        },
+    );
+    let response_json = serde_json::to_value(&response).unwrap();
+    assert_eq!(response_json["type"], "server-media-ice-candidates");
+    assert_eq!(
+        response_json["payload"]["type"],
+        "server-media-ice-candidates"
+    );
+    assert_eq!(
+        response_json["payload"]["candidates"][0]["sdp_mline_index"],
+        0
+    );
+    let decoded_response: SignalMessage = serde_json::from_value(response_json).unwrap();
+    assert_eq!(decoded_response.payload, response.payload);
+}
+
+#[test]
 fn routes_targeted_and_broadcast_messages() {
     let (room_id, sender_id, recipient_id) = ids();
     let targeted = SignalMessage::new(

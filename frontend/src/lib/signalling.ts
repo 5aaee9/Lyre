@@ -1,10 +1,19 @@
-import type { RoomSnapshot, UserProfile } from "./api";
+import type { RoomSnapshot, ServerMediaIceCandidate, UserProfile } from "./api";
 import { apiBaseUrl } from "./api";
 
 export type SignalPayload =
   | { type: "offer"; sdp: string }
   | { type: "answer"; sdp: string }
   | { type: "ice-candidate"; candidate: string; sdp_mid?: string; sdp_m_line_index?: number }
+  | {
+      type: "server-media-ice-candidate";
+      candidate: string;
+      sdp_mid?: string | null;
+      sdp_mline_index?: number | null;
+      username_fragment?: string | null;
+    }
+  | { type: "server-media-ice-candidates-request" }
+  | { type: "server-media-ice-candidates"; candidates: ServerMediaIceCandidate[] }
   | { type: "user-joined"; user: UserProfile }
   | { type: "user-left"; user_id: string }
   | { type: "room-snapshot"; room: RoomSnapshot }
@@ -57,6 +66,24 @@ export function encodeIceCandidate(
   });
 }
 
+export function encodeServerMediaIceCandidate(
+  roomId: string,
+  senderId: string,
+  candidate: RTCIceCandidateInit
+): SignalMessage {
+  return message(roomId, senderId, senderId, {
+    type: "server-media-ice-candidate",
+    candidate: candidate.candidate ?? "",
+    sdp_mid: candidate.sdpMid ?? null,
+    sdp_mline_index: candidate.sdpMLineIndex ?? null,
+    username_fragment: candidate.usernameFragment ?? null
+  });
+}
+
+export function encodeServerMediaIceCandidatesRequest(roomId: string, senderId: string): SignalMessage {
+  return message(roomId, senderId, senderId, { type: "server-media-ice-candidates-request" });
+}
+
 export function reducePresence(state: PresenceState, signal: SignalMessage): PresenceState {
   const payload = signal.payload;
   switch (payload.type) {
@@ -83,6 +110,9 @@ export function reducePresence(state: PresenceState, signal: SignalMessage): Pre
     case "offer":
     case "answer":
     case "ice-candidate":
+    case "server-media-ice-candidate":
+    case "server-media-ice-candidates-request":
+    case "server-media-ice-candidates":
       return state;
   }
 }

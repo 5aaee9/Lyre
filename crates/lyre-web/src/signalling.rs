@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use lyre_core::{RoomId, RoomRegistry, RoomSnapshot, UserId, UserProfile};
+use lyre_webrtc::ServerMediaIceCandidate;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -9,6 +10,9 @@ pub enum SignalKind {
     Offer,
     Answer,
     IceCandidate,
+    ServerMediaIceCandidate,
+    ServerMediaIceCandidatesRequest,
+    ServerMediaIceCandidates,
     UserJoined,
     UserLeft,
     RoomSnapshot,
@@ -28,6 +32,16 @@ pub enum SignalPayload {
         candidate: String,
         sdp_mid: Option<String>,
         sdp_m_line_index: Option<u16>,
+    },
+    ServerMediaIceCandidate {
+        candidate: String,
+        sdp_mid: Option<String>,
+        sdp_mline_index: Option<u16>,
+        username_fragment: Option<String>,
+    },
+    ServerMediaIceCandidatesRequest,
+    ServerMediaIceCandidates {
+        candidates: Vec<ServerMediaIceCandidate>,
     },
     UserJoined {
         user: UserProfile,
@@ -49,6 +63,9 @@ impl SignalPayload {
             Self::Offer { .. } => SignalKind::Offer,
             Self::Answer { .. } => SignalKind::Answer,
             Self::IceCandidate { .. } => SignalKind::IceCandidate,
+            Self::ServerMediaIceCandidate { .. } => SignalKind::ServerMediaIceCandidate,
+            Self::ServerMediaIceCandidatesRequest => SignalKind::ServerMediaIceCandidatesRequest,
+            Self::ServerMediaIceCandidates { .. } => SignalKind::ServerMediaIceCandidates,
             Self::UserJoined { .. } => SignalKind::UserJoined,
             Self::UserLeft { .. } => SignalKind::UserLeft,
             Self::RoomSnapshot { .. } => SignalKind::RoomSnapshot,
@@ -81,6 +98,10 @@ impl SignalMessage {
             recipient_id,
             payload,
         }
+    }
+
+    pub fn to_self(room_id: RoomId, user_id: UserId, payload: SignalPayload) -> Self {
+        Self::new(room_id, user_id.clone(), Some(user_id), payload)
     }
 
     pub fn error(room_id: RoomId, sender_id: UserId, message: impl Into<String>) -> Self {

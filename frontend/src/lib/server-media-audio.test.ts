@@ -2,18 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ServerMediaAudioSession } from "./server-media-audio";
 
 const apiMocks = vi.hoisted(() => ({
-  addServerMediaIceCandidate: vi.fn(),
-  answerServerMediaOffer: vi.fn(),
-  getServerMediaIceCandidates: vi.fn()
+  answerServerMediaOffer: vi.fn()
 }));
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return {
     ...actual,
-    addServerMediaIceCandidate: apiMocks.addServerMediaIceCandidate,
-    answerServerMediaOffer: apiMocks.answerServerMediaOffer,
-    getServerMediaIceCandidates: apiMocks.getServerMediaIceCandidates
+    answerServerMediaOffer: apiMocks.answerServerMediaOffer
   };
 });
 
@@ -22,6 +18,7 @@ const addRemoteTrack = vi.fn();
 const play = vi.fn();
 const removeAudio = vi.fn();
 const append = vi.fn();
+const socketSend = vi.fn();
 const peerConnections: MockPeerConnection[] = [];
 
 const stream = {
@@ -47,6 +44,11 @@ class MockPeerConnection {
   }
 }
 
+class MockWebSocket {
+  static readonly OPEN = 1;
+  static readonly CLOSED = 3;
+}
+
 function iceCandidateEvent(candidate = "candidate:local"): RTCPeerConnectionIceEvent {
   return {
     candidate: {
@@ -65,6 +67,7 @@ function makeSession() {
     roomId: "DEFAULT",
     userId: "user_a",
     accessToken: "token_a",
+    socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
     iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
     stream,
     pollIntervalMs: 10
@@ -81,12 +84,7 @@ describe("ServerMediaAudioSession", () => {
     play.mockResolvedValue(undefined);
     removeAudio.mockClear();
     append.mockClear();
-    apiMocks.addServerMediaIceCandidate.mockReset();
-    apiMocks.addServerMediaIceCandidate.mockResolvedValue({
-      room_id: "DEFAULT",
-      user_id: "user_a",
-      candidate: "local-candidate"
-    });
+    socketSend.mockClear();
     apiMocks.answerServerMediaOffer.mockReset();
     apiMocks.answerServerMediaOffer.mockResolvedValue({
       room_id: "DEFAULT",
@@ -95,8 +93,7 @@ describe("ServerMediaAudioSession", () => {
       sdp: "server-answer",
       state: "negotiating"
     });
-    apiMocks.getServerMediaIceCandidates.mockReset();
-    apiMocks.getServerMediaIceCandidates.mockResolvedValue([]);
+    vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal("RTCPeerConnection", MockPeerConnection);
     vi.stubGlobal("MediaStream", MockMediaStream);
     vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
@@ -120,7 +117,7 @@ describe("ServerMediaAudioSession", () => {
     vi.useRealTimers();
   });
 
-  it("negotiates an offer, applies the answer, fetches candidates, and starts polling", async () => {
+  it("negotiates an offer, applies the answer, requests candidates, and starts polling", async () => {
     const session = makeSession();
 
     await session.start();
@@ -141,28 +138,40 @@ describe("ServerMediaAudioSession", () => {
       type: "answer",
       sdp: "server-answer"
     });
-    expect(apiMocks.getServerMediaIceCandidates).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
+    expect(socketSend).toHaveBeenCalledWith(JSON.stringify({
+      type: "server-media-ice-candidates-request",
+      room_id: "DEFAULT",
+      sender_id: "user_a",
+      recipient_id: "user_a",
+      payload: { type: "server-media-ice-candidates-request" }
+    }));
     expect(play).toHaveBeenCalledOnce();
 
     await vi.advanceTimersByTimeAsync(10);
 
-    expect(apiMocks.getServerMediaIceCandidates).toHaveBeenCalledTimes(2);
+    expect(socketSend).toHaveBeenCalledTimes(2);
   });
 
-  it("posts local ICE candidates to the server-media endpoint", async () => {
+  it("sends local ICE candidates over the room websocket", async () => {
     const session = makeSession();
     await session.start();
 
     peerConnections[0].onicecandidate?.(iceCandidateEvent());
 
     await vi.waitFor(() =>
-      expect(apiMocks.addServerMediaIceCandidate).toHaveBeenCalledWith("DEFAULT", {
-        user_id: "user_a",
-        candidate: "candidate:local",
-        sdp_mid: "0",
-        sdp_mline_index: 0,
-        username_fragment: "ufrag"
-      }, "token_a")
+      expect(socketSend).toHaveBeenCalledWith(JSON.stringify({
+        type: "server-media-ice-candidate",
+        room_id: "DEFAULT",
+        sender_id: "user_a",
+        recipient_id: "user_a",
+        payload: {
+          type: "server-media-ice-candidate",
+          candidate: "candidate:local",
+          sdp_mid: "0",
+          sdp_mline_index: 0,
+          username_fragment: "ufrag"
+        }
+      }))
     );
   });
 
@@ -180,7 +189,7 @@ describe("ServerMediaAudioSession", () => {
     peerConnections[0].onicecandidate?.(iceCandidateEvent("candidate:early"));
     await Promise.resolve();
 
-    expect(apiMocks.addServerMediaIceCandidate).not.toHaveBeenCalled();
+    expect(socketSend).not.toHaveBeenCalledWith(expect.stringContaining("candidate:early"));
 
     resolveAnswer!({
       room_id: "DEFAULT",
@@ -192,13 +201,19 @@ describe("ServerMediaAudioSession", () => {
     await start;
 
     await vi.waitFor(() =>
-      expect(apiMocks.addServerMediaIceCandidate).toHaveBeenCalledWith("DEFAULT", {
-        user_id: "user_a",
-        candidate: "candidate:early",
-        sdp_mid: "0",
-        sdp_mline_index: 0,
-        username_fragment: "ufrag"
-      }, "token_a")
+      expect(socketSend).toHaveBeenCalledWith(JSON.stringify({
+        type: "server-media-ice-candidate",
+        room_id: "DEFAULT",
+        sender_id: "user_a",
+        recipient_id: "user_a",
+        payload: {
+          type: "server-media-ice-candidate",
+          candidate: "candidate:early",
+          sdp_mid: "0",
+          sdp_mline_index: 0,
+          username_fragment: "ufrag"
+        }
+      }))
     );
   });
 
@@ -216,22 +231,53 @@ describe("ServerMediaAudioSession", () => {
   });
 
   it("deduplicates repeated server ICE candidates", async () => {
-    apiMocks.getServerMediaIceCandidates.mockResolvedValue([
-      {
-        room_id: "DEFAULT",
-        user_id: "user_a",
-        candidate: "candidate:server",
-        sdp_mid: "0",
-        sdp_mline_index: 0,
-        username_fragment: null
-      }
-    ]);
     const session = makeSession();
 
     await session.start();
-    await vi.advanceTimersByTimeAsync(10);
+    await session.handleSignal({
+      type: "server-media-ice-candidates",
+      room_id: "DEFAULT",
+      sender_id: "user_a",
+      recipient_id: "user_a",
+      payload: {
+        type: "server-media-ice-candidates",
+        candidates: [
+          {
+            room_id: "DEFAULT",
+            user_id: "user_a",
+            candidate: "candidate:server",
+            sdp_mid: "0",
+            sdp_mline_index: 0,
+            username_fragment: null
+          },
+          {
+            room_id: "DEFAULT",
+            user_id: "user_a",
+            candidate: "candidate:server",
+            sdp_mid: "0",
+            sdp_mline_index: 0,
+            username_fragment: null
+          }
+        ]
+      }
+    });
 
     expect(peerConnections[0].addIceCandidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports websocket connectivity failures when starting candidate requests", async () => {
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.CLOSED, send: socketSend } as unknown as WebSocket,
+      iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      pollIntervalMs: 10,
+      onError: vi.fn()
+    });
+
+    await expect(session.start()).rejects.toThrow("Audio signalling websocket is not connected");
   });
 
   it("closes peer resources, stops local tracks, and removes playback audio", async () => {
@@ -244,6 +290,6 @@ describe("ServerMediaAudioSession", () => {
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
     expect(removeAudio).toHaveBeenCalledOnce();
-    expect(apiMocks.getServerMediaIceCandidates).toHaveBeenCalledOnce();
+    expect(socketSend).toHaveBeenCalledTimes(1);
   });
 });

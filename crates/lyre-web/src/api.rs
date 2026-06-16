@@ -1,5 +1,6 @@
 use crate::{
     error::ApiError,
+    server_media_ice_diagnostics::{summarize_candidates, ServerMediaIceCandidateSummary},
     signalling::{route_signal_message, SignalMessage, SignalPayload},
 };
 use axum::{
@@ -16,6 +17,7 @@ use futures_util::{SinkExt, StreamExt};
 use lyre_core::{
     supported_noise_providers, IceServerConfig, JoinRoomRequest, LeaveRoomRequest, RoomId,
 };
+use lyre_webrtc::{ServerMediaIceCandidate, ServerMediaSessionKey};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
@@ -326,14 +328,11 @@ async fn handle_socket(
             Some(Ok(message)) = ws_rx.next() => {
                 if let Message::Text(text) = message {
                     match serde_json::from_str::<SignalMessage>(&text) {
-                        Ok(signal) => match route_signal_message(&room_id, &user_id, &signal) {
-                            Ok(_) => {
-                                state.peers.forward(signal);
+                        Ok(signal) => {
+                            if let Some(response) = handle_signal_message(&state, &room_id, &user_id, signal).await {
+                                let _ = ws_tx.send(Message::Text(serde_json::to_string(&response).unwrap().into())).await;
                             }
-                            Err(error) => {
-                                let _ = ws_tx.send(Message::Text(serde_json::to_string(&*error).unwrap().into())).await;
-                            }
-                        },
+                        }
                         Err(_) => {
                             let error = SignalMessage::error(room_id.clone(), user_id.clone(), "invalid signal message");
                             let _ = ws_tx.send(Message::Text(serde_json::to_string(&error).unwrap().into())).await;
@@ -346,4 +345,91 @@ async fn handle_socket(
     }
 
     state.disconnect_room_socket(&room_id, &user_id).await;
+}
+
+pub(crate) async fn handle_signal_message(
+    state: &AppState,
+    room_id: &RoomId,
+    user_id: &lyre_core::UserId,
+    signal: SignalMessage,
+) -> Option<SignalMessage> {
+    match route_signal_message(room_id, user_id, &signal) {
+        Ok(_) => handle_valid_signal_message(state, room_id, user_id, signal).await,
+        Err(error) => Some(*error),
+    }
+}
+
+async fn handle_valid_signal_message(
+    state: &AppState,
+    room_id: &RoomId,
+    user_id: &lyre_core::UserId,
+    signal: SignalMessage,
+) -> Option<SignalMessage> {
+    match signal.payload {
+        SignalPayload::ServerMediaIceCandidate {
+            candidate,
+            sdp_mid,
+            sdp_mline_index,
+            username_fragment,
+        } => {
+            let candidate = ServerMediaIceCandidate {
+                room_id: room_id.clone(),
+                user_id: user_id.clone(),
+                candidate,
+                sdp_mid,
+                sdp_mline_index,
+                username_fragment,
+            };
+            let summary = ServerMediaIceCandidateSummary::from_candidate(&candidate);
+            match state.add_server_media_ice_candidate(candidate).await {
+                Ok(()) => {
+                    tracing::debug!(
+                        room_id = %room_id,
+                        user_id = %user_id,
+                        candidate = ?summary,
+                        "server media remote ICE candidate accepted over websocket"
+                    );
+                    None
+                }
+                Err(error) => {
+                    tracing::debug!(
+                        room_id = %room_id,
+                        user_id = %user_id,
+                        candidate = ?summary,
+                        error = %format_args!("{error:#}"),
+                        "failed to add server media ICE candidate over websocket"
+                    );
+                    Some(SignalMessage::error(
+                        room_id.clone(),
+                        user_id.clone(),
+                        error.to_string(),
+                    ))
+                }
+            }
+        }
+        SignalPayload::ServerMediaIceCandidatesRequest => {
+            let key = ServerMediaSessionKey {
+                room_id: room_id.clone(),
+                user_id: user_id.clone(),
+            };
+            let candidates = state.server_media_ice_candidates(&key);
+            let candidate_summaries = summarize_candidates(&candidates);
+            tracing::debug!(
+                room_id = %room_id,
+                user_id = %user_id,
+                candidate_count = candidates.len(),
+                candidates = ?candidate_summaries,
+                "server media local ICE candidates returned over websocket"
+            );
+            Some(SignalMessage::to_self(
+                room_id.clone(),
+                user_id.clone(),
+                SignalPayload::ServerMediaIceCandidates { candidates },
+            ))
+        }
+        _ => {
+            state.peers.forward(signal);
+            None
+        }
+    }
 }

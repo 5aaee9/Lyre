@@ -1,16 +1,20 @@
 import {
-  addServerMediaIceCandidate,
   answerServerMediaOffer,
-  getServerMediaIceCandidates,
   type IceServerConfig,
   type ServerMediaIceCandidate
 } from "./api";
+import {
+  encodeServerMediaIceCandidate,
+  encodeServerMediaIceCandidatesRequest,
+  type SignalMessage
+} from "./signalling";
 import { createPeerConnection } from "./webrtc";
 
 type ServerMediaAudioSessionInput = {
   roomId: string;
   userId: string;
   accessToken: string;
+  socket: WebSocket;
   audioTrackId?: string;
   iceServers: IceServerConfig[];
   stream: MediaStream;
@@ -20,6 +24,7 @@ type ServerMediaAudioSessionInput = {
 
 const DEFAULT_AUDIO_TRACK_ID = "audio-main";
 const DEFAULT_CANDIDATE_POLL_INTERVAL_MS = 1_000;
+const SOCKET_NOT_CONNECTED_ERROR = "Audio signalling websocket is not connected";
 
 export class ServerMediaAudioSession {
   private readonly audioTrackId: string;
@@ -67,9 +72,9 @@ export class ServerMediaAudioSession {
     await this.peer.setRemoteDescription({ type: "answer", sdp: answer.sdp });
     this.offerAnswered = true;
     await this.flushLocalCandidates();
-    await this.fetchServerCandidates({ report: false });
+    this.requestServerCandidates({ report: false });
     this.candidatePoll = window.setInterval(() => {
-      void this.fetchServerCandidates();
+      this.requestServerCandidates();
     }, this.input.pollIntervalMs ?? DEFAULT_CANDIDATE_POLL_INTERVAL_MS);
   }
 
@@ -84,6 +89,19 @@ export class ServerMediaAudioSession {
     }
     this.audio.srcObject = null;
     this.audio.remove();
+  }
+
+  async handleSignal(signal: SignalMessage): Promise<void> {
+    if (signal.payload.type !== "server-media-ice-candidates") {
+      return;
+    }
+    try {
+      for (const candidate of signal.payload.candidates) {
+        await this.addServerCandidate(candidate);
+      }
+    } catch (error) {
+      this.reportError(error);
+    }
   }
 
   private async sendOrQueueLocalCandidate(candidate: RTCIceCandidateInit): Promise<void> {
@@ -102,32 +120,15 @@ export class ServerMediaAudioSession {
 
   private async addLocalCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     try {
-      await addServerMediaIceCandidate(
-        this.input.roomId,
-        {
-          user_id: this.input.userId,
-          candidate: candidate.candidate ?? "",
-          sdp_mid: candidate.sdpMid ?? null,
-          sdp_mline_index: candidate.sdpMLineIndex ?? null,
-          username_fragment: candidate.usernameFragment ?? null
-        },
-        this.input.accessToken
-      );
+      this.sendSignal(encodeServerMediaIceCandidate(this.input.roomId, this.input.userId, candidate));
     } catch (error) {
       this.reportError(error);
     }
   }
 
-  private async fetchServerCandidates({ report = true }: { report?: boolean } = {}): Promise<void> {
+  private requestServerCandidates({ report = true }: { report?: boolean } = {}): void {
     try {
-      const candidates = await getServerMediaIceCandidates(
-        this.input.roomId,
-        this.input.userId,
-        this.input.accessToken
-      );
-      for (const candidate of candidates) {
-        await this.addServerCandidate(candidate);
-      }
+      this.sendSignal(encodeServerMediaIceCandidatesRequest(this.input.roomId, this.input.userId));
     } catch (error) {
       if (report) {
         this.reportError(error);
@@ -135,6 +136,13 @@ export class ServerMediaAudioSession {
       }
       throw error;
     }
+  }
+
+  private sendSignal(signal: SignalMessage): void {
+    if (this.input.socket.readyState !== WebSocket.OPEN) {
+      throw new Error(SOCKET_NOT_CONNECTED_ERROR);
+    }
+    this.input.socket.send(JSON.stringify(signal));
   }
 
   private async addServerCandidate(candidate: ServerMediaIceCandidate): Promise<void> {

@@ -110,9 +110,57 @@ describe("RoomClient", () => {
       "local-offer-0",
       "token_a"
     );
-    expect(send).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith(JSON.stringify({
+      type: "server-media-ice-candidates-request",
+      room_id: "DEFAULT",
+      sender_id: "user_a",
+      recipient_id: "user_a",
+      payload: { type: "server-media-ice-candidates-request" }
+    }));
     expect(screen.getByText("Server relay audio connected")).toBeInTheDocument();
     expect(screen.getByText("Connect audio")).toBeDisabled();
+  });
+
+  it("dispatches incoming server media candidates to the active audio session", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Connect audio"));
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    act(() => {
+      sockets[0].onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "server-media-ice-candidates",
+            room_id: "DEFAULT",
+            sender_id: "user_a",
+            recipient_id: "user_a",
+            payload: {
+              type: "server-media-ice-candidates",
+              candidates: [
+                {
+                  room_id: "DEFAULT",
+                  user_id: "user_a",
+                  candidate: "candidate:server",
+                  sdp_mid: "0",
+                  sdp_mline_index: 0,
+                  username_fragment: null
+                }
+              ]
+            }
+          })
+        })
+      );
+    });
+
+    await waitFor(() =>
+      expect(peerConnections[0].addIceCandidate).toHaveBeenCalledWith({
+        candidate: "candidate:server",
+        sdpMid: "0",
+        sdpMLineIndex: 0,
+        usernameFragment: undefined
+      })
+    );
   });
 
   it("keeps server relay playback setup local to remote tracks", async () => {
@@ -217,19 +265,19 @@ describe("RoomClient", () => {
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
   });
 
-  it("keeps initial server candidate exchange errors visible", async () => {
-    apiMocks.getServerMediaIceCandidates.mockRejectedValueOnce(new Error("candidate fetch failed"));
+  it("keeps missing signalling websocket startup errors visible", async () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+    sockets[0].readyState = WebSocket.CLOSED;
 
     fireEvent.click(screen.getByText("Connect audio"));
 
-    await waitFor(() => expect(screen.getByText("candidate fetch failed")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Audio signalling websocket is not connected")).toBeInTheDocument());
     expect(screen.queryByText("Server relay audio connected")).not.toBeInTheDocument();
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
-    expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
+    expect(peerConnections).toHaveLength(0);
   });
 
   it("does not start media when ice server fetch fails", async () => {

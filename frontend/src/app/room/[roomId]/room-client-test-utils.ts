@@ -10,11 +10,9 @@ const addRemoteTrack = vi.fn();
 const removeAudio = vi.fn();
 const playAudio = vi.fn();
 const apiMocks = vi.hoisted(() => ({
-  addServerMediaIceCandidate: vi.fn(),
   answerServerMediaOffer: vi.fn(),
   closeServerMediaSession: vi.fn(),
   getIceServers: vi.fn(async () => [{ urls: ["stun:stun.example:3478"], username: null, credential: null }]),
-  getServerMediaIceCandidates: vi.fn(),
   leaveRoom: vi.fn(),
   registerMediaTrack: vi.fn(),
   startMediaRelay: vi.fn(),
@@ -39,6 +37,9 @@ function makeUser(id: string, nickname = id): UserProfile {
 const users = [makeUser("user_a", "Ada"), makeUser("user_b", "Bob"), makeUser("user_c", "Cam")];
 
 class MockWebSocket {
+  static readonly OPEN = 1;
+  static readonly CLOSED = 3;
+  readyState = MockWebSocket.OPEN;
   onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
@@ -87,9 +88,7 @@ vi.mock("@/lib/api", async () => {
     stopMediaRelay: apiMocks.stopMediaRelay,
     registerMediaTrack: apiMocks.registerMediaTrack,
     answerServerMediaOffer: apiMocks.answerServerMediaOffer,
-    addServerMediaIceCandidate: apiMocks.addServerMediaIceCandidate,
     closeServerMediaSession: apiMocks.closeServerMediaSession,
-    getServerMediaIceCandidates: apiMocks.getServerMediaIceCandidates,
     updateMediaRelaySettings: apiMocks.updateMediaRelaySettings,
     shareRoomUrl: () => "http://localhost:3000/room/DEFAULT"
   };
@@ -134,12 +133,6 @@ beforeEach(() => {
   apiMocks.getIceServers.mockResolvedValue([
     { urls: ["stun:stun.example:3478"], username: null, credential: null }
   ]);
-  apiMocks.addServerMediaIceCandidate.mockReset();
-  apiMocks.addServerMediaIceCandidate.mockResolvedValue({
-    room_id: "DEFAULT",
-    user_id: "user_a",
-    candidate: "candidate:local"
-  });
   apiMocks.answerServerMediaOffer.mockReset();
   apiMocks.answerServerMediaOffer.mockResolvedValue({
     room_id: "DEFAULT",
@@ -148,8 +141,6 @@ beforeEach(() => {
     sdp: "server-answer",
     state: "negotiating"
   });
-  apiMocks.getServerMediaIceCandidates.mockReset();
-  apiMocks.getServerMediaIceCandidates.mockResolvedValue([]);
   apiMocks.closeServerMediaSession.mockReset();
   apiMocks.closeServerMediaSession.mockResolvedValue({});
   apiMocks.leaveRoom.mockReset();

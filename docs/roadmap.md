@@ -84,6 +84,7 @@
 - Authenticated media relay settings updates can switch server-side noise cancellation between off and denoise providers without dropping registered relay tracks.
 - Authenticated room WebSocket disconnects now remove users from room membership, persist the leave, notify remaining peers, and clear stale frontend room sessions.
 - CI and Docker packaging now build the ONNX Runtime-backed DPDFNet path with explicit Nix dev shell runtime libraries and Debian trixie API image bases.
+- Browser runtime server-media ICE candidates now use the authenticated room WebSocket, while REST/WebRPC candidate endpoints remain compatibility and test surfaces; true server-side candidate push subscriptions remain future work if needed.
 
 ## Next
 

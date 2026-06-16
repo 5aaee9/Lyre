@@ -109,6 +109,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       socket.onopen = () => setStatus("Connected");
       socket.onmessage = (event) => {
         const signal = JSON.parse(event.data as string) as SignalMessage;
+        void serverAudioSessionRef.current?.handleSignal(signal);
         setRoom((current) => {
           const next: PresenceState = reducePresence({ room: current ?? undefined }, signal);
           if (next.error) {
@@ -162,10 +163,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
         serverMediaCleanupNeededRef.current = true;
         await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio", accessToken);
       }
+      const socket = socketRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        throw new Error("Audio signalling websocket is not connected");
+      }
       const session = new ServerMediaAudioSession({
         roomId,
         userId: currentUser.id,
         accessToken,
+        socket,
         iceServers,
         stream,
         onError: setStatus
