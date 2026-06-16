@@ -117,6 +117,21 @@ pub struct RegisterMediaTrackResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateMediaRelaySubscriptionsRequest {
+    #[serde(rename = "roomID")]
+    pub room_id: String,
+    #[serde(rename = "userID")]
+    pub user_id: String,
+    #[serde(rename = "sourceUserIDs")]
+    pub source_user_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateMediaRelaySubscriptionsResponse {
+    pub subscriptions: MediaRelaySubscriptions,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AnswerServerMediaOfferRequest {
     #[serde(rename = "roomID")]
     pub room_id: String,
@@ -280,6 +295,16 @@ pub struct MediaRelayRoomStatus {
     pub server_side_noise_cancelling: bool,
     pub noise: NoiseCancellationConfig,
     pub participants: Vec<MediaRelayParticipant>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MediaRelaySubscriptions {
+    #[serde(rename = "roomID")]
+    pub room_id: String,
+    #[serde(rename = "userID")]
+    pub user_id: String,
+    #[serde(rename = "sourceUserIDs")]
+    pub source_user_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

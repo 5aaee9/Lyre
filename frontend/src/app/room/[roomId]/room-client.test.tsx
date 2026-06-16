@@ -3,14 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { NoiseCancellationConfig } from "@/lib/api";
 import { defaultNoiseConfig, useSettingsStore } from "@/lib/settings-store";
 import {
-  addRemoteTrack,
   apiMocks,
+  gainNodes,
   getUserMedia,
   localAudioTrack,
   makeUser,
   peerConnections,
-  playAudio,
-  removeAudio,
   send,
   sockets,
   stopTrack
@@ -90,6 +88,12 @@ describe("RoomClient", () => {
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
     expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
     expect(apiMocks.registerMediaTrack).toHaveBeenCalledOnce();
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_b", "user_c"],
+      "token_a"
+    );
   });
 
   it("toggles local microphone mute without recreating audio", async () => {
@@ -188,19 +192,90 @@ describe("RoomClient", () => {
     );
   });
 
-  it("keeps server relay playback setup local to remote tracks", async () => {
+  it("renders playback controls for remote users only", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
+
+    expect(screen.queryByText("Mute Ada")).not.toBeInTheDocument();
+    expect(screen.getByText("Mute Bob")).toBeInTheDocument();
+    expect(screen.getByLabelText("Bob volume")).toHaveValue("100");
+    expect(screen.getByText("Mute Cam")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cam volume")).toHaveValue("100");
+  });
+
+  it("uses persisted muted users before first server-media connect", async () => {
+    useSettingsStore.getState().setUserAudioSettings("user_b", { muted: true });
+
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_c"],
+      "token_a"
+    );
+    expect(screen.getByText("Unmute Bob")).toBeInTheDocument();
+  });
+
+  it("muting a remote user updates subscriptions and recreates server media without toggling microphone mute", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByText("Mute Bob"));
+
+    await waitFor(() => expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenLastCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_c"],
+      "token_a"
+    ));
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+    expect(localAudioTrack.enabled).toBe(true);
+    expect(peerConnections[0].close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the existing server media session when subscription update fails", async () => {
+    apiMocks.updateMediaRelaySubscriptions.mockResolvedValueOnce({});
+    apiMocks.updateMediaRelaySubscriptions.mockRejectedValueOnce(new Error("subscription failed"));
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByText("Mute Bob"));
+
+    await waitFor(() => expect(screen.getByText("subscription failed")).toBeInTheDocument());
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce();
+    expect(peerConnections[0].close).not.toHaveBeenCalled();
+  });
+
+  it("updates remote gain when volume control changes", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    fireEvent.change(screen.getByLabelText("Bob volume"), { target: { value: "125" } });
+
+    await waitFor(() => expect(useSettingsStore.getState().userAudio.user_b.volumePercent).toBe(125));
+  });
+
+  it("unmuting recreates server media with the restored user volume snapshot", async () => {
+    useSettingsStore.getState().setUserAudioSettings("user_b", {
+      muted: true,
+      volumePercent: 125
+    });
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByText("Unmute Bob"));
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
     act(() => {
-      peerConnections[0].ontrack?.({
-        track: { id: "remote-track" },
+      peerConnections[1].ontrack?.({
+        track: { id: "lyre-user:user_b:audio" },
         streams: []
       } as unknown as RTCTrackEvent);
     });
 
-    expect(addRemoteTrack).toHaveBeenCalledWith({ id: "remote-track" });
-    expect(playAudio).toHaveBeenCalledTimes(2);
+    expect(gainNodes[0].gain.value).toBe(1.25);
   });
 
   it("cleans server relay local and server media on leave without stopping the room relay", async () => {
@@ -221,7 +296,6 @@ describe("RoomClient", () => {
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
-    expect(removeAudio).toHaveBeenCalledOnce();
   });
 
   it("keeps server relay unmount cleanup local without room mutations", async () => {
@@ -239,7 +313,6 @@ describe("RoomClient", () => {
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
-    expect(removeAudio).toHaveBeenCalledOnce();
     expect(sockets[0].close).toHaveBeenCalledOnce();
     expect(sessionStorage.getItem("lyre.roomSession")).toBeNull();
   });

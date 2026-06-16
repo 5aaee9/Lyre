@@ -75,6 +75,19 @@ pub struct UpdateMediaRelaySettingsRequest {
     pub noise: NoiseCancellationConfig,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateMediaRelaySubscriptionsRequest {
+    pub user_id: UserId,
+    pub source_user_ids: Vec<UserId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaRelaySubscriptions {
+    pub room_id: RoomId,
+    pub user_id: UserId,
+    pub source_user_ids: Vec<UserId>,
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum MediaRelayError {
     #[error("media relay is not active for room `{room_id}`")]
@@ -110,6 +123,7 @@ struct MediaRelayRoomState {
     active: bool,
     noise: NoiseCancellationConfig,
     participants: DashMap<UserId, DashMap<String, MediaTrackKind>>,
+    subscriptions: DashMap<UserId, DashMap<UserId, ()>>,
 }
 
 #[derive(Debug, Default)]
@@ -144,6 +158,7 @@ impl MediaRelayRegistry {
         room.active = false;
         room.noise = NoiseCancellationConfig::default();
         room.participants.clear();
+        room.subscriptions.clear();
         drop(room);
         self.snapshot(room_id)
     }
@@ -192,15 +207,136 @@ impl MediaRelayRegistry {
         room_id: RoomId,
         user_id: &UserId,
     ) -> Result<MediaRelayRoomStatus, MediaRelayError> {
-        let Some(room) = self.rooms.get(&room_id) else {
+        let Some(room) = self.rooms.get_mut(&room_id) else {
             return Err(MediaRelayError::Inactive { room_id });
         };
         if !room.active {
             return Err(MediaRelayError::Inactive { room_id });
         }
         room.participants.remove(user_id);
+        room.subscriptions.remove(user_id);
+        for subscription in &room.subscriptions {
+            subscription.value().remove(user_id);
+        }
         drop(room);
         Ok(self.snapshot(room_id))
+    }
+
+    pub fn update_subscriptions(
+        &self,
+        room_id: RoomId,
+        request: UpdateMediaRelaySubscriptionsRequest,
+    ) -> Result<MediaRelaySubscriptions, MediaRelayError> {
+        let Some(room) = self.rooms.get_mut(&room_id) else {
+            return Err(MediaRelayError::Inactive { room_id });
+        };
+        if !room.active {
+            return Err(MediaRelayError::Inactive { room_id });
+        }
+        if !room.participants.contains_key(&request.user_id) {
+            return Err(MediaRelayError::ParticipantNotFound {
+                room_id,
+                user_id: request.user_id,
+            });
+        }
+        for source_user_id in &request.source_user_ids {
+            if !room.participants.contains_key(source_user_id) {
+                return Err(MediaRelayError::ParticipantNotFound {
+                    room_id,
+                    user_id: source_user_id.clone(),
+                });
+            }
+        }
+
+        let source_user_ids =
+            sorted_unique_remote_user_ids(request.source_user_ids, &request.user_id);
+        let sources = room
+            .subscriptions
+            .entry(request.user_id.clone())
+            .or_default();
+        sources.clear();
+        for source_user_id in &source_user_ids {
+            sources.insert(source_user_id.clone(), ());
+        }
+
+        Ok(MediaRelaySubscriptions {
+            room_id,
+            user_id: request.user_id,
+            source_user_ids,
+        })
+    }
+
+    pub fn subscriptions(
+        &self,
+        room_id: &RoomId,
+        user_id: &UserId,
+    ) -> Result<MediaRelaySubscriptions, MediaRelayError> {
+        let Some(room) = self.rooms.get(room_id) else {
+            return Err(MediaRelayError::Inactive {
+                room_id: room_id.clone(),
+            });
+        };
+        if !room.active {
+            return Err(MediaRelayError::Inactive {
+                room_id: room_id.clone(),
+            });
+        }
+        if !room.participants.contains_key(user_id) {
+            return Err(MediaRelayError::ParticipantNotFound {
+                room_id: room_id.clone(),
+                user_id: user_id.clone(),
+            });
+        }
+
+        let source_user_ids = room
+            .subscriptions
+            .get(user_id)
+            .map(|sources| sorted_subscription_ids(sources.value()))
+            .unwrap_or_else(|| sorted_remote_participant_ids(&room.participants, user_id));
+        Ok(MediaRelaySubscriptions {
+            room_id: room_id.clone(),
+            user_id: user_id.clone(),
+            source_user_ids,
+        })
+    }
+
+    pub fn is_source_subscribed(
+        &self,
+        room_id: &RoomId,
+        recipient_user_id: &UserId,
+        source_user_id: &UserId,
+    ) -> Result<bool, MediaRelayError> {
+        let Some(room) = self.rooms.get(room_id) else {
+            return Err(MediaRelayError::Inactive {
+                room_id: room_id.clone(),
+            });
+        };
+        if !room.active {
+            return Err(MediaRelayError::Inactive {
+                room_id: room_id.clone(),
+            });
+        }
+        if !room.participants.contains_key(recipient_user_id) {
+            return Err(MediaRelayError::ParticipantNotFound {
+                room_id: room_id.clone(),
+                user_id: recipient_user_id.clone(),
+            });
+        }
+        if recipient_user_id == source_user_id {
+            return Ok(false);
+        }
+        if !room.participants.contains_key(source_user_id) {
+            return Err(MediaRelayError::ParticipantNotFound {
+                room_id: room_id.clone(),
+                user_id: source_user_id.clone(),
+            });
+        }
+
+        Ok(room
+            .subscriptions
+            .get(recipient_user_id)
+            .map(|sources| sources.contains_key(source_user_id))
+            .unwrap_or(true))
     }
 
     pub fn require_track(
@@ -318,6 +454,38 @@ fn sorted_participants(
         .collect::<Vec<_>>();
     participants.sort_by(|left, right| left.user_id.cmp(&right.user_id));
     participants
+}
+
+fn sorted_remote_participant_ids(
+    participants: &DashMap<UserId, DashMap<String, MediaTrackKind>>,
+    recipient_user_id: &UserId,
+) -> Vec<UserId> {
+    let mut user_ids = participants
+        .iter()
+        .filter(|entry| entry.key() != recipient_user_id)
+        .map(|entry| entry.key().clone())
+        .collect::<Vec<_>>();
+    user_ids.sort();
+    user_ids
+}
+
+fn sorted_subscription_ids(subscriptions: &DashMap<UserId, ()>) -> Vec<UserId> {
+    let mut source_user_ids = subscriptions
+        .iter()
+        .map(|entry| entry.key().clone())
+        .collect::<Vec<_>>();
+    source_user_ids.sort();
+    source_user_ids
+}
+
+fn sorted_unique_remote_user_ids(
+    mut source_user_ids: Vec<UserId>,
+    recipient_user_id: &UserId,
+) -> Vec<UserId> {
+    source_user_ids.retain(|source_user_id| source_user_id != recipient_user_id);
+    source_user_ids.sort();
+    source_user_ids.dedup();
+    source_user_ids
 }
 
 fn inactive_status(room_id: RoomId) -> MediaRelayRoomStatus {

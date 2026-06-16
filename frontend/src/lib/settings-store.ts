@@ -8,17 +8,25 @@ export type AudioProcessingConfig = {
   noiseSuppression: boolean;
 };
 
+export type UserAudioSettings = {
+  muted: boolean;
+  volumePercent: number;
+};
+
 export type SettingsState = {
   rememberRoom: boolean;
   roomId: string;
   nickname: string;
   noise: NoiseCancellationConfig;
   audioProcessing: AudioProcessingConfig;
+  userAudio: Record<string, UserAudioSettings>;
   setRememberRoom: (rememberRoom: boolean) => void;
   setRoomId: (roomId: string) => void;
   setNickname: (nickname: string) => void;
   setNoise: (noise: NoiseCancellationConfig) => void;
   setAudioProcessing: (audioProcessing: AudioProcessingConfig) => void;
+  setUserAudioSettings: (userId: string, settings: Partial<UserAudioSettings>) => void;
+  clearUserAudioSettings: (userId: string) => void;
 };
 
 export type SettingsSnapshot = SettingsState;
@@ -43,8 +51,13 @@ export const defaultSettingsState = {
   roomId: "DEFAULT",
   nickname: "",
   noise: defaultNoiseConfig,
-  audioProcessing: defaultAudioProcessingConfig
+  audioProcessing: defaultAudioProcessingConfig,
+  userAudio: {}
 };
+
+function clampUserVolume(volume: number): number {
+  return Math.min(150, Math.max(0, volume));
+}
 
 function mergeSettingsState(persistedState: unknown, currentState: SettingsState): SettingsState {
   const persisted = persistedState as Partial<SettingsState>;
@@ -63,7 +76,8 @@ function mergeSettingsState(persistedState: unknown, currentState: SettingsState
     audioProcessing: {
       ...defaultAudioProcessingConfig,
       ...persisted.audioProcessing
-    }
+    },
+    userAudio: persisted.userAudio ?? {}
   };
 }
 
@@ -75,7 +89,30 @@ export const useSettingsStore = create<SettingsState>()(
       setRoomId: (roomId) => set({ roomId }),
       setNickname: (nickname) => set({ nickname }),
       setNoise: (noise) => set({ noise }),
-      setAudioProcessing: (audioProcessing) => set({ audioProcessing })
+      setAudioProcessing: (audioProcessing) => set({ audioProcessing }),
+      setUserAudioSettings: (userId, settings) =>
+        set((state) => {
+          const current = state.userAudio[userId] ?? { muted: false, volumePercent: 100 };
+          return {
+            userAudio: {
+              ...state.userAudio,
+              [userId]: {
+                ...current,
+                ...settings,
+                volumePercent:
+                  settings.volumePercent === undefined
+                    ? current.volumePercent
+                    : clampUserVolume(settings.volumePercent)
+              }
+            }
+          };
+        }),
+      clearUserAudioSettings: (userId) =>
+        set((state) => {
+          const userAudio = { ...state.userAudio };
+          delete userAudio[userId];
+          return { userAudio };
+        })
     }),
     {
       name: "lyre.settings",

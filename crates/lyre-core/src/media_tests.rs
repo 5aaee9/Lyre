@@ -1,3 +1,4 @@
+use crate::media::UpdateMediaRelaySubscriptionsRequest;
 use crate::{
     MediaRelayError, MediaRelayMode, MediaRelayRegistry, MediaRelayRegistryAggregate,
     MediaRelayStatus, MediaTrackKind, NoiseCancellationConfig, NoiseProvider,
@@ -434,4 +435,210 @@ fn stop_clears_participants() {
 
     assert_eq!(status.status, MediaRelayStatus::Inactive);
     assert!(status.participants.is_empty());
+}
+
+#[test]
+fn media_subscriptions_new_relay_rooms_default_to_all_remote_sources() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = room_with_participants(&registry, ["user_a", "user_b", "user_c"]);
+
+    let subscriptions = registry
+        .subscriptions(&room_id, &UserId::from_external("user_a"))
+        .unwrap();
+
+    assert_eq!(subscriptions.room_id, room_id);
+    assert_eq!(subscriptions.user_id.as_str(), "user_a");
+    assert_eq!(
+        user_id_strings(&subscriptions.source_user_ids),
+        ["user_b", "user_c"]
+    );
+}
+
+#[test]
+fn media_subscriptions_update_stores_sorted_deduped_source_list() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = room_with_participants(&registry, ["user_a", "user_b", "user_c"]);
+
+    let subscriptions = registry
+        .update_subscriptions(
+            room_id.clone(),
+            UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("user_a"),
+                source_user_ids: vec![
+                    UserId::from_external("user_c"),
+                    UserId::from_external("user_b"),
+                    UserId::from_external("user_c"),
+                ],
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        user_id_strings(&subscriptions.source_user_ids),
+        ["user_b", "user_c"]
+    );
+    assert_eq!(
+        user_id_strings(
+            &registry
+                .subscriptions(&room_id, &UserId::from_external("user_a"))
+                .unwrap()
+                .source_user_ids
+        ),
+        ["user_b", "user_c"]
+    );
+}
+
+#[test]
+fn media_subscriptions_is_source_subscribed_defaults_true_for_remote_and_false_for_self() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = room_with_participants(&registry, ["user_a", "user_b"]);
+
+    assert!(registry
+        .is_source_subscribed(
+            &room_id,
+            &UserId::from_external("user_a"),
+            &UserId::from_external("user_b"),
+        )
+        .unwrap());
+    assert!(!registry
+        .is_source_subscribed(
+            &room_id,
+            &UserId::from_external("user_a"),
+            &UserId::from_external("user_a"),
+        )
+        .unwrap());
+}
+
+#[test]
+fn media_subscriptions_explicit_exclusion_returns_false() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = room_with_participants(&registry, ["user_a", "user_b", "user_c"]);
+    registry
+        .update_subscriptions(
+            room_id.clone(),
+            UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("user_a"),
+                source_user_ids: vec![UserId::from_external("user_b")],
+            },
+        )
+        .unwrap();
+
+    assert!(!registry
+        .is_source_subscribed(
+            &room_id,
+            &UserId::from_external("user_a"),
+            &UserId::from_external("user_c"),
+        )
+        .unwrap());
+}
+
+#[test]
+fn media_subscriptions_empty_list_means_no_remote_audio() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = room_with_participants(&registry, ["user_a", "user_b"]);
+
+    let subscriptions = registry
+        .update_subscriptions(
+            room_id.clone(),
+            UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("user_a"),
+                source_user_ids: Vec::new(),
+            },
+        )
+        .unwrap();
+
+    assert!(subscriptions.source_user_ids.is_empty());
+    assert!(!registry
+        .is_source_subscribed(
+            &room_id,
+            &UserId::from_external("user_a"),
+            &UserId::from_external("user_b"),
+        )
+        .unwrap());
+}
+
+#[test]
+fn media_subscriptions_remove_participant_removes_own_entry_and_other_source_sets() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = room_with_participants(&registry, ["user_a", "user_b", "user_c"]);
+    registry
+        .update_subscriptions(
+            room_id.clone(),
+            UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("user_a"),
+                source_user_ids: vec![
+                    UserId::from_external("user_b"),
+                    UserId::from_external("user_c"),
+                ],
+            },
+        )
+        .unwrap();
+    registry
+        .update_subscriptions(
+            room_id.clone(),
+            UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("user_b"),
+                source_user_ids: vec![UserId::from_external("user_a")],
+            },
+        )
+        .unwrap();
+
+    registry
+        .remove_participant(room_id.clone(), &UserId::from_external("user_b"))
+        .unwrap();
+
+    assert_eq!(
+        registry.update_subscriptions(
+            room_id.clone(),
+            UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("user_a"),
+                source_user_ids: vec![UserId::from_external("user_b")],
+            },
+        ),
+        Err(MediaRelayError::ParticipantNotFound {
+            room_id: room_id.clone(),
+            user_id: UserId::from_external("user_b"),
+        })
+    );
+    assert_eq!(
+        registry.subscriptions(&room_id, &UserId::from_external("user_b")),
+        Err(MediaRelayError::ParticipantNotFound {
+            room_id: room_id.clone(),
+            user_id: UserId::from_external("user_b"),
+        })
+    );
+    assert_eq!(
+        user_id_strings(
+            &registry
+                .subscriptions(&room_id, &UserId::from_external("user_a"))
+                .unwrap()
+                .source_user_ids
+        ),
+        ["user_c"]
+    );
+}
+
+fn room_with_participants<const N: usize>(
+    registry: &MediaRelayRegistry,
+    user_ids: [&str; N],
+) -> RoomId {
+    let room_id = RoomId::default_room();
+    registry.start(room_id.clone(), StartMediaRelayRequest::default());
+    for user_id in user_ids {
+        registry
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: UserId::from_external(user_id),
+                    track_id: "audio-main".to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+    }
+    room_id
+}
+
+fn user_id_strings(user_ids: &[UserId]) -> Vec<&str> {
+    user_ids.iter().map(UserId::as_str).collect()
 }

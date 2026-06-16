@@ -3,9 +3,10 @@ use std::{net::IpAddr, sync::Arc};
 use lyre_core::{RoomId, UserId};
 
 use crate::{
-    ServerMediaEgressError, ServerMediaIceCandidate, ServerMediaNegotiationError,
-    ServerMediaNegotiator, ServerMediaOffer, ServerMediaProcessedAudioFrame, ServerMediaSessionKey,
-    ServerMediaSessionRegistry, ServerMediaSessionState, WebRtcStack, SERVER_MEDIA_OPUS_FRAME_SIZE,
+    egress::server_media_source_track_id, ServerMediaEgressError, ServerMediaIceCandidate,
+    ServerMediaNegotiationError, ServerMediaNegotiator, ServerMediaOffer,
+    ServerMediaProcessedAudioFrame, ServerMediaSessionKey, ServerMediaSessionRegistry,
+    ServerMediaSessionState, WebRtcStack, SERVER_MEDIA_OPUS_FRAME_SIZE,
 };
 
 async fn offer_sdp() -> String {
@@ -20,6 +21,26 @@ fn offer(track: &str, sdp: String) -> ServerMediaOffer {
         audio_track_id: track.to_owned(),
         sdp,
     }
+}
+
+fn subscribed_sources() -> Vec<UserId> {
+    vec![UserId::from_external("source")]
+}
+
+#[test]
+fn egress_source_track_id_percent_encodes_non_unreserved_bytes() {
+    assert_eq!(
+        server_media_source_track_id(&UserId::from_external("alice@example.com")),
+        "lyre-user:alice%40example.com:audio"
+    );
+    assert_eq!(
+        server_media_source_track_id(&UserId::from_external("space user/汉")),
+        "lyre-user:space%20user%2F%E6%B1%89:audio"
+    );
+    assert_eq!(
+        server_media_source_track_id(&UserId::from_external("AZaz09-._~")),
+        "lyre-user:AZaz09-._~:audio"
+    );
 }
 
 fn host_candidate() -> ServerMediaIceCandidate {
@@ -59,7 +80,7 @@ async fn answer_offer_marks_session_negotiating_and_stores_handle() {
     let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
 
     let answer = negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
 
@@ -73,12 +94,46 @@ async fn answer_offer_marks_session_negotiating_and_stores_handle() {
 }
 
 #[tokio::test]
+async fn answer_offer_creates_pre_answer_egress_tracks_for_subscribed_sources() {
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
+    let first_source = UserId::from_external("source one");
+    let second_source = UserId::from_external("source/two");
+
+    let offer = offer("audio-main", offer_sdp().await);
+    let key = ServerMediaSessionKey {
+        room_id: offer.room_id.clone(),
+        user_id: offer.user_id.clone(),
+    };
+    let answer = negotiator
+        .answer_offer_for_sources(offer, vec![first_source.clone(), second_source.clone()])
+        .await
+        .unwrap();
+
+    assert!(answer.sdp.starts_with("v=0"));
+    let track_ids = negotiator
+        .peer_connection_for_test(&key)
+        .unwrap()
+        .egress_track_ids_for_test();
+    assert_eq!(
+        track_ids,
+        vec![
+            server_media_source_track_id(&first_source),
+            server_media_source_track_id(&second_source)
+        ]
+    );
+}
+
+#[tokio::test]
 async fn failed_offer_does_not_create_session_or_handle() {
     let sessions = Arc::new(ServerMediaSessionRegistry::new());
     let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
 
     let result = negotiator
-        .answer_offer(offer("audio-main", "not sdp".to_owned()))
+        .answer_offer_for_sources(
+            offer("audio-main", "not sdp".to_owned()),
+            subscribed_sources(),
+        )
         .await;
 
     assert!(result.is_err());
@@ -96,12 +151,15 @@ async fn repeated_successful_offer_replaces_track_and_handle() {
     };
 
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
     let first_handle = negotiator.stored_peer_connection_debug_id(&key).unwrap();
     negotiator
-        .answer_offer(offer("audio-retry", offer_sdp().await))
+        .answer_offer_for_sources(
+            offer("audio-retry", offer_sdp().await),
+            subscribed_sources(),
+        )
         .await
         .unwrap();
     let second_handle = negotiator.stored_peer_connection_debug_id(&key).unwrap();
@@ -121,14 +179,17 @@ async fn failed_renegotiation_preserves_existing_session_and_handle() {
         user_id: UserId::from_external("user_01"),
     };
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
     let status_before = sessions.sessions();
     let handle_before = negotiator.stored_peer_connection_debug_id(&key).unwrap();
 
     let result = negotiator
-        .answer_offer(offer("audio-retry", "not sdp".to_owned()))
+        .answer_offer_for_sources(
+            offer("audio-retry", "not sdp".to_owned()),
+            subscribed_sources(),
+        )
         .await;
 
     assert!(result.is_err());
@@ -145,7 +206,7 @@ async fn add_remote_ice_candidate_succeeds_for_existing_peer_without_state_chang
     let sessions = Arc::new(ServerMediaSessionRegistry::new());
     let negotiator = ServerMediaNegotiator::new(WebRtcStack::new(), Arc::clone(&sessions));
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
 
@@ -183,7 +244,7 @@ async fn session_status_returns_negotiated_audio_track_id() {
         user_id: UserId::from_external("user_01"),
     };
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
 
@@ -202,7 +263,7 @@ async fn local_ice_candidates_are_keyed_by_session() {
         user_id: UserId::from_external("user_01"),
     };
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
 
@@ -235,7 +296,7 @@ async fn local_ice_candidates_use_configured_server_media_public_ip() {
         user_id: UserId::from_external("user_01"),
     };
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
 
@@ -257,7 +318,10 @@ async fn drain_pcm_frames_drains_existing_session_once() {
 
     let test_offer = crate::test_support::server_media_offer_with_valid_opus_sender().await;
     let answer = negotiator
-        .answer_offer(offer("audio-main", test_offer.offer_sdp.clone()))
+        .answer_offer_for_sources(
+            offer("audio-main", test_offer.offer_sdp.clone()),
+            subscribed_sources(),
+        )
         .await
         .unwrap();
     for candidate in test_offer.remote_candidates().await {
@@ -304,7 +368,7 @@ async fn close_and_close_room_remove_stored_handles() {
         user_id: UserId::from_external("user_01"),
     };
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
 
@@ -318,7 +382,7 @@ async fn close_and_close_room_remove_stored_handles() {
     assert!(negotiator.drain_decode_failures(&key).is_empty());
 
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
     negotiator.close_room(&RoomId::default_room());
@@ -341,13 +405,14 @@ async fn send_processed_audio_frame_routes_to_existing_peer() {
     };
 
     negotiator
-        .answer_offer(offer("audio-main", offer_sdp().await))
+        .answer_offer_for_sources(offer("audio-main", offer_sdp().await), subscribed_sources())
         .await
         .unwrap();
 
     let sent = negotiator
         .send_processed_audio_frame(
             &key,
+            &UserId::from_external("source"),
             ServerMediaProcessedAudioFrame {
                 sequence: 7,
                 rtp_timestamp: None,
@@ -374,6 +439,7 @@ async fn send_processed_audio_frame_missing_peer_returns_context() {
     let error = negotiator
         .send_processed_audio_frame(
             &key,
+            &UserId::from_external("source"),
             ServerMediaProcessedAudioFrame {
                 sequence: 7,
                 rtp_timestamp: None,

@@ -162,6 +162,31 @@ pub(crate) async fn register_media_track(
     }))
 }
 
+pub(crate) async fn update_media_relay_subscriptions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<dto::UpdateMediaRelaySubscriptionsResponse>, WebrpcError> {
+    let request: dto::UpdateMediaRelaySubscriptionsRequest = parse_json(body)?;
+    let room_id = RoomId::parse_boundary(request.room_id)?;
+    let user_id = UserId::from_external(request.user_id);
+    authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let subscriptions = state.media_relays.update_subscriptions(
+        room_id,
+        lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+            user_id,
+            source_user_ids: request
+                .source_user_ids
+                .into_iter()
+                .map(UserId::from_external)
+                .collect(),
+        },
+    )?;
+    Ok(Json(dto::UpdateMediaRelaySubscriptionsResponse {
+        subscriptions: subscriptions.into(),
+    }))
+}
+
 pub(crate) async fn answer_server_media_offer(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -172,7 +197,7 @@ pub(crate) async fn answer_server_media_offer(
     let user_id = UserId::from_external(request.user_id);
     authorize_room_user(&state, &room_id, &user_id, &headers)?;
     let answer = state
-        .answer_server_media_offer(ServerMediaOffer {
+        .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
             room_id,
             user_id,
             audio_track_id: request.audio_track_id,

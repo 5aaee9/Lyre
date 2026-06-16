@@ -10,6 +10,7 @@ const localAudioTrack = { id: "track", enabled: true, stop: stopTrack };
 const addRemoteTrack = vi.fn();
 const removeAudio = vi.fn();
 const playAudio = vi.fn();
+const gainNodes: MockGainNode[] = [];
 const apiMocks = vi.hoisted(() => ({
   answerServerMediaOffer: vi.fn(),
   closeServerMediaSession: vi.fn(),
@@ -18,7 +19,8 @@ const apiMocks = vi.hoisted(() => ({
   registerMediaTrack: vi.fn(),
   startMediaRelay: vi.fn(),
   stopMediaRelay: vi.fn(),
-  updateMediaRelaySettings: vi.fn()
+  updateMediaRelaySettings: vi.fn(),
+  updateMediaRelaySubscriptions: vi.fn()
 }));
 const peerConnections: MockPeerConnection[] = [];
 const createOfferMock = vi.fn(async (peer: MockPeerConnection) => ({
@@ -76,6 +78,28 @@ class MockMediaStream {
   addTrack = addRemoteTrack;
 }
 
+class MockGainNode {
+  gain = { value: 1 };
+  connect = vi.fn();
+  disconnect = vi.fn();
+
+  constructor() {
+    gainNodes.push(this);
+  }
+}
+
+class MockAudioSource {
+  connect = vi.fn();
+  disconnect = vi.fn();
+}
+
+class MockAudioContext {
+  destination = {};
+  createMediaStreamSource = vi.fn(() => new MockAudioSource());
+  createGain = vi.fn(() => new MockGainNode());
+  close = vi.fn();
+}
+
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -93,6 +117,7 @@ vi.mock("@/lib/api", async () => {
     answerServerMediaOffer: apiMocks.answerServerMediaOffer,
     closeServerMediaSession: apiMocks.closeServerMediaSession,
     updateMediaRelaySettings: apiMocks.updateMediaRelaySettings,
+    updateMediaRelaySubscriptions: apiMocks.updateMediaRelaySubscriptions,
     shareRoomUrl: () => "http://localhost:3000/room/DEFAULT"
   };
 });
@@ -100,6 +125,7 @@ vi.mock("@/lib/api", async () => {
 export {
   addRemoteTrack,
   apiMocks,
+  gainNodes,
   getUserMedia,
   localAudioTrack,
   makeUser,
@@ -118,6 +144,7 @@ afterEach(() => {
 beforeEach(() => {
   sockets.length = 0;
   peerConnections.length = 0;
+  gainNodes.length = 0;
   localStorage.clear();
   sessionStorage.clear();
   resetSettingsStoreForTests();
@@ -156,12 +183,15 @@ beforeEach(() => {
   apiMocks.stopMediaRelay.mockReset();
   apiMocks.updateMediaRelaySettings.mockReset();
   apiMocks.updateMediaRelaySettings.mockResolvedValue({});
+  apiMocks.updateMediaRelaySubscriptions.mockReset();
+  apiMocks.updateMediaRelaySubscriptions.mockResolvedValue({});
   getUserMedia.mockResolvedValue({
     getAudioTracks: () => [localAudioTrack]
   });
   vi.stubGlobal("WebSocket", MockWebSocket);
   vi.stubGlobal("RTCPeerConnection", MockPeerConnection);
   vi.stubGlobal("MediaStream", MockMediaStream);
+  vi.stubGlobal("AudioContext", MockAudioContext);
   const createElement = document.createElement.bind(document);
   vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
     if (tagName === "audio") {

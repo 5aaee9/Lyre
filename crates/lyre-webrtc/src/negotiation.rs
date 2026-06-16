@@ -101,9 +101,17 @@ impl ServerMediaNegotiator {
         &self,
         offer: ServerMediaOffer,
     ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
+        self.answer_offer_for_sources(offer, Vec::new()).await
+    }
+
+    pub async fn answer_offer_for_sources(
+        &self,
+        offer: ServerMediaOffer,
+        subscribed_source_user_ids: Vec<UserId>,
+    ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
         let peer_connection = self
             .stack
-            .create_peer_connection()
+            .create_peer_connection_for_sources(&subscribed_source_user_ids)
             .await
             .map_err(|source| ServerMediaNegotiationError::WebRtc { source })?;
         let answer_sdp = peer_connection
@@ -216,6 +224,7 @@ impl ServerMediaNegotiator {
     pub async fn send_processed_audio_frame(
         &self,
         key: &ServerMediaSessionKey,
+        source_user_id: &UserId,
         frame: ServerMediaProcessedAudioFrame,
     ) -> Result<usize, ServerMediaEgressError> {
         let peer_connection = self
@@ -226,12 +235,15 @@ impl ServerMediaNegotiator {
                 user_id: key.user_id.clone(),
             })?
             .clone();
-        peer_connection.send_processed_audio_frame(frame).await
+        peer_connection
+            .send_processed_audio_frame(source_user_id, frame)
+            .await
     }
 
     pub async fn send_opus_rtp_packet(
         &self,
         key: &ServerMediaSessionKey,
+        source_user_id: &UserId,
         packet: ServerMediaEgressRtpPacket,
     ) -> Result<usize, ServerMediaEgressError> {
         let peer_connection = self
@@ -242,7 +254,9 @@ impl ServerMediaNegotiator {
                 user_id: key.user_id.clone(),
             })?
             .clone();
-        peer_connection.send_opus_rtp_packet(packet).await
+        peer_connection
+            .send_opus_rtp_packet(source_user_id, packet)
+            .await
     }
 
     pub fn close(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {

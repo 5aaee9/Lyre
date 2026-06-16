@@ -13,7 +13,35 @@
 - `POST /api/rooms/:room_id/media-relay/start`
 - `POST /api/rooms/:room_id/media-relay/stop`
 - `POST /api/rooms/:room_id/media-relay/tracks`
+- `POST /api/rooms/:room_id/media-relay/subscriptions`
 - `GET /api/rooms/:room_id/ws?user_id=...`
+
+### Media Relay Subscriptions
+
+`POST /api/rooms/:room_id/media-relay/subscriptions` updates one listener's complete source-user allow-list.
+
+The route requires the room bearer token for `user_id`.
+
+Request:
+
+```json
+{
+  "user_id": "listener_user_id",
+  "source_user_ids": ["source_user_a", "source_user_b"]
+}
+```
+
+Response:
+
+```json
+{
+  "room_id": "DEFAULT",
+  "user_id": "listener_user_id",
+  "source_user_ids": ["source_user_a", "source_user_b"]
+}
+```
+
+The server validates that the media relay is active, that `user_id` is an active relay participant, and that every source user is active in the relay. `source_user_ids` is sorted and deduplicated in the response. An empty list is valid and means the listener receives no remote relay audio. Repeating the same request is idempotent.
 
 ## WebRPC
 

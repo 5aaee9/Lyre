@@ -35,6 +35,7 @@ struct BlockingSender {
     blocked_sequences: Mutex<Vec<u64>>,
     fast_sequences: Mutex<Vec<u64>>,
     fast_rtp_timestamps: Mutex<Vec<Option<u32>>>,
+    fast_source_user_ids: Mutex<Vec<UserId>>,
     notify: Notify,
 }
 
@@ -43,6 +44,7 @@ impl ProcessedAudioWebRtcEgressSender for BlockingSender {
     async fn send_processed_audio_frame(
         &self,
         key: &ServerMediaSessionKey,
+        source_user_id: &UserId,
         frame: ServerMediaProcessedAudioFrame,
     ) -> Result<usize, ServerMediaEgressError> {
         if key.user_id == self.blocked_user_id {
@@ -62,6 +64,10 @@ impl ProcessedAudioWebRtcEgressSender for BlockingSender {
             .lock()
             .expect("test sender RTP timestamp lock must not be poisoned")
             .push(frame.rtp_timestamp);
+        self.fast_source_user_ids
+            .lock()
+            .expect("test sender source lock must not be poisoned")
+            .push(source_user_id.clone());
         self.notify.notify_waiters();
         Ok(1)
     }
@@ -203,6 +209,7 @@ async fn recipient_send_backpressure_does_not_block_other_recipients() {
         blocked_sequences: Mutex::new(Vec::new()),
         fast_sequences: Mutex::new(Vec::new()),
         fast_rtp_timestamps: Mutex::new(Vec::new()),
+        fast_source_user_ids: Mutex::new(Vec::new()),
         notify: Notify::new(),
     });
     let pump =
@@ -248,6 +255,7 @@ async fn egress_pump_forwards_source_rtp_timestamp_metadata() {
         blocked_sequences: Mutex::new(Vec::new()),
         fast_sequences: Mutex::new(Vec::new()),
         fast_rtp_timestamps: Mutex::new(Vec::new()),
+        fast_source_user_ids: Mutex::new(Vec::new()),
         notify: Notify::new(),
     });
     let pump =
@@ -271,6 +279,17 @@ async fn egress_pump_forwards_source_rtp_timestamp_metadata() {
         if timestamps.len() >= 2 {
             pump.stop_and_wait_for_test(&room_id).await;
             assert_eq!(timestamps, vec![Some(48_000), Some(48_000)]);
+            assert_eq!(
+                sender
+                    .fast_source_user_ids
+                    .lock()
+                    .expect("test sender source lock must not be poisoned")
+                    .clone(),
+                vec![
+                    UserId::from_external("source"),
+                    UserId::from_external("source")
+                ]
+            );
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -315,7 +334,7 @@ async fn answer_offer(state: &AppState, room_id: &RoomId, user_id: &str) -> Serv
         user_id: UserId::from_external(user_id),
     };
     state
-        .answer_server_media_offer(ServerMediaOffer {
+        .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
             room_id: key.room_id.clone(),
             user_id: key.user_id.clone(),
             audio_track_id: "audio-main".to_owned(),
@@ -337,7 +356,7 @@ async fn connect_test_offer(
     };
     let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
     let answer = state
-        .answer_server_media_offer(ServerMediaOffer {
+        .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
             room_id: key.room_id.clone(),
             user_id: key.user_id.clone(),
             audio_track_id: "audio-main".to_owned(),
@@ -389,6 +408,16 @@ async fn processed_audio_frame_is_sent_to_recipient_server_media_peer() {
     start_relay_with_provider(&state, &room_id, NoiseProvider::Rnnoise);
     register_audio_track(&state, &room_id, "source");
     register_audio_track(&state, &room_id, "recipient");
+    state
+        .media_relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("recipient"),
+                source_user_ids: vec![UserId::from_external("source")],
+            },
+        )
+        .unwrap();
     let source_key = answer_offer(&state, &room_id, "source").await;
     let recipient_key = answer_offer(&state, &room_id, "recipient").await;
 
@@ -408,6 +437,10 @@ async fn processed_audio_frame_is_sent_to_recipient_server_media_peer() {
                 .server_media_peer_connection_for_test(&source_key)
                 .unwrap();
             assert!(source.sent_egress_rtp_packets_for_test().is_empty());
+            assert_eq!(
+                recipient.sent_egress_rtp_packets_for_test()[0].payload_type,
+                111
+            );
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -423,6 +456,16 @@ async fn server_relay_audio_reaches_recipient_peer_connection() {
     state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
     register_audio_track(&state, &room_id, "source");
     register_audio_track(&state, &room_id, "recipient");
+    state
+        .media_relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("recipient"),
+                source_user_ids: vec![UserId::from_external("source")],
+            },
+        )
+        .unwrap();
     let source = connect_test_offer(&state, &room_id, "source").await;
     let recipient = connect_test_offer(&state, &room_id, "recipient").await;
 
@@ -446,6 +489,16 @@ async fn server_relay_off_noise_forwards_opus_payload_without_transcoding() {
     state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
     register_audio_track(&state, &room_id, "source");
     register_audio_track(&state, &room_id, "recipient");
+    state
+        .media_relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("recipient"),
+                source_user_ids: vec![UserId::from_external("source")],
+            },
+        )
+        .unwrap();
     let source = connect_test_offer(&state, &room_id, "source").await;
     let recipient = connect_test_offer(&state, &room_id, "recipient").await;
     let expected_payload = encoded_opus_payload_for_test();
@@ -465,6 +518,53 @@ async fn server_relay_off_noise_forwards_opus_payload_without_transcoding() {
     panic!("server relay did not forward source Opus payload");
 }
 
+#[tokio::test]
+async fn server_relay_off_noise_excludes_unsubscribed_raw_opus_recipient() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    register_audio_track(&state, &room_id, "source");
+    register_audio_track(&state, &room_id, "subscribed");
+    register_audio_track(&state, &room_id, "unsubscribed");
+    state
+        .media_relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("subscribed"),
+                source_user_ids: vec![UserId::from_external("source")],
+            },
+        )
+        .unwrap();
+    state
+        .media_relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("unsubscribed"),
+                source_user_ids: Vec::new(),
+            },
+        )
+        .unwrap();
+    let source = connect_test_offer(&state, &room_id, "source").await;
+    let subscribed = connect_test_offer(&state, &room_id, "subscribed").await;
+    let unsubscribed = connect_test_offer(&state, &room_id, "unsubscribed").await;
+
+    source.send_valid_opus_packets(10).await;
+
+    for _ in 0..150 {
+        if !subscribed.received_remote_rtp_packets().is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            assert!(source.received_remote_rtp_packets().is_empty());
+            assert!(unsubscribed.received_remote_rtp_packets().is_empty());
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("server relay audio RTP did not reach subscribed recipient peer connection");
+}
+
 async fn server_relay_noise_provider_reaches_recipient_with_audible_payload(
     provider: NoiseProvider,
 ) {
@@ -473,6 +573,16 @@ async fn server_relay_noise_provider_reaches_recipient_with_audible_payload(
     start_relay_with_provider(&state, &room_id, provider);
     register_audio_track(&state, &room_id, "source");
     register_audio_track(&state, &room_id, "recipient");
+    state
+        .media_relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("recipient"),
+                source_user_ids: vec![UserId::from_external("source")],
+            },
+        )
+        .unwrap();
     let source = connect_test_offer(&state, &room_id, "source").await;
     let recipient = connect_test_offer(&state, &room_id, "recipient").await;
 

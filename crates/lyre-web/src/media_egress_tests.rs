@@ -153,6 +153,57 @@ fn fanout_excludes_video_only_participants() {
 }
 
 #[test]
+fn fanout_excludes_unsubscribed_source_recipient_pairs() {
+    let relays = Arc::new(MediaRelayRegistry::new());
+    let fanout = ProcessedAudioEgressFanout::new(Arc::clone(&relays));
+    let room_id = RoomId::default_room();
+    relays.start(room_id.clone(), StartMediaRelayRequest::default());
+    for user_id in ["source", "subscribed", "unsubscribed"] {
+        register(
+            &relays,
+            &room_id,
+            user_id,
+            "audio-main",
+            MediaTrackKind::Audio,
+        );
+    }
+    relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("subscribed"),
+                source_user_ids: vec![UserId::from_external("source")],
+            },
+        )
+        .unwrap();
+    relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("unsubscribed"),
+                source_user_ids: Vec::new(),
+            },
+        )
+        .unwrap();
+
+    let frames = fanout
+        .fanout(&frame(
+            room_id,
+            UserId::from_external("source"),
+            "audio-main",
+        ))
+        .unwrap();
+
+    assert_eq!(
+        frames
+            .iter()
+            .map(|frame| frame.recipient_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["subscribed"]
+    );
+}
+
+#[test]
 fn fanout_propagates_source_validation_errors() {
     let relays = Arc::new(MediaRelayRegistry::new());
     let fanout = ProcessedAudioEgressFanout::new(Arc::clone(&relays));

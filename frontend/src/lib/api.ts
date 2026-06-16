@@ -5,6 +5,7 @@ import type {
   MediaTopology as WebrpcMediaTopology,
   MediaRelayParticipant as WebrpcMediaRelayParticipant,
   MediaRelayRoomStatus as WebrpcMediaRelayRoomStatus,
+  MediaRelaySubscriptions as WebrpcMediaRelaySubscriptions,
   MediaRelayTrack as WebrpcMediaRelayTrack,
   NoiseCancellationConfig as WebrpcNoiseCancellationConfig,
   RoomSnapshot as WebrpcRoomSnapshot,
@@ -134,6 +135,12 @@ export type MediaRelayRoomStatus = Omit<
   server_side_noise_cancelling: WebrpcMediaRelayRoomStatus["serverSideNoiseCancelling"];
   noise: NoiseCancellationConfig;
   participants: MediaRelayParticipant[];
+};
+
+export type MediaRelaySubscriptions = Omit<WebrpcMediaRelaySubscriptions, "roomID" | "userID" | "sourceUserIDs"> & {
+  room_id: string;
+  user_id: string;
+  source_user_ids: string[];
 };
 
 export type ServerMediaAnswer = Omit<
@@ -304,6 +311,20 @@ export async function updateMediaRelaySettings(
     body: JSON.stringify({ user_id: userId, noise })
   });
   return jsonOrThrow(response, "failed to update media relay settings");
+}
+
+export async function updateMediaRelaySubscriptions(
+  roomId: string,
+  userId: string,
+  sourceUserIds: string[],
+  accessToken: string
+): Promise<MediaRelaySubscriptions> {
+  const response = await fetch(`${mediaRelayUrl(roomId)}/subscriptions`, {
+    method: "POST",
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
+    body: JSON.stringify({ user_id: userId, source_user_ids: sourceUserIds })
+  });
+  return jsonOrThrow(response, "failed to update media relay subscriptions");
 }
 
 export async function answerServerMediaOffer(

@@ -19,7 +19,8 @@ describe("settings store", () => {
       roomId: "DEFAULT",
       nickname: "",
       noise: defaultNoiseConfig,
-      audioProcessing: defaultAudioProcessingConfig
+      audioProcessing: defaultAudioProcessingConfig,
+      userAudio: {}
     });
   });
 
@@ -38,6 +39,10 @@ describe("settings store", () => {
       autoGainControl: true,
       noiseSuppression: true
     });
+    useSettingsStore.getState().setUserAudioSettings("user_a", {
+      muted: true,
+      volumePercent: 125
+    });
 
     expect(JSON.parse(localStorage.getItem("lyre.settings") ?? "{}")).toMatchObject({
       state: {
@@ -54,9 +59,30 @@ describe("settings store", () => {
           echoCancellation: false,
           autoGainControl: true,
           noiseSuppression: true
+        },
+        userAudio: {
+          user_a: {
+            muted: true,
+            volumePercent: 125
+          }
         }
       }
     });
+  });
+
+  it("clamps per-user audio volume settings", () => {
+    useSettingsStore.getState().setUserAudioSettings("quiet", { volumePercent: -5 });
+    useSettingsStore.getState().setUserAudioSettings("loud", { volumePercent: 175 });
+
+    expect(readSettingsSnapshot().userAudio.quiet.volumePercent).toBe(0);
+    expect(readSettingsSnapshot().userAudio.loud.volumePercent).toBe(150);
+  });
+
+  it("clears one user's audio settings", () => {
+    useSettingsStore.getState().setUserAudioSettings("user_a", { muted: true });
+    useSettingsStore.getState().clearUserAudioSettings("user_a");
+
+    expect(readSettingsSnapshot().userAudio.user_a).toBeUndefined();
   });
 
   it("hydrates legacy noise settings with DPDFNet defaults", async () => {

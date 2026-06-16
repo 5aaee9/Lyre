@@ -1,4 +1,4 @@
-use crate::{api::AppState, server_media_runtime};
+use crate::{api::AppState, error::ApiError, server_media_runtime};
 use lyre_core::{MediaRelayError, MediaRelayRoomStatus, RoomId, UserId};
 #[cfg(test)]
 use lyre_webrtc::WebRtcPeerConnectionHandle;
@@ -65,7 +65,32 @@ impl AppState {
         &self,
         offer: ServerMediaOffer,
     ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
-        let answer = self.server_media_negotiator.answer_offer(offer).await?;
+        self.answer_server_media_offer_for_sources(offer, Vec::new())
+            .await
+    }
+
+    pub async fn answer_server_media_offer_with_subscriptions(
+        &self,
+        offer: ServerMediaOffer,
+    ) -> Result<ServerMediaAnswer, ApiError> {
+        let subscribed_source_user_ids = self
+            .media_relays
+            .subscriptions(&offer.room_id, &offer.user_id)?
+            .source_user_ids;
+        self.answer_server_media_offer_for_sources(offer, subscribed_source_user_ids)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn answer_server_media_offer_for_sources(
+        &self,
+        offer: ServerMediaOffer,
+        subscribed_source_user_ids: Vec<UserId>,
+    ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
+        let answer = self
+            .server_media_negotiator
+            .answer_offer_for_sources(offer, subscribed_source_user_ids)
+            .await?;
         self.server_media_runtime_pump.start(ServerMediaSessionKey {
             room_id: answer.room_id.clone(),
             user_id: answer.user_id.clone(),

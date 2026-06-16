@@ -33,22 +33,30 @@ impl ProcessedAudioEgressFanout {
             });
         }
 
-        let frames = self
-            .relays
-            .active_participants(&frame.room_id)?
-            .into_iter()
-            .filter(|participant| participant.user_id != frame.user_id)
-            .filter(|participant| {
-                participant
-                    .tracks
-                    .iter()
-                    .any(|track| track.kind == MediaTrackKind::Audio)
-            })
-            .map(|participant| ProcessedAudioEgressFrame {
+        let mut frames = Vec::new();
+        for participant in self.relays.active_participants(&frame.room_id)? {
+            if participant.user_id == frame.user_id {
+                continue;
+            }
+            if !self.relays.is_source_subscribed(
+                &frame.room_id,
+                &participant.user_id,
+                &frame.user_id,
+            )? {
+                continue;
+            }
+            if !participant
+                .tracks
+                .iter()
+                .any(|track| track.kind == MediaTrackKind::Audio)
+            {
+                continue;
+            }
+            frames.push(ProcessedAudioEgressFrame {
                 recipient_id: participant.user_id,
                 frame: frame.clone(),
-            })
-            .collect();
+            });
+        }
 
         Ok(frames)
     }

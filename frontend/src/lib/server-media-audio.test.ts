@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ServerMediaAudioSession } from "./server-media-audio";
+import { parseServerMediaSourceTrackId, ServerMediaAudioSession } from "./server-media-audio";
 
 const apiMocks = vi.hoisted(() => ({
   answerServerMediaOffer: vi.fn()
@@ -14,12 +14,14 @@ vi.mock("./api", async () => {
 });
 
 const stopTrack = vi.fn();
-const addRemoteTrack = vi.fn();
 const play = vi.fn();
 const removeAudio = vi.fn();
 const append = vi.fn();
 const socketSend = vi.fn();
 const peerConnections: MockPeerConnection[] = [];
+const audioContexts: MockAudioContext[] = [];
+const mediaStreamSources: MockAudioSource[] = [];
+const gainNodes: MockGainNode[] = [];
 
 const localAudioTrack = { id: "local-audio", enabled: true, stop: stopTrack };
 
@@ -28,7 +30,40 @@ const stream = {
 } as unknown as MediaStream;
 
 class MockMediaStream {
-  addTrack = addRemoteTrack;
+  tracks: unknown[] = [];
+  addTrack = vi.fn((track: unknown) => {
+    this.tracks.push(track);
+  });
+}
+
+class MockGainNode {
+  gain = { value: 1 };
+  connect = vi.fn();
+  disconnect = vi.fn();
+
+  constructor() {
+    gainNodes.push(this);
+  }
+}
+
+class MockAudioSource {
+  connect = vi.fn();
+  disconnect = vi.fn();
+
+  constructor(readonly stream: MediaStream) {
+    mediaStreamSources.push(this);
+  }
+}
+
+class MockAudioContext {
+  destination = {};
+  createMediaStreamSource = vi.fn((stream: MediaStream) => new MockAudioSource(stream));
+  createGain = vi.fn(() => new MockGainNode());
+  close = vi.fn();
+
+  constructor() {
+    audioContexts.push(this);
+  }
 }
 
 class MockPeerConnection {
@@ -82,9 +117,11 @@ describe("ServerMediaAudioSession", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     peerConnections.length = 0;
+    audioContexts.length = 0;
+    mediaStreamSources.length = 0;
+    gainNodes.length = 0;
     localAudioTrack.enabled = true;
     stopTrack.mockClear();
-    addRemoteTrack.mockClear();
     play.mockReset();
     play.mockResolvedValue(undefined);
     removeAudio.mockClear();
@@ -101,6 +138,7 @@ describe("ServerMediaAudioSession", () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal("RTCPeerConnection", MockPeerConnection);
     vi.stubGlobal("MediaStream", MockMediaStream);
+    vi.stubGlobal("AudioContext", MockAudioContext);
     vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
       if (tagName === "audio") {
         return {
@@ -150,8 +188,6 @@ describe("ServerMediaAudioSession", () => {
       recipient_id: "user_a",
       payload: { type: "server-media-ice-candidates-request" }
     }));
-    expect(play).toHaveBeenCalledOnce();
-
     await vi.advanceTimersByTimeAsync(10);
 
     expect(socketSend).toHaveBeenCalledTimes(2);
@@ -222,8 +258,90 @@ describe("ServerMediaAudioSession", () => {
     );
   });
 
-  it("attaches remote tracks to the playback stream and starts audio playback", async () => {
+  it("parses server-media source track ids", () => {
+    expect(parseServerMediaSourceTrackId("lyre-user:user_b:audio")).toBe("user_b");
+    expect(parseServerMediaSourceTrackId("lyre-user:alice%40example.com:audio")).toBe("alice@example.com");
+    expect(parseServerMediaSourceTrackId("remote-track")).toBeNull();
+    expect(parseServerMediaSourceTrackId("lyre-user:%E0%A4%A:audio")).toBeNull();
+  });
+
+  it("connects valid source-user tracks through per-user Web Audio gain", async () => {
     const session = makeSession();
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    expect(audioContexts).toHaveLength(1);
+    expect(mediaStreamSources[0].connect).toHaveBeenCalledWith(gainNodes[0]);
+    expect(gainNodes[0].connect).toHaveBeenCalledWith(audioContexts[0].destination);
+
+    session.setUserAudioSettings("user_b", { muted: false, volumePercent: 150 });
+    expect(gainNodes[0].gain.value).toBe(1.5);
+
+    session.setUserAudioSettings("user_b", { muted: true, volumePercent: 150 });
+    expect(gainNodes[0].gain.value).toBe(0);
+  });
+
+  it("clamps applied per-user gain at the audio boundary", async () => {
+    const session = makeSession();
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    session.setUserAudioSettings("user_b", { muted: false, volumePercent: -10 });
+    expect(gainNodes[0].gain.value).toBe(0);
+
+    session.setUserAudioSettings("user_b", { muted: false, volumePercent: 175 });
+    expect(gainNodes[0].gain.value).toBe(1.5);
+  });
+
+  it("applies initial per-user settings when a source track starts", async () => {
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      pollIntervalMs: 10,
+      userAudio: {
+        user_b: { muted: false, volumePercent: 125 },
+        user_c: { muted: true, volumePercent: 150 }
+      }
+    });
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_c:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    expect(gainNodes[0].gain.value).toBe(1.25);
+    expect(gainNodes[1].gain.value).toBe(0);
+  });
+
+  it("reports invalid source track ids without playing them", async () => {
+    const onError = vi.fn();
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      pollIntervalMs: 10,
+      onError
+    });
     await session.start();
 
     peerConnections[0].ontrack?.({
@@ -231,8 +349,8 @@ describe("ServerMediaAudioSession", () => {
       streams: []
     } as unknown as RTCTrackEvent);
 
-    expect(addRemoteTrack).toHaveBeenCalledWith({ id: "remote-track" });
-    expect(play).toHaveBeenCalledTimes(2);
+    expect(audioContexts).toHaveLength(0);
+    expect(onError).toHaveBeenCalledWith("Ignored server media track with invalid id: remote-track");
   });
 
   it("toggles local microphone tracks without closing the session", async () => {
@@ -324,16 +442,22 @@ describe("ServerMediaAudioSession", () => {
     await expect(session.start()).rejects.toThrow("Audio signalling websocket is not connected");
   });
 
-  it("closes peer resources, stops local tracks, and removes playback audio", async () => {
+  it("closes peer resources, stops local tracks, and disconnects playback nodes", async () => {
     const session = makeSession();
     await session.start();
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
 
     session.close();
     await vi.advanceTimersByTimeAsync(10);
 
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
     expect(stopTrack).toHaveBeenCalledOnce();
-    expect(removeAudio).toHaveBeenCalledOnce();
+    expect(mediaStreamSources[0].disconnect).toHaveBeenCalledOnce();
+    expect(gainNodes[0].disconnect).toHaveBeenCalledOnce();
+    expect(audioContexts[0].close).toHaveBeenCalledOnce();
     expect(socketSend).toHaveBeenCalledTimes(1);
   });
 });

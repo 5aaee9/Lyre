@@ -40,6 +40,7 @@ pub trait ProcessedAudioWebRtcEgressSender: Send + Sync + 'static {
     async fn send_processed_audio_frame(
         &self,
         key: &ServerMediaSessionKey,
+        source_user_id: &UserId,
         frame: ServerMediaProcessedAudioFrame,
     ) -> Result<usize, ServerMediaEgressError>;
 
@@ -54,9 +55,10 @@ impl ProcessedAudioWebRtcEgressSender for ServerMediaNegotiator {
     async fn send_processed_audio_frame(
         &self,
         key: &ServerMediaSessionKey,
+        source_user_id: &UserId,
         frame: ServerMediaProcessedAudioFrame,
     ) -> Result<usize, ServerMediaEgressError> {
-        ServerMediaNegotiator::send_processed_audio_frame(self, key, frame).await
+        ServerMediaNegotiator::send_processed_audio_frame(self, key, source_user_id, frame).await
     }
 
     fn connection_state(
@@ -224,7 +226,11 @@ where
                         break;
                     };
                     match sender
-                        .send_processed_audio_frame(&delivery.key, delivery.frame)
+                        .send_processed_audio_frame(
+                            &delivery.key,
+                            &delivery.source_user_id,
+                            delivery.frame,
+                        )
                         .await
                     {
                         Ok(packet_count) => {

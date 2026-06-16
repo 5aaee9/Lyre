@@ -1,6 +1,9 @@
 use super::{body_json, offer_sdp, rpc_post, rpc_post_auth};
 use crate::api::{router, AppState};
 use axum::http::StatusCode;
+use lyre_core::{
+    MediaTrackKind, RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest, UserId,
+};
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -159,7 +162,8 @@ async fn webrpc_server_media_methods_reject_missing_bearer_token() {
 
 #[tokio::test]
 async fn webrpc_server_media_errors_do_not_echo_sdp_or_ice() {
-    let app = router(AppState::default());
+    let state = AppState::default();
+    let app = router(state.clone());
     let join = app
         .clone()
         .oneshot(rpc_post(
@@ -171,6 +175,20 @@ async fn webrpc_server_media_errors_do_not_echo_sdp_or_ice() {
     let join = body_json(join).await;
     let user_id = join["user"]["id"].as_str().unwrap();
     let token = join["accessToken"].as_str().unwrap();
+    state
+        .media_relays
+        .start(RoomId::default_room(), StartMediaRelayRequest::default());
+    state
+        .media_relays
+        .register_track(
+            RoomId::default_room(),
+            RegisterMediaTrackRequest {
+                user_id: UserId::from_external(user_id),
+                track_id: "audio-main".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
     let secret_sdp = "not sdp with secret-token candidate:secret";
 
     let response = app

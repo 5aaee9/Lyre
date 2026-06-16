@@ -94,6 +94,10 @@ fn base_router() -> Router<AppState> {
             post(register_media_track),
         )
         .route(
+            "/api/rooms/{room_id}/media-relay/subscriptions",
+            post(update_media_relay_subscriptions),
+        )
+        .route(
             "/api/rooms/{room_id}/media-relay/settings",
             post(update_media_relay_settings),
         )
@@ -256,6 +260,19 @@ async fn register_media_track(
     let room_id = RoomId::parse_boundary(room_id)?;
     authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     Ok(Json(state.media_relays.register_track(room_id, request)?))
+}
+
+async fn update_media_relay_subscriptions(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<lyre_core::media::UpdateMediaRelaySubscriptionsRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    Ok(Json(
+        state.media_relays.update_subscriptions(room_id, request)?,
+    ))
 }
 
 async fn update_media_relay_settings(

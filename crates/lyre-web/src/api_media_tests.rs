@@ -19,12 +19,12 @@ fn get(uri: &str) -> Request<Body> {
     Request::builder().uri(uri).body(Body::empty()).unwrap()
 }
 
-fn post_json(uri: &str, body: &'static str) -> Request<Body> {
+fn post_json(uri: &str, body: impl Into<Body>) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri(uri)
         .header("content-type", "application/json")
-        .body(Body::from(body))
+        .body(body.into())
         .unwrap()
 }
 
@@ -342,6 +342,154 @@ async fn media_relay_start_requires_bearer_token() {
     assert_eq!(
         body_json(response).await["error"],
         "room access token is invalid"
+    );
+}
+
+#[tokio::test]
+async fn media_relay_subscriptions_require_bearer_token_for_user_id() {
+    let state = AppState::default();
+    let app = router(state.clone());
+    let (user_id, _access_token) = join_for_test(app.clone(), "Alice").await;
+    let room_id = RoomId::default_room();
+    start_relay_with_track(
+        &state,
+        room_id,
+        UserId::from_external(&user_id),
+        NoiseProvider::Off,
+    );
+
+    let response = app
+        .oneshot(post_json(
+            "/api/rooms/DEFAULT/media-relay/subscriptions",
+            serde_json::json!({
+                "user_id": user_id,
+                "source_user_ids": [],
+            })
+            .to_string(),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        body_json(response).await["error"],
+        "room access token is invalid"
+    );
+}
+
+#[tokio::test]
+async fn media_relay_subscriptions_reject_unknown_source_users() {
+    let state = AppState::default();
+    let app = router(state.clone());
+    let (user_id, access_token) = join_for_test(app.clone(), "Alice").await;
+    let room_id = RoomId::default_room();
+    start_relay_with_track(
+        &state,
+        room_id,
+        UserId::from_external(&user_id),
+        NoiseProvider::Off,
+    );
+
+    let response = app
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/subscriptions",
+            serde_json::json!({
+                "user_id": user_id,
+                "source_user_ids": ["missing"],
+            })
+            .to_string(),
+            &access_token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        body_json(response).await["error"],
+        "media relay participant `missing` is not registered in room `DEFAULT`"
+    );
+}
+
+#[tokio::test]
+async fn media_relay_subscriptions_accept_empty_source_list() {
+    let state = AppState::default();
+    let app = router(state.clone());
+    let (user_id, access_token) = join_for_test(app.clone(), "Alice").await;
+    let room_id = RoomId::default_room();
+    start_relay_with_track(
+        &state,
+        room_id,
+        UserId::from_external(&user_id),
+        NoiseProvider::Off,
+    );
+
+    let response = app
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/subscriptions",
+            serde_json::json!({
+                "user_id": user_id,
+                "source_user_ids": [],
+            })
+            .to_string(),
+            &access_token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert_eq!(body["room_id"], "DEFAULT");
+    assert_eq!(body["user_id"], user_id);
+    assert_eq!(body["source_user_ids"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn media_relay_subscriptions_sort_and_deduplicate_source_users() {
+    let state = AppState::default();
+    let app = router(state.clone());
+    let (alice_id, alice_token) = join_for_test(app.clone(), "Alice").await;
+    let (bob_id, _bob_token) = join_for_test(app.clone(), "Bob").await;
+    let (carol_id, _carol_token) = join_for_test(app.clone(), "Carol").await;
+    let room_id = RoomId::default_room();
+    state
+        .media_relays
+        .start(room_id.clone(), StartMediaRelayRequest::default());
+    for user_id in [&alice_id, &bob_id, &carol_id] {
+        state
+            .media_relays
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: UserId::from_external(user_id),
+                    track_id: "audio-main".to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+    }
+
+    let response = app
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/subscriptions",
+            serde_json::json!({
+                "user_id": alice_id,
+                "source_user_ids": [carol_id, bob_id, bob_id, alice_id],
+            })
+            .to_string(),
+            &alice_token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    let mut expected_source_user_ids = vec![bob_id, carol_id];
+    expected_source_user_ids.sort();
+    assert_eq!(body["room_id"], "DEFAULT");
+    assert_eq!(body["user_id"], alice_id);
+    assert_eq!(
+        body["source_user_ids"],
+        serde_json::json!(expected_source_user_ids)
     );
 }
 

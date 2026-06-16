@@ -24,8 +24,10 @@ import {
   startMediaRelay,
   stopMediaRelay,
   updateMediaRelaySettings,
+  updateMediaRelaySubscriptions,
   type JoinRoomResponse,
   type MediaRelayRoomStatus,
+  type MediaRelaySubscriptions,
   type MediaTopology,
   type NoiseProvider,
   type ServerMediaAnswer,
@@ -105,6 +107,13 @@ const mediaRelayFromGeneratedDerivedShape: MediaRelayRoomStatus = {
   participants: [{ user_id: "user_a", tracks: [{ track_id: "audio-main", kind: "audio" }] }]
 };
 void mediaRelayFromGeneratedDerivedShape;
+
+const mediaRelaySubscriptionsFromGeneratedDerivedShape: MediaRelaySubscriptions = {
+  room_id: "DEFAULT",
+  user_id: "user_a",
+  source_user_ids: ["user_b"]
+};
+void mediaRelaySubscriptionsFromGeneratedDerivedShape;
 
 const generatedMediaRelayContract: WebrpcMediaRelayRoomStatus = {
   roomID: "DEFAULT",
@@ -337,6 +346,16 @@ describe("api", () => {
     });
   });
 
+  it("serializes media relay subscription updates", async () => {
+    await updateMediaRelaySubscriptions("DEFAULT", "user_a", ["user_b"], "token_a");
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/subscriptions", {
+      method: "POST",
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
+      body: JSON.stringify({ user_id: "user_a", source_user_ids: ["user_b"] })
+    });
+  });
+
   it("serializes server media offer request body", async () => {
     await answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0", "token_a");
 
@@ -400,6 +419,9 @@ describe("api", () => {
     );
     await expect(updateMediaRelaySettings("DEFAULT", "user_a", defaultNoiseConfig, "token_a")).rejects.toThrow(
       "failed to update media relay settings: 503"
+    );
+    await expect(updateMediaRelaySubscriptions("DEFAULT", "user_a", ["user_b"], "token_a")).rejects.toThrow(
+      "failed to update media relay subscriptions: 503"
     );
     await expect(answerServerMediaOffer("DEFAULT", "user_a", "audio-main", "v=0", "token_a")).rejects.toThrow(
       "failed to negotiate server media offer: 503"

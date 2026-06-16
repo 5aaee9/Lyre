@@ -145,6 +145,20 @@ impl From<lyre_core::MediaRelayRoomStatus> for MediaRelayRoomStatus {
     }
 }
 
+impl From<lyre_core::media::MediaRelaySubscriptions> for MediaRelaySubscriptions {
+    fn from(subscriptions: lyre_core::media::MediaRelaySubscriptions) -> Self {
+        Self {
+            room_id: subscriptions.room_id.as_str().to_owned(),
+            user_id: subscriptions.user_id.as_str().to_owned(),
+            source_user_ids: subscriptions
+                .source_user_ids
+                .into_iter()
+                .map(|user_id| user_id.as_str().to_owned())
+                .collect(),
+        }
+    }
+}
+
 impl From<lyre_core::UserProfile> for UserProfile {
     fn from(user: lyre_core::UserProfile) -> Self {
         Self {

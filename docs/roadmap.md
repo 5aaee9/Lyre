@@ -86,6 +86,7 @@
 - CI and Docker packaging now build the ONNX Runtime-backed DPDFNet path with explicit Nix dev shell runtime libraries and Debian trixie API image bases.
 - Browser runtime server-media ICE candidates now use the authenticated room WebSocket, while REST/WebRPC candidate endpoints remain compatibility and test surfaces; true server-side candidate push subscriptions remain future work if needed.
 - Frontend room audio now starts server-relay audio automatically after join, reconnects local media on ICE interruption, and exposes local microphone `Mute` / `Unmute` instead of manual `Connect audio`.
+- Frontend room audio now supports per-remote-user mute and 0-150% volume controls backed by server-media source subscriptions and per-source WebRTC relay tracks.
 
 ## Next
 

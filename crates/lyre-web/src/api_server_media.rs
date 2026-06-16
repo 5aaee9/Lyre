@@ -65,7 +65,7 @@ async fn answer_server_media_offer(
     let room_id = RoomId::parse_boundary(room_id)?;
     authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     let answer = state
-        .answer_server_media_offer(ServerMediaOffer {
+        .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
             room_id: room_id.clone(),
             user_id: request.user_id,
             audio_track_id: request.audio_track_id,

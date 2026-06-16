@@ -1,9 +1,11 @@
 use crate::{payload_dump::PayloadDumper, SERVER_MEDIA_OPUS_FRAME_SIZE};
 use bytes::Bytes;
+use lyre_core::UserId;
 use rtc::rtp_transceiver::rtp_sender::{
     RTCRtpCodec, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
 };
 use std::{
+    collections::BTreeMap,
     error::Error,
     sync::{Arc, Mutex},
 };
@@ -61,6 +63,8 @@ pub enum ServerMediaEgressError {
         room_id: lyre_core::RoomId,
         user_id: lyre_core::UserId,
     },
+    #[error("server media egress source `{source_user_id}` was not negotiated")]
+    SourceNotNegotiated { source_user_id: UserId },
 }
 
 pub(crate) struct ServerMediaOpusEgress {
@@ -72,56 +76,90 @@ pub(crate) struct ServerMediaOpusEgress {
 
 #[derive(Clone)]
 pub(crate) struct ServerMediaEgress {
-    track: Arc<TrackLocalStaticRTP>,
-    encoder: Arc<Mutex<ServerMediaOpusEgress>>,
+    sources: Arc<BTreeMap<UserId, ServerMediaEgressSource>>,
     sent_packets: Arc<Mutex<Vec<ServerMediaEgressRtpPacket>>>,
     payload_dumper: PayloadDumper,
 }
 
+#[derive(Clone)]
+pub(crate) struct ServerMediaEgressSource {
+    track_id: String,
+    track: Arc<TrackLocalStaticRTP>,
+    encoder: Arc<Mutex<ServerMediaOpusEgress>>,
+}
+
 impl ServerMediaEgress {
-    pub(crate) fn new(payload_dumper: PayloadDumper) -> Result<Self, ServerMediaEgressError> {
+    pub(crate) fn new(
+        source_user_ids: &[UserId],
+        payload_dumper: PayloadDumper,
+    ) -> Result<Self, ServerMediaEgressError> {
+        let mut sources = BTreeMap::new();
+        for source_user_id in source_user_ids {
+            let track_id = server_media_source_track_id(source_user_id);
+            sources.insert(
+                source_user_id.clone(),
+                ServerMediaEgressSource {
+                    track_id: track_id.clone(),
+                    track: Arc::new(TrackLocalStaticRTP::new(MediaStreamTrack::new(
+                        track_id,
+                        "audio".to_owned(),
+                        "audio".to_owned(),
+                        RtpCodecKind::Audio,
+                        vec![RTCRtpEncodingParameters {
+                            rtp_coding_parameters: RTCRtpCodingParameters {
+                                ssrc: Some(5678),
+                                ..Default::default()
+                            },
+                            codec: RTCRtpCodec {
+                                mime_type: "audio/opus".to_owned(),
+                                clock_rate: SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ,
+                                channels: SERVER_MEDIA_EGRESS_CHANNELS,
+                                sdp_fmtp_line: String::new(),
+                                rtcp_feedback: vec![],
+                            },
+                            ..Default::default()
+                        }],
+                    ))),
+                    encoder: Arc::new(Mutex::new(ServerMediaOpusEgress::new()?)),
+                },
+            );
+        }
         Ok(Self {
-            track: Arc::new(TrackLocalStaticRTP::new(MediaStreamTrack::new(
-                "lyre-server-audio".to_owned(),
-                "audio".to_owned(),
-                "audio".to_owned(),
-                RtpCodecKind::Audio,
-                vec![RTCRtpEncodingParameters {
-                    rtp_coding_parameters: RTCRtpCodingParameters {
-                        ssrc: Some(5678),
-                        ..Default::default()
-                    },
-                    codec: RTCRtpCodec {
-                        mime_type: "audio/opus".to_owned(),
-                        clock_rate: SERVER_MEDIA_EGRESS_SAMPLE_RATE_HZ,
-                        channels: SERVER_MEDIA_EGRESS_CHANNELS,
-                        sdp_fmtp_line: String::new(),
-                        rtcp_feedback: vec![],
-                    },
-                    ..Default::default()
-                }],
-            ))),
-            encoder: Arc::new(Mutex::new(ServerMediaOpusEgress::new()?)),
+            sources: Arc::new(sources),
             sent_packets: Arc::new(Mutex::new(Vec::new())),
             payload_dumper,
         })
     }
 
-    pub(crate) fn track(&self) -> Arc<TrackLocalStaticRTP> {
-        Arc::clone(&self.track)
+    pub(crate) fn tracks(&self) -> Vec<Arc<TrackLocalStaticRTP>> {
+        self.sources
+            .values()
+            .map(|source| Arc::clone(&source.track))
+            .collect()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn track_ids_for_test(&self) -> Vec<String> {
+        self.sources
+            .values()
+            .map(|source| source.track_id.clone())
+            .collect()
     }
 
     pub(crate) async fn send_processed_audio_frame(
         &self,
+        source_user_id: &UserId,
         frame: ServerMediaProcessedAudioFrame,
     ) -> Result<usize, ServerMediaEgressError> {
-        let packets = self
+        let source = self.source(source_user_id)?;
+        let packets = source
             .encoder
             .lock()
             .expect("server media egress lock must not be poisoned")
             .encode(&frame)?;
         for packet in &packets {
-            self.track
+            source
+                .track
                 .write_rtp(egress_rtp_packet(packet))
                 .await
                 .map_err(|source| ServerMediaEgressError::WriteRtp {
@@ -138,10 +176,13 @@ impl ServerMediaEgress {
 
     pub(crate) async fn send_opus_rtp_packet(
         &self,
+        source_user_id: &UserId,
         packet: ServerMediaEgressRtpPacket,
     ) -> Result<usize, ServerMediaEgressError> {
+        let source = self.source(source_user_id)?;
         validate_opus_rtp_packet(&packet)?;
-        self.track
+        source
+            .track
             .write_rtp(egress_rtp_packet(&packet))
             .await
             .map_err(|source| ServerMediaEgressError::WriteRtp {
@@ -162,6 +203,34 @@ impl ServerMediaEgress {
             .expect("server media egress packet snapshots lock must not be poisoned")
             .clone()
     }
+
+    fn source(
+        &self,
+        source_user_id: &UserId,
+    ) -> Result<ServerMediaEgressSource, ServerMediaEgressError> {
+        self.sources.get(source_user_id).cloned().ok_or_else(|| {
+            ServerMediaEgressError::SourceNotNegotiated {
+                source_user_id: source_user_id.clone(),
+            }
+        })
+    }
+}
+
+pub fn server_media_source_track_id(source_user_id: &UserId) -> String {
+    format!("lyre-user:{}:audio", percent_encode_user_id(source_user_id))
+}
+
+fn percent_encode_user_id(source_user_id: &UserId) -> String {
+    let mut encoded = String::new();
+    for byte in source_user_id.as_str().as_bytes() {
+        match *byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(*byte as char);
+            }
+            byte => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
 }
 
 fn egress_rtp_packet(packet: &ServerMediaEgressRtpPacket) -> rtc::rtp::Packet {
@@ -300,6 +369,10 @@ mod tests {
     use crate::payload_dump::PayloadDumper;
     use webrtc::media_stream::Track;
 
+    fn source_user_id() -> UserId {
+        UserId::from_external("source")
+    }
+
     fn frame(samples: Vec<f32>) -> ServerMediaProcessedAudioFrame {
         ServerMediaProcessedAudioFrame {
             sequence: 7,
@@ -399,10 +472,18 @@ mod tests {
 
     #[tokio::test]
     async fn unbound_track_write_preserves_source_error() {
-        let egress = ServerMediaEgress::new(PayloadDumper::disabled_for_test()).unwrap();
+        let source_user_id = source_user_id();
+        let egress = ServerMediaEgress::new(
+            std::slice::from_ref(&source_user_id),
+            PayloadDumper::disabled_for_test(),
+        )
+        .unwrap();
 
         let error = egress
-            .send_processed_audio_frame(frame(vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE]))
+            .send_processed_audio_frame(
+                &source_user_id,
+                frame(vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE]),
+            )
             .await
             .unwrap_err();
 
@@ -431,8 +512,13 @@ mod tests {
 
     #[tokio::test]
     async fn egress_track_advertises_encoded_channel_count() {
-        let egress = ServerMediaEgress::new(PayloadDumper::disabled_for_test()).unwrap();
-        let codec = egress.track().codec(5678).await.unwrap();
+        let source_user_id = source_user_id();
+        let egress = ServerMediaEgress::new(
+            std::slice::from_ref(&source_user_id),
+            PayloadDumper::disabled_for_test(),
+        )
+        .unwrap();
+        let codec = egress.tracks()[0].codec(5678).await.unwrap();
 
         assert_eq!(codec.channels, SERVER_MEDIA_EGRESS_CHANNELS);
     }

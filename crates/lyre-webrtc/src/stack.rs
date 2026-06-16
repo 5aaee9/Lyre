@@ -61,16 +61,22 @@ impl WebRtcStack {
     pub async fn create_peer_connection(
         &self,
     ) -> Result<WebRtcPeerConnectionHandle, WebRtcStackError> {
+        self.create_peer_connection_for_sources(&[]).await
+    }
+
+    pub async fn create_peer_connection_for_sources(
+        &self,
+        source_user_ids: &[lyre_core::UserId],
+    ) -> Result<WebRtcPeerConnectionHandle, WebRtcStackError> {
         let local_ice_candidates = Arc::new(Mutex::new(Vec::new()));
         let connection_state = ServerMediaConnectionState::default();
         let session_key = Arc::new(Mutex::new(None));
         let media_ingress = MediaIngressRecorder::default();
         let payload_dumper = PayloadDumper::from_env();
-        let media_egress = ServerMediaEgress::new(payload_dumper.clone()).map_err(|source| {
-            WebRtcStackError::CreatePeerConnection {
+        let media_egress = ServerMediaEgress::new(source_user_ids, payload_dumper.clone())
+            .map_err(|source| WebRtcStackError::CreatePeerConnection {
                 source: Box::new(source),
-            }
-        })?;
+            })?;
         let handler = Arc::new(PeerConnectionHandler {
             local_ice_candidates: Arc::clone(&local_ice_candidates),
             session_key: Arc::clone(&session_key),
@@ -111,12 +117,14 @@ impl WebRtcStack {
             .map_err(|source| WebRtcStackError::CreatePeerConnection {
                 source: Box::new(source),
             })?;
-        peer_connection
-            .add_track(media_egress.track() as Arc<dyn TrackLocal>)
-            .await
-            .map_err(|source| WebRtcStackError::CreatePeerConnection {
-                source: Box::new(source),
-            })?;
+        for track in media_egress.tracks() {
+            peer_connection
+                .add_track(track as Arc<dyn TrackLocal>)
+                .await
+                .map_err(|source| WebRtcStackError::CreatePeerConnection {
+                    source: Box::new(source),
+                })?;
+        }
 
         Ok(WebRtcPeerConnectionHandle {
             _peer_connection: Arc::from(peer_connection),
@@ -448,21 +456,32 @@ impl WebRtcPeerConnectionHandle {
 
     pub async fn send_processed_audio_frame(
         &self,
+        source_user_id: &lyre_core::UserId,
         frame: ServerMediaProcessedAudioFrame,
     ) -> Result<usize, ServerMediaEgressError> {
-        self.media_egress.send_processed_audio_frame(frame).await
+        self.media_egress
+            .send_processed_audio_frame(source_user_id, frame)
+            .await
     }
 
     pub async fn send_opus_rtp_packet(
         &self,
+        source_user_id: &lyre_core::UserId,
         packet: crate::ServerMediaEgressRtpPacket,
     ) -> Result<usize, ServerMediaEgressError> {
-        self.media_egress.send_opus_rtp_packet(packet).await
+        self.media_egress
+            .send_opus_rtp_packet(source_user_id, packet)
+            .await
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn sent_egress_rtp_packets_for_test(&self) -> Vec<crate::ServerMediaEgressRtpPacket> {
         self.media_egress.sent_packets_for_test()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn egress_track_ids_for_test(&self) -> Vec<String> {
+        self.media_egress.track_ids_for_test()
     }
 
     pub async fn answer_remote_offer(&self, offer_sdp: String) -> Result<String, WebRtcStackError> {

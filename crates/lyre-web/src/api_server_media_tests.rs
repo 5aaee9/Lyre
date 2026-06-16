@@ -62,6 +62,21 @@ async fn offer_sdp() -> String {
 async fn negotiate_server_media(state: &AppState) -> JoinedForTest {
     let app = router(state.clone());
     let joined = join_for_test(app.clone(), "Alice").await;
+    state.media_relays.start(
+        RoomId::default_room(),
+        lyre_core::StartMediaRelayRequest::default(),
+    );
+    state
+        .media_relays
+        .register_track(
+            RoomId::default_room(),
+            lyre_core::RegisterMediaTrackRequest {
+                user_id: UserId::from_external(&joined.user_id),
+                track_id: "audio-main".to_owned(),
+                kind: lyre_core::MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
     let response = app
         .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/offer",
@@ -96,6 +111,21 @@ async fn server_media_offer_route_returns_answer_and_updates_shared_sessions() {
     let state = AppState::default();
     let app = router(state.clone());
     let joined = join_for_test(app.clone(), "Alice").await;
+    state.media_relays.start(
+        RoomId::default_room(),
+        lyre_core::StartMediaRelayRequest::default(),
+    );
+    state
+        .media_relays
+        .register_track(
+            RoomId::default_room(),
+            lyre_core::RegisterMediaTrackRequest {
+                user_id: UserId::from_external(&joined.user_id),
+                track_id: "audio-main".to_owned(),
+                kind: lyre_core::MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
     let response = app
         .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/offer",
@@ -126,10 +156,53 @@ async fn server_media_offer_route_returns_answer_and_updates_shared_sessions() {
 }
 
 #[tokio::test]
+async fn server_media_offer_route_requires_active_media_relay_subscription_state() {
+    let state = AppState::default();
+    let app = router(state.clone());
+    let joined = join_for_test(app.clone(), "Alice").await;
+    let response = app
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/server-media/offer",
+            serde_json::json!({
+                "user_id": joined.user_id,
+                "audio_track_id": "audio-main",
+                "sdp": offer_sdp().await,
+            })
+            .to_string(),
+            &joined.access_token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        body_json(response).await["error"],
+        "media relay is not active for room `DEFAULT`"
+    );
+    assert!(state.server_media_sessions().is_empty());
+    assert_eq!(state.server_media_peer_connection_count(), 0);
+}
+
+#[tokio::test]
 async fn server_media_offer_route_rejects_invalid_sdp_without_session() {
     let state = AppState::default();
     let app = router(state.clone());
     let joined = join_for_test(app.clone(), "Alice").await;
+    state.media_relays.start(
+        RoomId::default_room(),
+        lyre_core::StartMediaRelayRequest::default(),
+    );
+    state
+        .media_relays
+        .register_track(
+            RoomId::default_room(),
+            lyre_core::RegisterMediaTrackRequest {
+                user_id: UserId::from_external(&joined.user_id),
+                track_id: "audio-main".to_owned(),
+                kind: lyre_core::MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
     let response = app
         .oneshot(post_json_with_auth(
             "/api/rooms/DEFAULT/server-media/offer",
@@ -158,6 +231,21 @@ async fn stopping_media_relay_removes_server_media_peer_handle() {
     let state = AppState::default();
     let app = router(state.clone());
     let joined = join_for_test(app.clone(), "Alice").await;
+    state.media_relays.start(
+        RoomId::default_room(),
+        lyre_core::StartMediaRelayRequest::default(),
+    );
+    state
+        .media_relays
+        .register_track(
+            RoomId::default_room(),
+            lyre_core::RegisterMediaTrackRequest {
+                user_id: UserId::from_external(&joined.user_id),
+                track_id: "audio-main".to_owned(),
+                kind: lyre_core::MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
     let response = app
         .clone()
         .oneshot(post_json_with_auth(
