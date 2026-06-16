@@ -1,9 +1,11 @@
 use crate::{api::AppState, state_persistence::RoomStatePersistence};
 use lyre_core::{
-    PersistedRoom, PersistedRoomRegistry, PersistedRoomUser, RoomAccessToken, RoomId, UserId,
+    MediaTrackKind, PersistedRoom, PersistedRoomRegistry, PersistedRoomUser,
+    RegisterMediaTrackRequest, RoomAccessToken, RoomId, StartMediaRelayRequest, UserId,
     UserProfile,
 };
 use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
+use lyre_webrtc::{ServerMediaOffer, WebRtcStack};
 use std::{
     path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
@@ -32,6 +34,11 @@ fn persisted_user(user_id: &str, token: &str) -> PersistedRoomUser {
         },
         access_token: RoomAccessToken::from_external(token),
     }
+}
+
+async fn offer_sdp() -> String {
+    let offerer = WebRtcStack::new().create_peer_connection().await.unwrap();
+    offerer.create_local_offer_for_test().await.unwrap()
 }
 
 #[tokio::test]
@@ -118,6 +125,56 @@ async fn websocket_disconnect_after_rest_leave_only_removes_socket() {
     assert!(staying_rx.try_recv().is_err());
     let metrics = crate::metrics::snapshot(&state);
     assert_eq!(metrics.leaves, 1);
+}
+
+#[tokio::test]
+async fn websocket_disconnect_closes_departed_user_server_media_state() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let leaving = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap()
+        .user;
+    let staying = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap()
+        .user;
+    state
+        .media_relays
+        .start(room_id.clone(), StartMediaRelayRequest::default());
+    for user_id in [&leaving.id, &staying.id] {
+        state
+            .media_relays
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: user_id.clone(),
+                    track_id: "audio-main".to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+    }
+    state
+        .answer_server_media_offer(ServerMediaOffer {
+            room_id: room_id.clone(),
+            user_id: leaving.id.clone(),
+            audio_track_id: "audio-main".to_owned(),
+            sdp: offer_sdp().await,
+        })
+        .await
+        .unwrap();
+
+    state.disconnect_room_socket(&room_id, &leaving.id).await;
+
+    let relay = state.media_relays.status(room_id);
+    assert_eq!(relay.participants.len(), 1);
+    assert_eq!(relay.participants[0].user_id, staying.id);
+    assert!(state.active_server_media_sessions().is_empty());
+    assert_eq!(state.server_media_runtime_pump_count(), 0);
+    assert_eq!(state.server_media_peer_connection_count(), 0);
 }
 
 #[tokio::test]

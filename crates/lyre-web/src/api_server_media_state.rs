@@ -61,6 +61,33 @@ impl AppState {
         })
     }
 
+    pub(crate) fn close_departed_user_server_media_state(
+        &self,
+        room_id: &RoomId,
+        user_id: &UserId,
+    ) {
+        let key = ServerMediaSessionKey {
+            room_id: room_id.clone(),
+            user_id: user_id.clone(),
+        };
+        self.server_media_runtime_pump.stop(&key);
+        self.server_media_negotiator.close(&key);
+        match self
+            .media_relays
+            .remove_participant(room_id.clone(), user_id)
+        {
+            Ok(_) | Err(MediaRelayError::Inactive { .. }) => {}
+            Err(error) => {
+                tracing::debug!(
+                    error = %error,
+                    room_id = %room_id,
+                    user_id = %user_id,
+                    "failed to remove departed user from media relay"
+                );
+            }
+        }
+    }
+
     pub async fn answer_server_media_offer(
         &self,
         offer: ServerMediaOffer,

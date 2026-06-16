@@ -39,6 +39,39 @@ struct BlockingSender {
     notify: Notify,
 }
 
+#[derive(Debug)]
+struct FailingPeerSender {
+    attempts: Mutex<Vec<u64>>,
+    notify: Notify,
+}
+
+#[async_trait]
+impl ProcessedAudioWebRtcEgressSender for FailingPeerSender {
+    async fn send_processed_audio_frame(
+        &self,
+        _key: &ServerMediaSessionKey,
+        _source_user_id: &UserId,
+        frame: ServerMediaProcessedAudioFrame,
+    ) -> Result<usize, ServerMediaEgressError> {
+        self.attempts
+            .lock()
+            .expect("test sender attempts lock must not be poisoned")
+            .push(frame.sequence);
+        self.notify.notify_waiters();
+        Err(ServerMediaEgressError::PeerMissing {
+            room_id: RoomId::default_room(),
+            user_id: UserId::from_external("fast"),
+        })
+    }
+
+    fn connection_state(
+        &self,
+        _key: &ServerMediaSessionKey,
+    ) -> Option<ServerMediaConnectionStateSnapshot> {
+        Some(ServerMediaConnectionStateSnapshot::failed_for_test())
+    }
+}
+
 #[async_trait]
 impl ProcessedAudioWebRtcEgressSender for BlockingSender {
     async fn send_processed_audio_frame(
@@ -245,6 +278,43 @@ async fn recipient_send_backpressure_does_not_block_other_recipients() {
 
     pump.stop_and_wait_for_test(&room_id).await;
     panic!("recipient egress backpressure blocked other recipients");
+}
+
+#[tokio::test]
+async fn failed_recipient_peer_stops_egress_worker_after_first_failure() {
+    let (_relays, runtime, fanout) = relay_context();
+    let sender = Arc::new(FailingPeerSender {
+        attempts: Mutex::new(Vec::new()),
+        notify: Notify::new(),
+    });
+    let pump =
+        ProcessedAudioWebRtcEgressPump::new(Arc::clone(&runtime), fanout, Arc::clone(&sender));
+    let room_id = RoomId::default_room();
+    pump.start(room_id.clone());
+
+    runtime.process_frame(sequenced_audio_frame(1)).unwrap();
+    for _ in 0..100 {
+        if !sender
+            .attempts
+            .lock()
+            .expect("test sender attempts lock must not be poisoned")
+            .is_empty()
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    runtime.process_frame(sequenced_audio_frame(2)).unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    pump.stop_and_wait_for_test(&room_id).await;
+    assert_eq!(
+        *sender
+            .attempts
+            .lock()
+            .expect("test sender attempts lock must not be poisoned"),
+        vec![1, 1]
+    );
 }
 
 #[tokio::test]

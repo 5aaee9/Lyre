@@ -278,6 +278,7 @@ impl AppState {
         let Some(persistence) = persistence else {
             let response = self.registry.leave(room_id, user_id);
             if response.removed {
+                self.close_departed_user_server_media_state(room_id, user_id);
                 self.metrics.record_leave();
             }
             return Ok(response);
@@ -290,6 +291,7 @@ impl AppState {
             return Err(ApiError::from(error));
         }
         if response.removed {
+            self.close_departed_user_server_media_state(room_id, user_id);
             self.metrics.record_leave();
         }
         Ok(response)

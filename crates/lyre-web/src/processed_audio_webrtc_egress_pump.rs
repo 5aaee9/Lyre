@@ -246,6 +246,9 @@ where
                         }
                         Err(error) => {
                             let connection_state = sender.connection_state(&delivery.key);
+                            let terminal_failure = connection_state
+                                .as_ref()
+                                .is_some_and(|state| state.is_terminal_failure());
                             tracing::warn!(
                                 error = format_args!("{error:#}"),
                                 error_source = ?error.source().map(|source| source.to_string()),
@@ -260,6 +263,9 @@ where
                                 recipient_user_id = %recipient_id,
                                 "processed audio WebRTC egress send failed"
                             );
+                            if terminal_failure {
+                                break;
+                            }
                         }
                     }
                 }

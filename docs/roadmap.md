@@ -92,6 +92,8 @@
 - Frontend server-media playback now resumes suspended Web Audio contexts when remote source tracks arrive, preventing connected-but-silent relay playback after automatic room audio startup.
 - Raw Opus server relay now drops failed realtime recipient sends instead of replaying historical RTP packets to healthy recipients.
 - Opt-in API CPU profiling endpoint at `/debug/pprof/profile`, enabled only with `LYRE_ENABLE_PROF`.
+- Room leave and WebSocket disconnect cleanup now close departed users' server-media sessions, runtime pumps, peer connections, and media relay participant state.
+- Processed server-media egress now stops per-recipient workers after terminal WebRTC peer or ICE failure instead of retrying failed RTP sends every audio frame.
 
 ## Next
 
