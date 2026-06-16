@@ -317,6 +317,35 @@ async fn failed_recipient_peer_stops_egress_worker_after_first_failure() {
     );
 }
 
+#[test]
+fn transient_egress_readiness_errors_are_not_warn_failures() {
+    assert!(
+        !crate::processed_audio_webrtc_egress_pump::warns_for_send_failure(
+            &ServerMediaEgressError::PeerMissing {
+                room_id: RoomId::default_room(),
+                user_id: UserId::from_external("recipient"),
+            },
+            None,
+        )
+    );
+    assert!(
+        !crate::processed_audio_webrtc_egress_pump::warns_for_send_failure(
+            &ServerMediaEgressError::SourceNotNegotiated {
+                source_user_id: UserId::from_external("source"),
+            },
+            Some(&ServerMediaConnectionStateSnapshot::default()),
+        )
+    );
+    assert!(
+        crate::processed_audio_webrtc_egress_pump::warns_for_send_failure(
+            &ServerMediaEgressError::SourceNotNegotiated {
+                source_user_id: UserId::from_external("source"),
+            },
+            Some(&ServerMediaConnectionStateSnapshot::failed_for_test()),
+        )
+    );
+}
+
 #[tokio::test]
 async fn egress_pump_forwards_source_rtp_timestamp_metadata() {
     let (_relays, runtime, fanout) = relay_context();

@@ -218,6 +218,7 @@ where
     let (tx, mut rx) = mpsc::channel::<EgressDelivery>(PER_RECIPIENT_EGRESS_QUEUE_CAPACITY);
     tokio::spawn(async move {
         let mut logged_egress_started = HashSet::<UserId>::new();
+        let mut logged_readiness_failures = HashSet::<EgressReadinessFailureKey>::new();
         loop {
             tokio::select! {
                 () = token.cancelled() => break,
@@ -249,20 +250,43 @@ where
                             let terminal_failure = connection_state
                                 .as_ref()
                                 .is_some_and(|state| state.is_terminal_failure());
-                            tracing::warn!(
-                                error = format_args!("{error:#}"),
-                                error_source = ?error.source().map(|source| source.to_string()),
-                                peer_connection_state = ?connection_state
-                                    .as_ref()
-                                    .map(|state| state.peer_connection_state),
-                                ice_connection_state = ?connection_state
-                                    .as_ref()
-                                    .map(|state| state.ice_connection_state),
-                                room_id = %delivery.key.room_id,
-                                source_user_id = %delivery.source_user_id,
-                                recipient_user_id = %recipient_id,
-                                "processed audio WebRTC egress send failed"
-                            );
+                            if warns_for_send_failure(&error, connection_state.as_ref()) {
+                                tracing::warn!(
+                                    error = format_args!("{error:#}"),
+                                    error_source = ?error.source().map(|source| source.to_string()),
+                                    peer_connection_state = ?connection_state
+                                        .as_ref()
+                                        .map(|state| state.peer_connection_state),
+                                    ice_connection_state = ?connection_state
+                                        .as_ref()
+                                        .map(|state| state.ice_connection_state),
+                                    room_id = %delivery.key.room_id,
+                                    source_user_id = %delivery.source_user_id,
+                                    recipient_user_id = %recipient_id,
+                                    "processed audio WebRTC egress send failed"
+                                );
+                            } else if let Some(failure) = EgressReadinessFailureKind::from_error(&error) {
+                                let first_readiness_failure =
+                                    logged_readiness_failures.insert(EgressReadinessFailureKey {
+                                        source_user_id: delivery.source_user_id.clone(),
+                                        kind: failure,
+                                    });
+                                if first_readiness_failure {
+                                    tracing::debug!(
+                                        error = format_args!("{error:#}"),
+                                        peer_connection_state = ?connection_state
+                                            .as_ref()
+                                            .map(|state| state.peer_connection_state),
+                                        ice_connection_state = ?connection_state
+                                            .as_ref()
+                                            .map(|state| state.ice_connection_state),
+                                        room_id = %delivery.key.room_id,
+                                        source_user_id = %delivery.source_user_id,
+                                        recipient_user_id = %recipient_id,
+                                        "processed audio WebRTC egress peer is not ready"
+                                    );
+                                }
+                            }
                             if terminal_failure {
                                 break;
                             }
@@ -273,4 +297,40 @@ where
         }
     });
     tx
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum EgressReadinessFailureKind {
+    PeerMissing,
+    SourceNotNegotiated,
+}
+
+impl EgressReadinessFailureKind {
+    fn from_error(error: &ServerMediaEgressError) -> Option<Self> {
+        match error {
+            ServerMediaEgressError::PeerMissing { .. } => Some(Self::PeerMissing),
+            ServerMediaEgressError::SourceNotNegotiated { .. } => Some(Self::SourceNotNegotiated),
+            ServerMediaEgressError::InvalidSampleRate { .. }
+            | ServerMediaEgressError::InvalidChannels { .. }
+            | ServerMediaEgressError::InvalidFrameSize { .. }
+            | ServerMediaEgressError::EncoderInit { .. }
+            | ServerMediaEgressError::Encode { .. }
+            | ServerMediaEgressError::InvalidPayloadType { .. }
+            | ServerMediaEgressError::WriteRtp { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct EgressReadinessFailureKey {
+    source_user_id: UserId,
+    kind: EgressReadinessFailureKind,
+}
+
+pub(crate) fn warns_for_send_failure(
+    error: &ServerMediaEgressError,
+    connection_state: Option<&ServerMediaConnectionStateSnapshot>,
+) -> bool {
+    connection_state.is_some_and(ServerMediaConnectionStateSnapshot::is_terminal_failure)
+        || EgressReadinessFailureKind::from_error(error).is_none()
 }
