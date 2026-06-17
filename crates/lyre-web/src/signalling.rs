@@ -189,6 +189,16 @@ impl PeerHub {
         }
     }
 
+    pub fn remove_peer_sender(&self, room_id: &RoomId, user_id: &UserId, tx: &PeerSender) -> bool {
+        self.peers
+            .get(room_id)
+            .and_then(|room| {
+                room.remove_if(user_id, |_, current| current.same_channel(tx))
+                    .map(|_| ())
+            })
+            .is_some()
+    }
+
     pub fn user_joined(&self, room_id: &RoomId, user: UserProfile) -> SignalDelivery {
         let sender_id = user.id.clone();
         let message = SignalMessage::new(

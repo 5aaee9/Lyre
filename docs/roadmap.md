@@ -99,6 +99,7 @@
 - Processed server-media egress now treats missing peers and not-yet-negotiated sources as transient readiness states, avoiding per-frame warn churn during connection and renegotiation windows.
 - Frontend default server noise cancelling now starts with DPDFNet using the `dpdfnet8_48khz_hr` model for new settings snapshots.
 - Server-media runtime pumps now close terminal WebRTC peers and sessions instead of keeping failed peer drivers active.
+- Frontend room signalling WebSockets now reconnect automatically with the stored room session, while backend WebSocket disconnect cleanup preserves room membership and active server-media state for reconnecting users.
 
 ## Next
 

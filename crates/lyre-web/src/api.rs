@@ -334,9 +334,12 @@ async fn handle_socket(
 ) {
     let (mut ws_tx, mut ws_rx) = socket.split();
     let (peer_tx, mut peer_rx) = mpsc::unbounded_channel();
-    let snapshot = state
-        .peers
-        .connect(&state.registry, room_id.clone(), user_id.clone(), peer_tx);
+    let snapshot = state.peers.connect(
+        &state.registry,
+        room_id.clone(),
+        user_id.clone(),
+        peer_tx.clone(),
+    );
     let snapshot_message = SignalMessage::new(
         room_id.clone(),
         user_id.clone(),
@@ -382,7 +385,7 @@ async fn handle_socket(
         }
     }
 
-    state.disconnect_room_socket(&room_id, &user_id).await;
+    state.peers.remove_peer_sender(&room_id, &user_id, &peer_tx);
 }
 
 pub(crate) async fn handle_signal_message(

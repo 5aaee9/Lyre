@@ -471,7 +471,7 @@ describe("RoomClient", () => {
     expect(sessionStorage.getItem("lyre.roomSession")).toBeNull();
   });
 
-  it("clears stored room session when websocket closes", async () => {
+  it("reconnects the room websocket with the stored session when it closes", async () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
     expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
@@ -480,8 +480,10 @@ describe("RoomClient", () => {
       sockets[0].onclose?.();
     });
 
-    expect(sessionStorage.getItem("lyre.roomSession")).toBeNull();
-    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    expect(screen.getByText("Reconnecting")).toBeInTheDocument();
+    await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2_000 });
+    await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
+    expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
   });
 
   it("reconnects local audio when ICE is interrupted without restarting relay registration", async () => {
@@ -539,7 +541,7 @@ describe("RoomClient", () => {
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
   });
 
-  it("keeps missing signalling websocket startup errors visible", async () => {
+  it("reconnects when signalling websocket closes during audio startup", async () => {
     apiMocks.registerMediaTrack.mockImplementationOnce(async () => {
       sockets[0].readyState = WebSocket.CLOSED;
     });
@@ -549,8 +551,9 @@ describe("RoomClient", () => {
     expect(screen.queryByText("Server relay audio connected")).not.toBeInTheDocument();
     expect(apiMocks.stopMediaRelay).not.toHaveBeenCalled();
     expect(apiMocks.closeServerMediaSession).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
-    expect(stopTrack).toHaveBeenCalledOnce();
-    expect(peerConnections).toHaveLength(0);
+    await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2_000 });
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    expect(peerConnections).toHaveLength(1);
   });
 
   it("does not start media when ice server fetch fails", async () => {

@@ -42,7 +42,7 @@ async fn offer_sdp() -> String {
 }
 
 #[tokio::test]
-async fn websocket_disconnect_removes_room_user_and_broadcasts_user_left() {
+async fn websocket_disconnect_removes_socket_without_leaving_room() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let leaving = state
@@ -70,20 +70,15 @@ async fn websocket_disconnect_removes_room_user_and_broadcasts_user_left() {
         staying_tx,
     );
 
-    state.disconnect_room_socket(&room_id, &leaving.id).await;
+    state.peers.remove_peer(&room_id, &leaving.id);
 
     let snapshot = state.registry.snapshot(room_id.clone());
-    assert_eq!(snapshot.users.len(), 1);
-    assert_eq!(snapshot.users[0].id, staying.id);
-    let signal = staying_rx.try_recv().unwrap();
-    assert_eq!(
-        signal.payload,
-        crate::signalling::SignalPayload::UserLeft {
-            user_id: leaving.id
-        }
-    );
+    assert_eq!(snapshot.users.len(), 2);
+    assert!(snapshot.users.iter().any(|user| user.id == leaving.id));
+    assert!(snapshot.users.iter().any(|user| user.id == staying.id));
+    assert!(staying_rx.try_recv().is_err());
     let metrics = crate::metrics::snapshot(&state);
-    assert_eq!(metrics.leaves, 1);
+    assert_eq!(metrics.leaves, 0);
 }
 
 #[tokio::test]
@@ -120,7 +115,7 @@ async fn websocket_disconnect_after_rest_leave_only_removes_socket() {
         .await
         .unwrap();
     assert!(response.removed);
-    state.disconnect_room_socket(&room_id, &leaving.id).await;
+    state.peers.remove_peer(&room_id, &leaving.id);
 
     assert!(staying_rx.try_recv().is_err());
     let metrics = crate::metrics::snapshot(&state);
@@ -128,7 +123,7 @@ async fn websocket_disconnect_after_rest_leave_only_removes_socket() {
 }
 
 #[tokio::test]
-async fn websocket_disconnect_closes_departed_user_server_media_state() {
+async fn websocket_disconnect_keeps_departed_user_server_media_state_for_reconnect() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let leaving = state
@@ -167,14 +162,21 @@ async fn websocket_disconnect_closes_departed_user_server_media_state() {
         .await
         .unwrap();
 
-    state.disconnect_room_socket(&room_id, &leaving.id).await;
+    state.peers.remove_peer(&room_id, &leaving.id);
 
     let relay = state.media_relays.status(room_id);
-    assert_eq!(relay.participants.len(), 1);
-    assert_eq!(relay.participants[0].user_id, staying.id);
-    assert!(state.active_server_media_sessions().is_empty());
-    assert_eq!(state.server_media_runtime_pump_count(), 0);
-    assert_eq!(state.server_media_peer_connection_count(), 0);
+    assert_eq!(relay.participants.len(), 2);
+    assert!(relay
+        .participants
+        .iter()
+        .any(|participant| participant.user_id == leaving.id));
+    assert!(relay
+        .participants
+        .iter()
+        .any(|participant| participant.user_id == staying.id));
+    assert!(!state.active_server_media_sessions().is_empty());
+    assert_eq!(state.server_media_runtime_pump_count(), 1);
+    assert_eq!(state.server_media_peer_connection_count(), 1);
 }
 
 #[tokio::test]
@@ -200,12 +202,12 @@ async fn websocket_disconnect_updates_persisted_room_state() {
     .unwrap();
 
     state
-        .disconnect_room_socket(&RoomId::default_room(), &UserId::from_external("user_a"))
-        .await;
+        .peers
+        .remove_peer(&RoomId::default_room(), &UserId::from_external("user_a"));
 
     let file = std::fs::read_to_string(&path).unwrap();
-    assert!(!file.contains("user_a"));
-    assert!(!file.contains("token_a"));
+    assert!(file.contains("user_a"));
+    assert!(file.contains("token_a"));
     let _ = std::fs::remove_file(path);
 }
 
@@ -253,8 +255,8 @@ async fn websocket_disconnect_persistence_failure_rolls_back_without_broadcast()
     );
 
     state
-        .disconnect_room_socket(&room_id, &UserId::from_external("user_a"))
-        .await;
+        .peers
+        .remove_peer(&room_id, &UserId::from_external("user_a"));
 
     assert!(state
         .registry
@@ -274,7 +276,7 @@ async fn websocket_disconnect_persistence_failure_rolls_back_without_broadcast()
     assert_eq!(delivered.delivered, 0);
     let metrics = crate::metrics::snapshot(&state);
     assert_eq!(metrics.leaves, 0);
-    assert_eq!(metrics.persistence_failures, 1);
+    assert_eq!(metrics.persistence_failures, 0);
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(bad_path);
 }

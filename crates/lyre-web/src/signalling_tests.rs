@@ -271,3 +271,26 @@ fn remove_peer_drops_socket_without_presence_broadcast() {
     assert!(leaving_rx.try_recv().is_err());
     assert!(peer_rx.try_recv().is_err());
 }
+
+#[test]
+fn removing_replaced_peer_keeps_reconnected_socket() {
+    let hub = PeerHub::new();
+    let registry = RoomRegistry::new();
+    let room_id = RoomId::default_room();
+    let user_id = UserId::from_external("user");
+    let (old_tx, mut old_rx) = mpsc::unbounded_channel();
+    let (new_tx, mut new_rx) = mpsc::unbounded_channel();
+    hub.connect(&registry, room_id.clone(), user_id.clone(), old_tx.clone());
+    hub.connect(&registry, room_id.clone(), user_id.clone(), new_tx);
+
+    hub.remove_peer_sender(&room_id, &user_id, &old_tx);
+    let delivered = hub.forward(SignalMessage::to_self(
+        room_id,
+        user_id,
+        SignalPayload::Offer { sdp: "sdp".into() },
+    ));
+
+    assert_eq!(delivered.delivered, 1);
+    assert!(old_rx.try_recv().is_err());
+    assert!(new_rx.try_recv().is_ok());
+}
