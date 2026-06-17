@@ -3,7 +3,10 @@ use lyre_core::{
     MediaTrackKind, NoiseCancellationConfig, NoiseProvider, RegisterMediaTrackRequest, RoomId,
     StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
-use lyre_webrtc::{ServerMediaIceCandidate, ServerMediaOffer, ServerMediaSessionKey, WebRtcStack};
+use lyre_webrtc::{
+    ServerMediaIceCandidate, ServerMediaOffer, ServerMediaSessionKey, ServerMediaSessionState,
+    WebRtcStack,
+};
 
 async fn offer_sdp() -> String {
     let offerer = WebRtcStack::new().create_peer_connection().await.unwrap();
@@ -77,6 +80,31 @@ async fn room_close_and_media_relay_stop_cancel_runtime_pumps() {
         },
     );
     assert_eq!(state.server_media_runtime_pump_count(), 0);
+}
+
+#[tokio::test]
+async fn terminal_peer_failure_closes_session_and_runtime_pump() {
+    let state = AppState::default();
+    let key = key();
+
+    answer_offer(&state, "audio-main").await;
+    let peer = state.server_media_peer_connection_for_test(&key).unwrap();
+    peer.close().await.unwrap();
+
+    for _ in 0..100 {
+        if state.server_media_runtime_pump_count() == 0 {
+            assert_eq!(state.server_media_peer_connection_count(), 0);
+            assert!(state.active_server_media_sessions().is_empty());
+            assert_eq!(
+                state.server_media_sessions()[0].state,
+                ServerMediaSessionState::Closed
+            );
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("terminal peer failure did not close server-media runtime state");
 }
 
 #[tokio::test]

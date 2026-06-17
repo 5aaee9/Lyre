@@ -98,6 +98,7 @@
 - Processed server-media egress now stops per-recipient workers after terminal WebRTC peer or ICE failure instead of retrying failed RTP sends every audio frame.
 - Processed server-media egress now treats missing peers and not-yet-negotiated sources as transient readiness states, avoiding per-frame warn churn during connection and renegotiation windows.
 - Frontend default server noise cancelling now starts with DPDFNet using the `dpdfnet8_48khz_hr` model for new settings snapshots.
+- Server-media runtime pumps now close terminal WebRTC peers and sessions instead of keeping failed peer drivers active.
 
 ## Next
 

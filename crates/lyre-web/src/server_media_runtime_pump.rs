@@ -42,6 +42,18 @@ impl ServerMediaRuntimePump {
                 if task_token.is_cancelled() {
                     break;
                 }
+                if negotiator
+                    .connection_state(&task_key)
+                    .is_some_and(|state| state.is_terminal_failure())
+                {
+                    tracing::info!(
+                        room_id = %task_key.room_id,
+                        user_id = %task_key.user_id,
+                        "server media runtime pump closing terminal peer"
+                    );
+                    negotiator.close(&task_key);
+                    break;
+                }
                 let process_result = {
                     let runtime = Arc::clone(&runtime);
                     let negotiator = Arc::clone(&negotiator);
@@ -108,7 +120,12 @@ impl ServerMediaRuntimePump {
     }
 
     pub fn task_count(&self) -> usize {
+        self.retain_running_tasks();
         self.tasks.len()
+    }
+
+    fn retain_running_tasks(&self) {
+        self.tasks.retain(|_, task| !task.handle.is_finished());
     }
 
     #[cfg(test)]
