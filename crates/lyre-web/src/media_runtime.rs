@@ -11,26 +11,17 @@ use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Default)]
 pub struct ProcessedAudioBroadcaster {
-    frames: Arc<DashMap<RoomId, Vec<ProcessedAudioFrame>>>,
     channels: Arc<DashMap<RoomId, broadcast::Sender<ProcessedAudioFrame>>>,
 }
 
 const PROCESSED_AUDIO_CHANNEL_CAPACITY: usize = 256;
 
 impl ProcessedAudioBroadcaster {
-    pub fn frames_for_room(&self, room_id: &RoomId) -> Vec<ProcessedAudioFrame> {
-        self.frames
-            .get(room_id)
-            .map(|frames| frames.clone())
-            .unwrap_or_default()
-    }
-
     pub fn subscribe(&self, room_id: &RoomId) -> broadcast::Receiver<ProcessedAudioFrame> {
         self.sender(room_id).subscribe()
     }
 
     pub fn clear_room(&self, room_id: &RoomId) {
-        self.frames.remove(room_id);
         self.channels.remove(room_id);
     }
 
@@ -44,10 +35,6 @@ impl ProcessedAudioBroadcaster {
 
 impl ProcessedAudioSink for ProcessedAudioBroadcaster {
     fn publish(&self, frame: ProcessedAudioFrame) {
-        self.frames
-            .entry(frame.room_id.clone())
-            .or_default()
-            .push(frame.clone());
         let _ = self.sender(&frame.room_id).send(frame);
     }
 }
@@ -90,10 +77,6 @@ impl WebMediaRuntime {
 
     pub fn process_frame(&self, frame: AudioFrame) -> Result<(), MediaRelayError> {
         self.runtime.process_frame(frame)
-    }
-
-    pub fn frames_for_room(&self, room_id: &RoomId) -> Vec<ProcessedAudioFrame> {
-        self.sink.frames_for_room(room_id)
     }
 
     pub fn subscribe(&self, room_id: &RoomId) -> broadcast::Receiver<ProcessedAudioFrame> {

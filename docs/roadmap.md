@@ -109,6 +109,7 @@
 - Frontend audio diagnostics now reports remote source gain/mute/track state plus inbound RTP audio level, energy, and sample duration for distinguishing silent payloads from playback routing failures.
 - Frontend server-media playback now primes each accepted remote stream with a hidden muted audio element while keeping audible output on the per-user Web Audio gain path.
 - Frontend Settings dropdowns now keep viewport-based popup positioning while open dropdown interactions no longer dismiss the Settings dialog.
+- Processed server-media audio now publishes only live room broadcasts without retaining an unbounded per-room PCM history, so new subscribers do not replay stale audio after relay or noise-setting changes.
 
 ## Next
 

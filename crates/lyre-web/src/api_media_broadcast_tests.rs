@@ -84,7 +84,11 @@ async fn processed_media_subscriber_receives_future_frames() {
         .unwrap()
         .unwrap();
     assert_eq!(frame.samples, vec![0.25, -0.5, 0.75]);
-    assert_eq!(state.processed_media_frames(&room_id), vec![frame]);
+    assert_eq!(frame.room_id, room_id);
+    let mut late_frames = state.subscribe_processed_media_frames(&room_id);
+    assert!(timeout(Duration::from_millis(25), late_frames.recv())
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -151,11 +155,10 @@ async fn processed_media_late_subscriber_only_receives_future_frames() {
             .samples,
         vec![2.0]
     );
-    assert_eq!(state.processed_media_frames(&room_id).len(), 2);
 }
 
 #[tokio::test]
-async fn media_relay_stop_route_clears_processed_frames() {
+async fn media_relay_stop_route_does_not_replay_processed_frames() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let joined = state
@@ -163,8 +166,12 @@ async fn media_relay_stop_route_clears_processed_frames() {
         .join(room_id.clone(), lyre_core::JoinRoomRequest::default());
     let user_id = joined.user.id.clone();
     start_relay_with_track(&state, room_id.clone(), user_id.clone(), NoiseProvider::Off);
+    let mut live_frames = state.subscribe_processed_media_frames(&room_id);
     process_samples(&state, &room_id, &user_id, vec![1.0]);
-    assert_eq!(state.processed_media_frames(&room_id).len(), 1);
+    timeout(Duration::from_millis(100), live_frames.recv())
+        .await
+        .unwrap()
+        .unwrap();
     let app = router(state.clone());
 
     let response = app
@@ -177,5 +184,8 @@ async fn media_relay_stop_route_clears_processed_frames() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(state.processed_media_frames(&room_id).is_empty());
+    let mut new_frames = state.subscribe_processed_media_frames(&room_id);
+    assert!(timeout(Duration::from_millis(25), new_frames.recv())
+        .await
+        .is_err());
 }

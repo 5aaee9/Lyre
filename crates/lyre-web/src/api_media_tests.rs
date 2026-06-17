@@ -8,6 +8,7 @@ use lyre_core::{
     AudioFrame, MediaRelayError, MediaTrackKind, NoiseCancellationConfig, NoiseProvider,
     RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
+use tokio::time::{timeout, Duration};
 use tower::ServiceExt;
 
 async fn body_json(response: axum::response::Response) -> serde_json::Value {
@@ -493,19 +494,22 @@ async fn media_relay_subscriptions_sort_and_deduplicate_source_users() {
     );
 }
 
-#[test]
-fn app_state_process_media_frame_uses_shared_relay_state() {
+#[tokio::test]
+async fn app_state_process_media_frame_uses_shared_relay_state() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let user_id = UserId::from_external("user_01");
     start_relay_with_track(&state, room_id.clone(), user_id.clone(), NoiseProvider::Off);
+    let mut frames = state.subscribe_processed_media_frames(&room_id);
 
     process_samples(&state, &room_id, &user_id, vec![0.25, -0.5, 0.75]);
 
-    let frames = state.processed_media_frames(&room_id);
-    assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0].samples, vec![0.25, -0.5, 0.75]);
-    assert_eq!(frames[0].noise.provider, NoiseProvider::Off);
+    let frame = timeout(Duration::from_millis(100), frames.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(frame.samples, vec![0.25, -0.5, 0.75]);
+    assert_eq!(frame.noise.provider, NoiseProvider::Off);
 }
 
 #[test]
@@ -571,8 +575,8 @@ fn app_state_process_media_frame_does_not_create_unknown_room() {
     assert!(!state.media_relays.contains_room(&room_id));
 }
 
-#[test]
-fn app_state_process_media_frame_runs_rnnoise_for_valid_audio() {
+#[tokio::test]
+async fn app_state_process_media_frame_runs_rnnoise_for_valid_audio() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let user_id = UserId::from_external("user_01");
@@ -582,17 +586,20 @@ fn app_state_process_media_frame_runs_rnnoise_for_valid_audio() {
         user_id.clone(),
         NoiseProvider::Rnnoise,
     );
+    let mut frames = state.subscribe_processed_media_frames(&room_id);
 
     process_samples(&state, &room_id, &user_id, vec![120.0; 480]);
 
-    let frames = state.processed_media_frames(&room_id);
-    assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0].samples.len(), 480);
-    assert_eq!(frames[0].noise.provider, NoiseProvider::Rnnoise);
+    let frame = timeout(Duration::from_millis(100), frames.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(frame.samples.len(), 480);
+    assert_eq!(frame.noise.provider, NoiseProvider::Rnnoise);
 }
 
-#[test]
-fn app_state_process_media_frame_runs_deepfilternet_for_valid_audio() {
+#[tokio::test]
+async fn app_state_process_media_frame_runs_deepfilternet_for_valid_audio() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let user_id = UserId::from_external("user_01");
@@ -602,14 +609,17 @@ fn app_state_process_media_frame_runs_deepfilternet_for_valid_audio() {
         user_id.clone(),
         NoiseProvider::Deepfilternet,
     );
+    let mut frames = state.subscribe_processed_media_frames(&room_id);
 
     process_samples(&state, &room_id, &user_id, vec![120.0; 960]);
 
-    let frames = state.processed_media_frames(&room_id);
-    assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0].samples.len(), 960);
-    assert!(frames[0].samples.iter().all(|sample| sample.is_finite()));
-    assert_eq!(frames[0].noise.provider, NoiseProvider::Deepfilternet);
+    let frame = timeout(Duration::from_millis(100), frames.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(frame.samples.len(), 960);
+    assert!(frame.samples.iter().all(|sample| sample.is_finite()));
+    assert_eq!(frame.noise.provider, NoiseProvider::Deepfilternet);
 }
 
 #[test]

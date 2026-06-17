@@ -9,6 +9,7 @@ use lyre_webrtc::{
     WebRtcStack,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::time::{timeout, Duration};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -287,6 +288,7 @@ async fn runtime_pump_processes_real_decoded_pcm_without_manual_drain() {
             },
         )
         .unwrap();
+    let mut processed_frames = state.subscribe_processed_media_frames(&key.room_id);
 
     let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
     let answer = state
@@ -316,17 +318,16 @@ async fn runtime_pump_processes_real_decoded_pcm_without_manual_drain() {
         .await;
 
     for _ in 0..150 {
-        let frames = state.processed_media_frames(&key.room_id);
-        if frames.iter().any(|frame| {
-            frame.user_id == key.user_id
+        if let Ok(Ok(frame)) = timeout(Duration::from_millis(20), processed_frames.recv()).await {
+            if frame.user_id == key.user_id
                 && frame.track_id == "audio-main"
                 && frame.sequence == 42
                 && frame.noise.provider == NoiseProvider::Rnnoise
                 && frame.samples.len() == lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE
-        }) {
-            return;
+            {
+                return;
+            }
         }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 
     panic!("server media runtime pump did not process decoded PCM");
@@ -350,6 +351,7 @@ async fn runtime_pump_uses_negotiated_audio_track_id_for_decoded_pcm() {
             },
         )
         .unwrap();
+    let mut processed_frames = state.subscribe_processed_media_frames(&key.room_id);
 
     let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
     let answer = state
@@ -379,16 +381,15 @@ async fn runtime_pump_uses_negotiated_audio_track_id_for_decoded_pcm() {
         .await;
 
     for _ in 0..150 {
-        let frames = state.processed_media_frames(&key.room_id);
-        if frames.iter().any(|frame| {
-            frame.user_id == key.user_id
+        if let Ok(Ok(frame)) = timeout(Duration::from_millis(20), processed_frames.recv()).await {
+            if frame.user_id == key.user_id
                 && frame.track_id == "audio-main"
                 && frame.sequence == 42
                 && frame.samples.len() == lyre_webrtc::SERVER_MEDIA_OPUS_FRAME_SIZE
-        }) {
-            return;
+            {
+                return;
+            }
         }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 
     panic!("server media runtime pump did not process decoded PCM under negotiated track id");
@@ -425,9 +426,12 @@ async fn runtime_pump_processes_after_delayed_relay_and_track_registration() {
     let connected = offer
         .accept_answer(&answer, state.server_media_ice_candidates(&key))
         .await;
+    let mut processed_frames = state.subscribe_processed_media_frames(&key.room_id);
 
     tokio::time::sleep(std::time::Duration::from_millis(60)).await;
-    assert!(state.processed_media_frames(&key.room_id).is_empty());
+    assert!(timeout(Duration::from_millis(25), processed_frames.recv())
+        .await
+        .is_err());
 
     state
         .media_relays
@@ -446,10 +450,12 @@ async fn runtime_pump_processes_after_delayed_relay_and_track_registration() {
     connected.send_valid_opus_packets(100).await;
 
     for _ in 0..150 {
-        if !state.processed_media_frames(&key.room_id).is_empty() {
+        if timeout(Duration::from_millis(20), processed_frames.recv())
+            .await
+            .is_ok()
+        {
             return;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 
     panic!("server media runtime pump did not process after delayed relay registration");

@@ -233,10 +233,6 @@ impl AppState {
         self.media_runtime.process_frame(frame)
     }
 
-    pub fn processed_media_frames(&self, room_id: &RoomId) -> Vec<ProcessedAudioFrame> {
-        self.media_runtime.frames_for_room(room_id)
-    }
-
     pub fn processed_audio_egress_frames(
         &self,
         frame: &ProcessedAudioFrame,
