@@ -9,6 +9,7 @@ import {
   encodeServerMediaIceCandidatesRequest,
   type SignalMessage
 } from "./signalling";
+import { VoiceActivityDetector } from "./voice-activity";
 import { createPeerConnection } from "./webrtc";
 
 type ServerMediaAudioSessionInput = {
@@ -24,12 +25,14 @@ type ServerMediaAudioSessionInput = {
   onError?: (message: string) => void;
   onConnectionInterrupted?: () => void;
   onRemoteTrack?: () => void;
+  onRemoteSpeakingChange?: (userId: string, speaking: boolean) => void;
 };
 
 type RemotePlayback = {
   stream: MediaStream;
   source: MediaStreamAudioSourceNode;
   gain: GainNode;
+  voiceActivity: VoiceActivityDetector;
 };
 
 export type ServerMediaAudioStats = {
@@ -53,6 +56,14 @@ export type ServerMediaAudioDiagnostics = {
   rejectedTrackIds: string[];
   lastPlaybackError: string | null;
   stats: ServerMediaAudioStats;
+};
+
+type DtxEncodingParameters = RTCRtpEncodingParameters & {
+  dtx?: "disabled" | "enabled";
+};
+
+type DtxRtpSendParameters = RTCRtpSendParameters & {
+  encodings: DtxEncodingParameters[];
 };
 
 const DEFAULT_AUDIO_TRACK_ID = "audio-main";
@@ -111,6 +122,7 @@ export class ServerMediaAudioSession {
   async start(): Promise<void> {
     const offer = await this.peer.createOffer();
     await this.peer.setLocalDescription(offer);
+    await this.enableOpusDtx();
     const answer = await answerServerMediaOffer(
       this.input.roomId,
       this.input.userId,
@@ -175,6 +187,7 @@ export class ServerMediaAudioSession {
     }
     playback.source.disconnect();
     playback.gain.disconnect();
+    playback.voiceActivity.stop();
     this.remotePlayback.delete(userId);
   }
 
@@ -243,13 +256,17 @@ export class ServerMediaAudioSession {
     const audioContext = this.audioContext ?? new AudioContext();
     this.audioContext = audioContext;
     const source = audioContext.createMediaStreamSource(stream);
+    const voiceActivity = new VoiceActivityDetector(stream, (speaking) => {
+      this.input.onRemoteSpeakingChange?.(sourceUserId, speaking);
+    });
+    voiceActivity.start();
     const gain = audioContext.createGain();
     source.connect(gain);
     gain.connect(audioContext.destination);
     if (audioContext.state === "suspended") {
       void audioContext.resume().catch((error: unknown) => this.reportPlaybackError(error));
     }
-    this.remotePlayback.set(sourceUserId, { stream, source, gain });
+    this.remotePlayback.set(sourceUserId, { stream, source, gain, voiceActivity });
     this.setUserAudioSettings(
       sourceUserId,
       this.input.userAudio?.[sourceUserId] ?? { muted: false, volumePercent: 100 }
@@ -267,6 +284,22 @@ export class ServerMediaAudioSession {
       }
       throw error;
     }
+  }
+
+  private async enableOpusDtx(): Promise<void> {
+    const senders = this.peer.getSenders().filter((sender) => sender.track?.kind === "audio");
+    await Promise.all(senders.map(async (sender) => {
+      try {
+        const parameters = sender.getParameters() as DtxRtpSendParameters;
+        const encodings = parameters.encodings.length > 0 ? parameters.encodings : [{}];
+        await sender.setParameters({
+          ...parameters,
+          encodings: encodings.map((encoding) => ({ ...encoding, dtx: "enabled" }))
+        });
+      } catch {
+        return;
+      }
+    }));
   }
 
   private sendSignal(signal: SignalMessage): void {

@@ -12,7 +12,8 @@ import {
   peerStatsReports,
   send,
   sockets,
-  stopTrack
+  stopTrack,
+  voiceActivityMock
 } from "./room-client-test-utils";
 import { RoomClient } from "./room-client";
 
@@ -203,6 +204,46 @@ describe("RoomClient", () => {
     expect(screen.getByLabelText("Bob volume")).toHaveValue("100");
     expect(screen.getByText("Mute Cam")).toBeInTheDocument();
     expect(screen.getByLabelText("Cam volume")).toHaveValue("100");
+  });
+
+  it("shows the current user as speaking from local RMS voice activity", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    act(() => {
+      voiceActivityMock.instances[0].onSpeakingChange(true);
+    });
+
+    expect(screen.getByLabelText("Ada is speaking")).toBeInTheDocument();
+  });
+
+  it("shows a remote user as speaking from remote RMS voice activity", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    act(() => {
+      peerConnections[0].ontrack?.({
+        track: { id: "lyre-user:user_b:audio" },
+        streams: []
+      } as unknown as RTCTrackEvent);
+    });
+
+    act(() => {
+      voiceActivityMock.instances[1].onSpeakingChange(true);
+    });
+
+    expect(screen.getByLabelText("Bob is speaking")).toBeInTheDocument();
+  });
+
+  it("clears speaking indicators when audio closes", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    act(() => {
+      voiceActivityMock.instances[0].onSpeakingChange(true);
+    });
+
+    fireEvent.click(screen.getByText("Leave"));
+
+    await waitFor(() => expect(screen.queryByLabelText("Ada is speaking")).not.toBeInTheDocument());
   });
 
   it("hides audio diagnostics until enabled in settings", async () => {

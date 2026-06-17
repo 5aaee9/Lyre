@@ -103,6 +103,7 @@
 - Frontend server-media candidate polling now treats a closed signalling WebSocket as a reconnect trigger, clearing stale socket errors after relay audio reconnects.
 - Room leave cleanup now stops room-scoped processed/raw WebRTC egress pumps when the last relay participant leaves, preventing empty rooms from continuing audio fanout work.
 - Terminal server-media peer failure now removes the departed user from room membership, relay participant state, and persisted room state after reconnect recovery has failed.
+- Frontend room audio now shows client-side per-user active speaker indicators from local RMS analysis and requests Opus DTX for local WebRTC audio senders when supported.
 
 ## Next
 

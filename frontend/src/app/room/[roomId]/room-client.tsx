@@ -28,6 +28,7 @@ import {
 } from "@/lib/signalling";
 import { readNickname, readNoiseConfig } from "@/lib/storage";
 import { useSettingsStore, type SettingsSnapshot, type UserAudioSettings } from "@/lib/settings-store";
+import { VoiceActivityDetector } from "@/lib/voice-activity";
 import { openLocalAudioStream } from "@/lib/webrtc";
 
 type RoomSession = {
@@ -90,11 +91,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [relaySourceIds, setRelaySourceIds] = useState<string[]>([]);
   const [audioDiagnosticsRefreshKey, setAudioDiagnosticsRefreshKey] = useState(0);
+  const [speakingUserIds, setSpeakingUserIds] = useState<Set<string>>(() => new Set());
   const audioDiagnosticsEnabled = useSettingsStore((state) => state.audioDiagnosticsEnabled);
   const userAudio = useSettingsStore((state) => state.userAudio);
   const setUserAudioSettings = useSettingsStore((state) => state.setUserAudioSettings);
   const socketRef = useRef<WebSocket | null>(null);
   const serverAudioSessionRef = useRef<ServerMediaAudioSession | null>(null);
+  const localVoiceActivityRef = useRef<VoiceActivityDetector | null>(null);
   const audioStartedRef = useRef(false);
   const relayStartedRef = useRef(false);
   const reconnectingAudioRef = useRef(false);
@@ -136,10 +139,29 @@ export function RoomClient({ roomId }: { roomId: string }) {
     audioSettings: Record<string, UserAudioSettings> = userAudio
   ) => sourceIds.filter((userId) => !audioSettings[userId]?.muted), [userAudio]);
 
+  const setUserSpeaking = useCallback((userId: string, speaking: boolean) => {
+    setSpeakingUserIds((current) => {
+      const next = new Set(current);
+      if (speaking) {
+        next.add(userId);
+      } else {
+        next.delete(userId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSpeaking = useCallback(() => {
+    setSpeakingUserIds(new Set());
+  }, []);
+
   const closeAudioSessions = useCallback(() => {
+    localVoiceActivityRef.current?.stop();
+    localVoiceActivityRef.current = null;
     serverAudioSessionRef.current?.close();
     serverAudioSessionRef.current = null;
-  }, []);
+    clearSpeaking();
+  }, [clearSpeaking]);
 
   const clearReconnectRetry = useCallback(() => {
     if (reconnectRetryRef.current !== null) {
@@ -339,12 +361,18 @@ export function RoomClient({ roomId }: { roomId: string }) {
         userAudio: audioSettings,
         onError: handleAudioError,
         onConnectionInterrupted: () => reconnectServerRelayAudioRef.current(),
-        onRemoteTrack: () => setAudioDiagnosticsRefreshKey((key) => key + 1)
+        onRemoteTrack: () => setAudioDiagnosticsRefreshKey((key) => key + 1),
+        onRemoteSpeakingChange: setUserSpeaking
       });
       session.setMuted(muted);
       serverAudioSessionRef.current = session;
-      stream = null;
       await session.start();
+      localVoiceActivityRef.current?.stop();
+      localVoiceActivityRef.current = new VoiceActivityDetector(stream, (speaking) => {
+        setUserSpeaking(currentUser.id, speaking);
+      });
+      localVoiceActivityRef.current.start();
+      stream = null;
       clearReconnectRetry();
       setAudioDiagnosticsRefreshKey((key) => key + 1);
       setStatus("Server relay audio connected");
@@ -385,6 +413,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     remoteUsers,
     roomId,
     scheduleRelaySourceRefreshRetry,
+    setUserSpeaking,
     subscribedSourceIdsFromRelaySources,
     userAudio
   ]);
@@ -574,7 +603,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <ul className="divide-y divide-[#edf0ec]">
           {(room?.users ?? []).map((user) => (
             <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm" key={user.id}>
-              <span>{user.nickname}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span>{user.nickname}</span>
+                {speakingUserIds.has(user.id) ? (
+                  <span
+                    aria-label={`${user.nickname} is speaking`}
+                    className="size-2 rounded-full bg-[#2f8f46]"
+                  />
+                ) : null}
+              </span>
               {user.id !== currentUser?.id ? (
                 <div className="flex items-center gap-2">
                   <Button

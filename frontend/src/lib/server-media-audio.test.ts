@@ -4,6 +4,28 @@ import { parseServerMediaSourceTrackId, ServerMediaAudioSession } from "./server
 const apiMocks = vi.hoisted(() => ({
   answerServerMediaOffer: vi.fn()
 }));
+const voiceActivityMock = vi.hoisted(() => {
+  type MockVoiceActivityDetectorInstance = {
+    stream: MediaStream;
+    onSpeakingChange: (speaking: boolean) => void;
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+  };
+  const instances: MockVoiceActivityDetectorInstance[] = [];
+  class MockVoiceActivityDetector {
+    stream: MediaStream;
+    onSpeakingChange: (speaking: boolean) => void;
+    start = vi.fn();
+    stop = vi.fn();
+
+    constructor(stream: MediaStream, onSpeakingChange: (speaking: boolean) => void) {
+      this.stream = stream;
+      this.onSpeakingChange = onSpeakingChange;
+      instances.push(this);
+    }
+  }
+  return { MockVoiceActivityDetector, instances };
+});
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -12,6 +34,10 @@ vi.mock("./api", async () => {
     answerServerMediaOffer: apiMocks.answerServerMediaOffer
   };
 });
+
+vi.mock("./voice-activity", () => ({
+  VoiceActivityDetector: voiceActivityMock.MockVoiceActivityDetector
+}));
 
 const stopTrack = vi.fn();
 const play = vi.fn();
@@ -79,11 +105,17 @@ class MockPeerConnection {
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
+  audioSender = {
+    track: { kind: "audio" },
+    getParameters: vi.fn(() => ({ encodings: [{}] })),
+    setParameters: vi.fn(async () => undefined)
+  };
   addIceCandidate = vi.fn();
   addTrack = vi.fn();
   close = vi.fn();
   createOffer = vi.fn(async () => ({ type: "offer", sdp: "local-offer" }));
   getReceivers = vi.fn(() => [] as RTCRtpReceiver[]);
+  getSenders = vi.fn(() => [this.audioSender]);
   getStats = vi.fn(async () => peerStatsReports[peerConnections.indexOf(this)] ?? new Map());
   setLocalDescription = vi.fn();
   setRemoteDescription = vi.fn();
@@ -131,6 +163,7 @@ describe("ServerMediaAudioSession", () => {
     audioContexts.length = 0;
     mediaStreamSources.length = 0;
     gainNodes.length = 0;
+    voiceActivityMock.instances.length = 0;
     localAudioTrack.enabled = true;
     stopTrack.mockClear();
     play.mockReset();
@@ -294,6 +327,76 @@ describe("ServerMediaAudioSession", () => {
 
     session.setUserAudioSettings("user_b", { muted: true, volumePercent: 150 });
     expect(gainNodes[0].gain.value).toBe(0);
+  });
+
+  it("starts remote voice activity detection for accepted source tracks", async () => {
+    const onRemoteSpeakingChange = vi.fn();
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      pollIntervalMs: 10,
+      onRemoteSpeakingChange
+    });
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    expect(voiceActivityMock.instances).toHaveLength(1);
+    expect(voiceActivityMock.instances[0].start).toHaveBeenCalledOnce();
+
+    voiceActivityMock.instances[0].onSpeakingChange(true);
+
+    expect(onRemoteSpeakingChange).toHaveBeenCalledWith("user_b", true);
+  });
+
+  it("analyzes the original remote stream before playback gain", async () => {
+    const session = makeSession();
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    expect(voiceActivityMock.instances[0].stream).toBe(mediaStreamSources[0].stream);
+    expect(mediaStreamSources[0].connect).toHaveBeenCalledWith(gainNodes[0]);
+  });
+
+  it("stops remote voice activity detectors when removing user audio", async () => {
+    const session = makeSession();
+    await session.start();
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    session.removeUserAudio("user_b");
+
+    expect(voiceActivityMock.instances[0].stop).toHaveBeenCalledOnce();
+  });
+
+  it("requests Opus DTX on local audio senders", async () => {
+    const session = makeSession();
+
+    await session.start();
+
+    expect(peerConnections[0].audioSender.setParameters).toHaveBeenCalledWith({
+      encodings: [{ dtx: "enabled" }]
+    });
+  });
+
+  it("does not fail startup when Opus DTX setup is rejected", async () => {
+    const session = makeSession();
+    peerConnections[0].audioSender.setParameters.mockRejectedValueOnce(new Error("unsupported"));
+
+    await expect(session.start()).resolves.toBeUndefined();
   });
 
   it("maps random browser track ids through the server media stream id", async () => {

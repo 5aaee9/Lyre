@@ -12,6 +12,28 @@ const removeAudio = vi.fn();
 const playAudio = vi.fn();
 const gainNodes: MockGainNode[] = [];
 const audioContexts: MockAudioContext[] = [];
+const voiceActivityMock = vi.hoisted(() => {
+  type MockVoiceActivityDetectorInstance = {
+    stream: MediaStream;
+    onSpeakingChange: (speaking: boolean) => void;
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+  };
+  const instances: MockVoiceActivityDetectorInstance[] = [];
+  class MockVoiceActivityDetector {
+    stream: MediaStream;
+    onSpeakingChange: (speaking: boolean) => void;
+    start = vi.fn();
+    stop = vi.fn();
+
+    constructor(stream: MediaStream, onSpeakingChange: (speaking: boolean) => void) {
+      this.stream = stream;
+      this.onSpeakingChange = onSpeakingChange;
+      instances.push(this);
+    }
+  }
+  return { MockVoiceActivityDetector, instances };
+});
 const apiMocks = vi.hoisted(() => ({
   answerServerMediaOffer: vi.fn(),
   closeServerMediaSession: vi.fn(),
@@ -65,12 +87,18 @@ class MockPeerConnection {
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
+  audioSender = {
+    track: { kind: "audio" },
+    getParameters: vi.fn(() => ({ encodings: [{}] })),
+    setParameters: vi.fn(async () => undefined)
+  };
   addTrack = vi.fn();
   addIceCandidate = vi.fn();
   close = vi.fn();
   createAnswer = vi.fn(async () => ({ type: "answer", sdp: `local-answer-${this.remoteUserId}` }));
   createOffer = vi.fn(async () => createOfferMock(this));
   getReceivers = vi.fn(() => [] as RTCRtpReceiver[]);
+  getSenders = vi.fn(() => [this.audioSender]);
   getStats = vi.fn(async () => peerStatsReports[peerConnections.indexOf(this)] ?? new Map());
   setLocalDescription = vi.fn();
   setRemoteDescription = vi.fn();
@@ -147,6 +175,10 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+vi.mock("@/lib/voice-activity", () => ({
+  VoiceActivityDetector: voiceActivityMock.MockVoiceActivityDetector
+}));
+
 export {
   addRemoteTrack,
   apiMocks,
@@ -161,7 +193,8 @@ export {
   removeAudio,
   send,
   sockets,
-  stopTrack
+  stopTrack,
+  voiceActivityMock
 };
 
 afterEach(() => {
@@ -174,6 +207,7 @@ beforeEach(() => {
   peerStatsReports.length = 0;
   gainNodes.length = 0;
   audioContexts.length = 0;
+  voiceActivityMock.instances.length = 0;
   localStorage.clear();
   sessionStorage.clear();
   resetSettingsStoreForTests();
