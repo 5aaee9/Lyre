@@ -72,6 +72,12 @@ export function RoomAudioDiagnostics({
           <dd>{diagnostics?.stats.packetsLost ?? 0}</dd>
           <dt className="text-[#5c6a61]">Remote lost</dt>
           <dd>{diagnostics?.stats.remotePacketsLost ?? 0}</dd>
+          <dt className="text-[#5c6a61]">Audio level</dt>
+          <dd>{diagnostics?.stats.audioLevel === null ? "unavailable" : diagnostics?.stats.audioLevel.toFixed(4) ?? "unavailable"}</dd>
+          <dt className="text-[#5c6a61]">Audio energy</dt>
+          <dd>{diagnostics?.stats.totalAudioEnergy === null ? "unavailable" : diagnostics?.stats.totalAudioEnergy.toFixed(4) ?? "unavailable"}</dd>
+          <dt className="text-[#5c6a61]">Audio duration</dt>
+          <dd>{diagnostics?.stats.totalSamplesDuration === null ? "unavailable" : `${diagnostics?.stats.totalSamplesDuration.toFixed(2) ?? "0.00"} s`}</dd>
           <dt className="text-[#5c6a61]">RTT</dt>
           <dd>{diagnostics?.stats.roundTripTimeMs === null ? "unavailable" : `${diagnostics?.stats.roundTripTimeMs ?? 0} ms`}</dd>
         </dl>
@@ -88,6 +94,16 @@ export function RoomAudioDiagnostics({
           <dd>{diagnostics?.onTrackTrackIds.length ? diagnostics.onTrackTrackIds.join(", ") : "none"}</dd>
           <dt className="text-[#5c6a61]">Rejected tracks</dt>
           <dd>{diagnostics?.rejectedTrackIds.length ? diagnostics.rejectedTrackIds.join(", ") : "none"}</dd>
+          <dt className="text-[#5c6a61]">Remote sources</dt>
+          <dd>
+            {diagnostics?.remoteSources.length
+              ? diagnostics.remoteSources
+                .map((source) =>
+                  `${source.userId}: gain ${source.gain.toFixed(2)}, muted ${source.muted}, volume ${source.volumePercent}%, tracks ${source.trackIds.join("/")}, states ${source.readyStates.join("/")}, enabled ${source.enabled.join("/")}`
+                )
+                .join("; ")
+              : "none"}
+          </dd>
           <dt className="text-[#5c6a61]">Playback error</dt>
           <dd>{diagnostics?.lastPlaybackError ?? "none"}</dd>
         </dl>

@@ -813,6 +813,12 @@ async fn server_relay_deepfilternet_audio_reaches_recipient_with_audible_payload
 }
 
 #[tokio::test]
+async fn server_relay_dpdfnet_audio_reaches_recipient_with_audible_payload() {
+    server_relay_noise_provider_reaches_recipient_with_audible_payload(NoiseProvider::Dpdfnet)
+        .await;
+}
+
+#[tokio::test]
 async fn server_relay_audio_survives_repeated_room_relay_start() {
     let state = AppState::default();
     let room_id = RoomId::default_room();

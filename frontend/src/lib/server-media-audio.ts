@@ -34,6 +34,18 @@ type RemotePlayback = {
   source: MediaStreamAudioSourceNode;
   gain: GainNode;
   voiceActivity: VoiceActivityDetector;
+  element: HTMLAudioElement;
+  settings: UserAudioSettings;
+};
+
+export type ServerMediaRemoteSourceDiagnostics = {
+  userId: string;
+  trackIds: string[];
+  gain: number;
+  muted: boolean;
+  volumePercent: number;
+  readyStates: MediaStreamTrackState[];
+  enabled: boolean[];
 };
 
 export type ServerMediaAudioStats = {
@@ -43,6 +55,9 @@ export type ServerMediaAudioStats = {
   bytesReceived: number;
   packetsLost: number;
   remotePacketsLost: number;
+  audioLevel: number | null;
+  totalAudioEnergy: number | null;
+  totalSamplesDuration: number | null;
   roundTripTimeMs: number | null;
 };
 
@@ -55,6 +70,7 @@ export type ServerMediaAudioDiagnostics = {
   receiverTrackIds: string[];
   onTrackTrackIds: string[];
   rejectedTrackIds: string[];
+  remoteSources: ServerMediaRemoteSourceDiagnostics[];
   lastPlaybackError: string | null;
   stats: ServerMediaAudioStats;
 };
@@ -82,6 +98,9 @@ const EMPTY_AUDIO_STATS: ServerMediaAudioStats = {
   bytesReceived: 0,
   packetsLost: 0,
   remotePacketsLost: 0,
+  audioLevel: null,
+  totalAudioEnergy: null,
+  totalSamplesDuration: null,
   roundTripTimeMs: null
 };
 
@@ -177,6 +196,7 @@ export class ServerMediaAudioSession {
         .filter((trackId): trackId is string => typeof trackId === "string" && trackId.length > 0),
       onTrackTrackIds: [...this.onTrackTrackIds],
       rejectedTrackIds: [...this.rejectedTrackIds],
+      remoteSources: this.remoteSourceDiagnostics(),
       lastPlaybackError: this.lastPlaybackError,
       stats
     };
@@ -189,6 +209,7 @@ export class ServerMediaAudioSession {
     }
     const volumePercent = Math.min(150, Math.max(0, settings.volumePercent));
     playback.gain.gain.value = settings.muted ? 0 : volumePercent / 100;
+    playback.settings = { muted: settings.muted, volumePercent };
   }
 
   removeUserAudio(userId: string): void {
@@ -199,6 +220,7 @@ export class ServerMediaAudioSession {
     playback.source.disconnect();
     playback.gain.disconnect();
     playback.voiceActivity.stop();
+    playback.element.remove();
     this.remotePlayback.delete(userId);
   }
 
@@ -268,6 +290,12 @@ export class ServerMediaAudioSession {
     this.removeUserAudio(sourceUserId);
     const stream = new MediaStream();
     stream.addTrack(track);
+    const element = document.createElement("audio");
+    element.autoplay = true;
+    element.hidden = true;
+    element.muted = true;
+    element.srcObject = stream;
+    document.body.append(element);
     const audioContext = this.audioContext ?? new AudioContext();
     this.audioContext = audioContext;
     this.applyOutputDevice(audioContext);
@@ -282,7 +310,15 @@ export class ServerMediaAudioSession {
     if (audioContext.state === "suspended") {
       void audioContext.resume().catch((error: unknown) => this.reportPlaybackError(error));
     }
-    this.remotePlayback.set(sourceUserId, { stream, source, gain, voiceActivity });
+    void element.play().catch((error: unknown) => this.reportPlaybackError(error));
+    this.remotePlayback.set(sourceUserId, {
+      stream,
+      source,
+      gain,
+      voiceActivity,
+      element,
+      settings: { muted: false, volumePercent: 100 }
+    });
     this.setUserAudioSettings(
       sourceUserId,
       this.input.userAudio?.[sourceUserId] ?? { muted: false, volumePercent: 100 }
@@ -367,6 +403,23 @@ export class ServerMediaAudioSession {
     this.lastPlaybackError = message;
     this.input.onError?.(message);
   }
+
+  private remoteSourceDiagnostics(): ServerMediaRemoteSourceDiagnostics[] {
+    return [...this.remotePlayback.entries()]
+      .map(([userId, playback]) => {
+        const tracks = playback.stream.getAudioTracks();
+        return {
+          userId,
+          trackIds: tracks.map((track) => track.id),
+          gain: playback.gain.gain.value,
+          muted: playback.settings.muted,
+          volumePercent: playback.settings.volumePercent,
+          readyStates: tracks.map((track) => track.readyState),
+          enabled: tracks.map((track) => track.enabled)
+        };
+      })
+      .sort((left, right) => left.userId.localeCompare(right.userId));
+  }
 }
 
 export function parseServerMediaSourceTrackId(trackId: string): string | null {
@@ -430,6 +483,15 @@ function summarizeAudioStats(report: RTCStatsReport): ServerMediaAudioStats {
       summary.packetsReceived += stat.packetsReceived ?? 0;
       summary.bytesReceived += stat.bytesReceived ?? 0;
       summary.packetsLost += stat.packetsLost ?? 0;
+      if (typeof stat.audioLevel === "number") {
+        summary.audioLevel = Math.max(summary.audioLevel ?? 0, stat.audioLevel);
+      }
+      if (typeof stat.totalAudioEnergy === "number") {
+        summary.totalAudioEnergy = (summary.totalAudioEnergy ?? 0) + stat.totalAudioEnergy;
+      }
+      if (typeof stat.totalSamplesDuration === "number") {
+        summary.totalSamplesDuration = (summary.totalSamplesDuration ?? 0) + stat.totalSamplesDuration;
+      }
     }
     if (stat.type === "remote-inbound-rtp") {
       summary.remotePacketsLost += stat.packetsLost ?? 0;
@@ -448,6 +510,9 @@ type AudioRtpStats = RTCStats & {
   packetsReceived?: number;
   bytesReceived?: number;
   packetsLost?: number;
+  audioLevel?: number;
+  totalAudioEnergy?: number;
+  totalSamplesDuration?: number;
   roundTripTime?: number;
 };
 

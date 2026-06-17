@@ -321,13 +321,14 @@ describe("ServerMediaAudioSession", () => {
     await session.start();
 
     peerConnections[0].ontrack?.({
-      track: { id: "lyre-user:user_b:audio" },
+      track: { id: "lyre-user:user_b:audio", enabled: true, readyState: "live" },
       streams: []
     } as unknown as RTCTrackEvent);
 
     expect(audioContexts).toHaveLength(1);
     expect(mediaStreamSources[0].connect).toHaveBeenCalledWith(gainNodes[0]);
     expect(gainNodes[0].connect).toHaveBeenCalledWith(audioContexts[0].destination);
+    expect(play).toHaveBeenCalledOnce();
 
     session.setUserAudioSettings("user_b", { muted: false, volumePercent: 150 });
     expect(gainNodes[0].gain.value).toBe(1.5);
@@ -350,7 +351,7 @@ describe("ServerMediaAudioSession", () => {
     await session.start();
 
     peerConnections[0].ontrack?.({
-      track: { id: "lyre-user:user_b:audio" },
+      track: { id: "lyre-user:user_b:audio", enabled: true, readyState: "live" },
       streams: []
     } as unknown as RTCTrackEvent);
     await vi.waitFor(() => expect(audioContexts[0].setSinkId).toHaveBeenCalledWith("speaker-a"));
@@ -439,7 +440,7 @@ describe("ServerMediaAudioSession", () => {
     const session = makeSession();
     await session.start();
     peerConnections[0].ontrack?.({
-      track: { id: "lyre-user:user_b:audio" },
+      track: { id: "lyre-user:user_b:audio", enabled: true, readyState: "live" },
       streams: []
     } as unknown as RTCTrackEvent);
 
@@ -535,7 +536,7 @@ describe("ServerMediaAudioSession", () => {
     const session = makeSession();
     await session.start();
     peerConnections[0].ontrack?.({
-      track: { id: "lyre-user:user_b:audio" },
+      track: { id: "lyre-user:user_b:audio", enabled: true, readyState: "live" },
       streams: []
     } as unknown as RTCTrackEvent);
     audioContexts[0].state = "suspended";
@@ -559,7 +560,10 @@ describe("ServerMediaAudioSession", () => {
         kind: "audio",
         packetsReceived: 7,
         bytesReceived: 890,
-        packetsLost: 1
+        packetsLost: 1,
+        audioLevel: 0.125,
+        totalAudioEnergy: 2.5,
+        totalSamplesDuration: 4
       }],
       ["remote-inbound-audio", {
         type: "remote-inbound-rtp",
@@ -571,7 +575,7 @@ describe("ServerMediaAudioSession", () => {
     const session = makeSession();
     await session.start();
     peerConnections[0].ontrack?.({
-      track: { id: "lyre-user:user_b:audio" },
+      track: { id: "lyre-user:user_b:audio", enabled: true, readyState: "live" },
       streams: []
     } as unknown as RTCTrackEvent);
     peerConnections[0].getReceivers.mockReturnValue([
@@ -590,6 +594,15 @@ describe("ServerMediaAudioSession", () => {
     expect(diagnostics.onTrackTrackIds).toEqual(["lyre-user:user_b:audio"]);
     expect(diagnostics.rejectedTrackIds).toEqual([]);
     expect(diagnostics.lastPlaybackError).toBeNull();
+    expect(diagnostics.remoteSources).toEqual([{
+      userId: "user_b",
+      trackIds: ["lyre-user:user_b:audio"],
+      gain: 1,
+      muted: false,
+      volumePercent: 100,
+      readyStates: ["live"],
+      enabled: [true]
+    }]);
     expect(diagnostics.stats).toEqual({
       packetsSent: 12,
       bytesSent: 3456,
@@ -597,6 +610,9 @@ describe("ServerMediaAudioSession", () => {
       bytesReceived: 890,
       packetsLost: 1,
       remotePacketsLost: 2,
+      audioLevel: 0.125,
+      totalAudioEnergy: 2.5,
+      totalSamplesDuration: 4,
       roundTripTimeMs: 31
     });
   });
@@ -778,6 +794,7 @@ describe("ServerMediaAudioSession", () => {
     expect(stopTrack).toHaveBeenCalledOnce();
     expect(mediaStreamSources[0].disconnect).toHaveBeenCalledOnce();
     expect(gainNodes[0].disconnect).toHaveBeenCalledOnce();
+    expect(removeAudio).toHaveBeenCalledOnce();
     expect(audioContexts[0].close).toHaveBeenCalledOnce();
     expect(socketSend).toHaveBeenCalledTimes(1);
   });

@@ -106,6 +106,8 @@
 - Frontend room audio now shows client-side per-user active speaker indicators from local RMS analysis and requests Opus DTX for local WebRTC audio senders when supported.
 - Frontend settings now let users choose browser microphone and speaker devices, defaulting to system devices and applying selected devices on the next audio session start.
 - Frontend server-media playback now maps browser UUID remote track IDs through the negotiated transceiver MID and server answer SDP, so browsers that omit Lyre stream IDs still attach remote audio and voice activity to the source user.
+- Frontend audio diagnostics now reports remote source gain/mute/track state plus inbound RTP audio level, energy, and sample duration for distinguishing silent payloads from playback routing failures.
+- Frontend server-media playback now primes each accepted remote stream with a hidden muted audio element while keeping audible output on the per-user Web Audio gain path.
 
 ## Next
 
