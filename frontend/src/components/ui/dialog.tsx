@@ -8,6 +8,14 @@ import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 import { LayerContainerContext } from "@/components/ui/layer-container"
 
+function isSelectContentEvent(event: Event): boolean {
+  if (!(event.target instanceof Element)) {
+    return false
+  }
+
+  return event.target.closest("[data-slot='select-content']") !== null
+}
+
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -51,6 +59,8 @@ function DialogOverlay({
 function DialogContent({
   className,
   children,
+  onInteractOutside,
+  onPointerDownOutside,
   showCloseButton = true,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
@@ -67,6 +77,20 @@ function DialogContent({
           className
         )}
         ref={setContentElement}
+        onInteractOutside={(event) => {
+          if (isSelectContentEvent(event.detail.originalEvent)) {
+            event.preventDefault()
+          }
+
+          onInteractOutside?.(event)
+        }}
+        onPointerDownOutside={(event) => {
+          if (isSelectContentEvent(event.detail.originalEvent)) {
+            event.preventDefault()
+          }
+
+          onPointerDownOutside?.(event)
+        }}
         {...props}
       >
         <LayerContainerContext.Provider value={contentElement}>

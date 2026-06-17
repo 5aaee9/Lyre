@@ -121,6 +121,7 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByLabelText("Microphone"));
     expect(await screen.findByRole("option", { name: "Studio Mic" })).toBeInTheDocument();
     const dialog = screen.getByRole("dialog", { hidden: true });
+    expect(dialog).not.toContainElement(screen.getByRole("listbox"));
     expect(within(dialog).getByText("Settings")).toBeInTheDocument();
     fireEvent.pointerDown(dialog);
 

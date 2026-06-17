@@ -108,6 +108,7 @@
 - Frontend server-media playback now maps browser UUID remote track IDs through the negotiated transceiver MID and server answer SDP, so browsers that omit Lyre stream IDs still attach remote audio and voice activity to the source user.
 - Frontend audio diagnostics now reports remote source gain/mute/track state plus inbound RTP audio level, energy, and sample duration for distinguishing silent payloads from playback routing failures.
 - Frontend server-media playback now primes each accepted remote stream with a hidden muted audio element while keeping audible output on the per-user Web Audio gain path.
+- Frontend Settings dropdowns now keep viewport-based popup positioning while open dropdown interactions no longer dismiss the Settings dialog.
 
 ## Next
 
