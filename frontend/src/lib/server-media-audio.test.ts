@@ -487,6 +487,38 @@ describe("ServerMediaAudioSession", () => {
     });
   });
 
+  it("maps random browser track ids through the negotiated transceiver mid", async () => {
+    apiMocks.answerServerMediaOffer.mockResolvedValueOnce({
+      room_id: "DEFAULT",
+      user_id: "user_a",
+      audio_track_id: "audio-main",
+      sdp: [
+        "v=0",
+        "m=audio 9 UDP/TLS/RTP/SAVPF 111",
+        "a=mid:0",
+        "a=msid:audio lyre-user:user_b:audio"
+      ].join("\r\n"),
+      state: "negotiating"
+    });
+    const session = makeSession();
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "8d660ad7-67c4-443c-9005-0ff55f35378c" },
+      streams: [],
+      transceiver: { mid: "0" }
+    } as unknown as RTCTrackEvent);
+
+    expect(audioContexts).toHaveLength(1);
+    session.setUserAudioSettings("user_b", { muted: false, volumePercent: 125 });
+    expect(gainNodes[0].gain.value).toBe(1.25);
+    await expect(session.diagnostics()).resolves.toMatchObject({
+      remoteTrackIds: ["8d660ad7-67c4-443c-9005-0ff55f35378c"],
+      rejectedTrackIds: [],
+      lastPlaybackError: null
+    });
+  });
+
   it("resumes the playback audio context when a source track starts", async () => {
     const session = makeSession();
     await session.start();

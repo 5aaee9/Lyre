@@ -105,6 +105,7 @@
 - Terminal server-media peer failure now removes the departed user from room membership, relay participant state, and persisted room state after reconnect recovery has failed.
 - Frontend room audio now shows client-side per-user active speaker indicators from local RMS analysis and requests Opus DTX for local WebRTC audio senders when supported.
 - Frontend settings now let users choose browser microphone and speaker devices, defaulting to system devices and applying selected devices on the next audio session start.
+- Frontend server-media playback now maps browser UUID remote track IDs through the negotiated transceiver MID and server answer SDP, so browsers that omit Lyre stream IDs still attach remote audio and voice activity to the source user.
 
 ## Next
 

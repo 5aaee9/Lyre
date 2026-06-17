@@ -91,6 +91,7 @@ export class ServerMediaAudioSession {
   private readonly seenCandidates = new Set<string>();
   private readonly pendingLocalCandidates: RTCIceCandidateInit[] = [];
   private readonly remotePlayback = new Map<string, RemotePlayback>();
+  private readonly sourceTrackIdsByMid = new Map<string, string>();
   private candidatePoll?: number;
   private audioContext?: AudioContext;
   private offerAnswered = false;
@@ -107,13 +108,14 @@ export class ServerMediaAudioSession {
       }
     };
     this.peer.ontrack = (event) => {
+      const mid = event.transceiver?.mid ?? null;
       if (event.streams.length === 0) {
-        this.addRemoteTrack(event.track, event.track.id);
+        this.addRemoteTrack(event.track, event.track.id, mid);
         return;
       }
       for (const stream of event.streams) {
         for (const track of stream.getTracks()) {
-          this.addRemoteTrack(track, stream.id);
+          this.addRemoteTrack(track, stream.id, mid);
         }
       }
     };
@@ -135,6 +137,10 @@ export class ServerMediaAudioSession {
       offer.sdp ?? "",
       this.input.accessToken
     );
+    this.sourceTrackIdsByMid.clear();
+    for (const [mid, trackId] of parseServerMediaSourceTrackIdsByMid(answer.sdp)) {
+      this.sourceTrackIdsByMid.set(mid, trackId);
+    }
     await this.peer.setRemoteDescription({ type: "answer", sdp: answer.sdp });
     this.offerAnswered = true;
     await this.flushLocalCandidates();
@@ -202,6 +208,7 @@ export class ServerMediaAudioSession {
       this.candidatePoll = undefined;
     }
     this.peer.close();
+    this.sourceTrackIdsByMid.clear();
     for (const track of this.input.stream.getAudioTracks()) {
       track.stop();
     }
@@ -247,9 +254,12 @@ export class ServerMediaAudioSession {
     }
   }
 
-  private addRemoteTrack(track: MediaStreamTrack, sourceId: string): void {
+  private addRemoteTrack(track: MediaStreamTrack, sourceId: string, mid: string | null): void {
     this.onTrackTrackIds.push(track.id);
-    const sourceUserId = parseServerMediaSourceTrackId(sourceId) ?? parseServerMediaSourceTrackId(track.id);
+    const sourceTrackId = (mid ? this.sourceTrackIdsByMid.get(mid) : undefined)
+      ?? sourceId
+      ?? track.id;
+    const sourceUserId = parseServerMediaSourceTrackId(sourceTrackId) ?? parseServerMediaSourceTrackId(track.id);
     if (!sourceUserId) {
       this.rejectedTrackIds.push(track.id);
       this.reportPlaybackError(`Ignored server media track with invalid id: ${track.id}`);
@@ -371,6 +381,30 @@ export function parseServerMediaSourceTrackId(trackId: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function parseServerMediaSourceTrackIdsByMid(sdp: string): Map<string, string> {
+  const tracksByMid = new Map<string, string>();
+  let currentMid: string | null = null;
+  for (const rawLine of sdp.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.startsWith("m=")) {
+      currentMid = null;
+      continue;
+    }
+    if (line.startsWith("a=mid:")) {
+      currentMid = line.slice("a=mid:".length);
+      continue;
+    }
+    if (!currentMid || !line.startsWith("a=msid:")) {
+      continue;
+    }
+    const [, trackId] = line.slice("a=msid:".length).split(/\s+/, 2);
+    if (trackId && parseServerMediaSourceTrackId(trackId)) {
+      tracksByMid.set(currentMid, trackId);
+    }
+  }
+  return tracksByMid;
 }
 
 function candidateKey(candidate: ServerMediaIceCandidate): string {
