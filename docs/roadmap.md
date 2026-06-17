@@ -102,7 +102,7 @@
 - Frontend room signalling WebSockets now reconnect automatically with the stored room session, while backend WebSocket disconnect cleanup preserves room membership and active server-media state for reconnecting users.
 - Frontend server-media candidate polling now treats a closed signalling WebSocket as a reconnect trigger, clearing stale socket errors after relay audio reconnects.
 - Room leave cleanup now stops room-scoped processed/raw WebRTC egress pumps when the last relay participant leaves, preventing empty rooms from continuing audio fanout work.
-- Terminal server-media peer failure now removes the departed user from room membership, relay participant state, and persisted room state after reconnect recovery has failed.
+- Terminal server-media peer failure now closes only the failed audio session while preserving room membership and relay participant state, so settings changes and media reconnects do not require rejoining the room.
 - Frontend room audio now shows client-side per-user active speaker indicators from local RMS analysis and requests Opus DTX for local WebRTC audio senders when supported.
 - Frontend settings now let users choose browser microphone and speaker devices, defaulting to system devices and applying selected devices on the next audio session start.
 - Frontend server-media playback now maps browser UUID remote track IDs through the negotiated transceiver MID and server answer SDP, so browsers that omit Lyre stream IDs still attach remote audio and voice activity to the source user.

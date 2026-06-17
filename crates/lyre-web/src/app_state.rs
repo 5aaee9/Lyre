@@ -143,63 +143,13 @@ impl AppState {
         let metrics = Arc::new(MetricsState::default());
         let room_state_persistence = Arc::new(Mutex::new(room_state_persistence));
         let room_state_persistence_lock = Arc::new(Mutex::new(()));
-        let terminal_registry = Arc::clone(&registry);
-        let terminal_media_relays = Arc::clone(&media_relays);
         let terminal_server_media_negotiator = Arc::clone(&server_media_negotiator);
-        let terminal_processed_audio_webrtc_egress_pump =
-            Arc::clone(&processed_audio_webrtc_egress_pump);
-        let terminal_raw_opus_webrtc_egress_pump = Arc::clone(&raw_opus_webrtc_egress_pump);
-        let terminal_peers = Arc::clone(&peers);
-        let terminal_metrics = Arc::clone(&metrics);
-        let terminal_room_state_persistence = Arc::clone(&room_state_persistence);
-        let terminal_room_state_persistence_lock = Arc::clone(&room_state_persistence_lock);
         let server_media_runtime_pump =
             Arc::new(ServerMediaRuntimePump::with_terminal_peer_handler(
                 Arc::clone(&media_runtime),
                 Arc::clone(&server_media_negotiator),
                 Arc::new(move |key| {
-                    let response = terminal_registry.leave(&key.room_id, &key.user_id);
                     terminal_server_media_negotiator.close(&key);
-                    match terminal_media_relays
-                        .remove_participant(key.room_id.clone(), &key.user_id)
-                    {
-                        Ok(media_relay) if media_relay.participants.is_empty() => {
-                            terminal_processed_audio_webrtc_egress_pump.stop(&key.room_id);
-                            terminal_raw_opus_webrtc_egress_pump.stop(&key.room_id);
-                        }
-                        Ok(_) | Err(lyre_core::MediaRelayError::Inactive { .. }) => {}
-                        Err(error) => {
-                            tracing::debug!(
-                                error = %error,
-                                room_id = %key.room_id,
-                                user_id = %key.user_id,
-                                "failed to remove terminal server-media user from media relay"
-                            );
-                        }
-                    }
-                    if response.removed {
-                        terminal_peers.user_left(&key.room_id, &key.user_id);
-                        terminal_metrics.record_leave();
-                        let registry = Arc::clone(&terminal_registry);
-                        let persistence = Arc::clone(&terminal_room_state_persistence);
-                        let persistence_lock = Arc::clone(&terminal_room_state_persistence_lock);
-                        let metrics = Arc::clone(&terminal_metrics);
-                        tokio::spawn(async move {
-                            let _guard = persistence_lock.lock().await;
-                            let persistence = persistence.lock().await.clone();
-                            if let Some(persistence) = persistence {
-                                if let Err(error) = persistence.save_registry(&registry) {
-                                    metrics.record_persistence_failure();
-                                    tracing::warn!(
-                                        error = format_args!("{error:#}"),
-                                        room_id = %key.room_id,
-                                        user_id = %key.user_id,
-                                        "failed to persist terminal server-media user leave"
-                                    );
-                                }
-                            }
-                        });
-                    }
                 }),
             ));
         Ok(Self {

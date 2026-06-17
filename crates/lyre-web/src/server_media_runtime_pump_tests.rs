@@ -1,44 +1,17 @@
-use crate::{api::AppState, state_persistence::RoomStatePersistence};
+use crate::api::AppState;
 use lyre_core::{
-    MediaTrackKind, NoiseCancellationConfig, NoiseProvider, PersistedRoom, PersistedRoomRegistry,
-    PersistedRoomUser, RegisterMediaTrackRequest, RoomAccessToken, RoomId, StartMediaRelayRequest,
-    StopMediaRelayRequest, UserId, UserProfile,
+    MediaTrackKind, NoiseCancellationConfig, NoiseProvider, RegisterMediaTrackRequest, RoomId,
+    StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
 use lyre_webrtc::{
     ServerMediaIceCandidate, ServerMediaOffer, ServerMediaSessionKey, ServerMediaSessionState,
     WebRtcStack,
 };
-use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::time::{timeout, Duration};
-
-static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 async fn offer_sdp() -> String {
     let offerer = WebRtcStack::new().create_peer_connection().await.unwrap();
     offerer.create_local_offer_for_test().await.unwrap()
-}
-
-fn unique_state_path(name: &str) -> std::path::PathBuf {
-    let mut path = std::env::temp_dir();
-    path.push(format!(
-        "lyre-runtime-pump-{name}-{}-{}.json",
-        std::process::id(),
-        TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let _ = std::fs::remove_file(&path);
-    path
-}
-
-fn persisted_user(user_id: &str, token: &str) -> PersistedRoomUser {
-    PersistedRoomUser {
-        profile: UserProfile {
-            id: UserId::from_external(user_id),
-            nickname: user_id.to_owned(),
-            joined_at: chrono::Utc::now(),
-            noise: Default::default(),
-        },
-        access_token: RoomAccessToken::from_external(token),
-    }
 }
 
 fn key() -> ServerMediaSessionKey {
@@ -136,7 +109,7 @@ async fn terminal_peer_failure_closes_session_and_runtime_pump() {
 }
 
 #[tokio::test]
-async fn terminal_peer_failure_removes_departed_user_membership_and_relay_state() {
+async fn terminal_peer_failure_keeps_room_membership_and_relay_state() {
     let state = AppState::default();
     let key = key();
     let user = state
@@ -148,7 +121,7 @@ async fn terminal_peer_failure_removes_departed_user_membership_and_relay_state(
         room_id: key.room_id,
         user_id: user.id.clone(),
     };
-    state.media_relays.start(
+    state.start_media_relay(
         key.room_id.clone(),
         StartMediaRelayRequest {
             noise: Some(NoiseCancellationConfig {
@@ -187,79 +160,20 @@ async fn terminal_peer_failure_removes_departed_user_membership_and_relay_state(
                 .snapshot(key.room_id.clone())
                 .users
                 .iter()
-                .all(|room_user| room_user.id != user.id));
+                .any(|room_user| room_user.id == user.id));
             assert!(state
                 .media_relays
                 .status(key.room_id.clone())
                 .participants
-                .is_empty());
-            assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 0);
+                .iter()
+                .any(|participant| participant.user_id == user.id));
+            assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 1);
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 
-    panic!("terminal peer failure did not remove departed user state");
-}
-
-#[tokio::test]
-async fn terminal_peer_failure_persists_departed_user_leave() {
-    let path = unique_state_path("terminal-leave");
-    std::fs::write(
-        &path,
-        serde_json::to_vec(&PersistedRoomRegistry {
-            rooms: vec![PersistedRoom {
-                room_id: RoomId::default_room(),
-                users: vec![persisted_user("user_01", "token_01")],
-            }],
-        })
-        .unwrap(),
-    )
-    .unwrap();
-    let state = AppState::with_room_state_persistence(
-        Default::default(),
-        None,
-        Some(RoomStatePersistence::new(path.clone())),
-        Default::default(),
-    )
-    .unwrap();
-    let key = key();
-    state.media_relays.start(
-        key.room_id.clone(),
-        StartMediaRelayRequest {
-            noise: Some(NoiseCancellationConfig {
-                provider: NoiseProvider::Dpdfnet,
-                ..NoiseCancellationConfig::default()
-            }),
-        },
-    );
-    state
-        .media_relays
-        .register_track(
-            key.room_id.clone(),
-            RegisterMediaTrackRequest {
-                user_id: key.user_id.clone(),
-                track_id: "audio-main".to_owned(),
-                kind: MediaTrackKind::Audio,
-            },
-        )
-        .unwrap();
-    answer_offer(&state, "audio-main").await;
-    let peer = state.server_media_peer_connection_for_test(&key).unwrap();
-    peer.close().await.unwrap();
-
-    for _ in 0..100 {
-        let file = std::fs::read_to_string(&path).unwrap();
-        if !file.contains("user_01") && !file.contains("token_01") {
-            let _ = std::fs::remove_file(path);
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-
-    let file = std::fs::read_to_string(&path).unwrap();
-    let _ = std::fs::remove_file(path);
-    panic!("terminal peer failure did not persist departed user leave: {file}");
+    panic!("terminal peer failure did not close only server-media runtime state");
 }
 
 #[tokio::test]

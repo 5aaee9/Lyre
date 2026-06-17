@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { defaultNoiseConfig, useSettingsStore } from "@/lib/settings-store";
-import { apiMocks, getUserMedia, peerConnections, stopTrack } from "./room-client-test-utils";
+import { addRemoteTrack, apiMocks, getUserMedia, peerConnections, playAudio, stopTrack } from "./room-client-test-utils";
 import { RoomClient } from "./room-client";
 
 describe("RoomClient settings", () => {
@@ -45,6 +45,28 @@ describe("RoomClient settings", () => {
       }
     });
     expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument();
+  });
+
+  it("keeps remote playback alive after switching server noise from off to RNNoise", async () => {
+    useSettingsStore.getState().setNoise({
+      ...defaultNoiseConfig,
+      provider: "off"
+    });
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByText("Settings"));
+    await chooseSelectOption("Server Noise Cancelling", "RNNoise");
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+
+    peerConnections[1].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    expect(addRemoteTrack).toHaveBeenCalledWith(expect.objectContaining({ id: "lyre-user:user_b:audio" }));
+    expect(playAudio).toHaveBeenCalledOnce();
   });
 
   it("can turn server noise cancelling off while audio is connected", async () => {

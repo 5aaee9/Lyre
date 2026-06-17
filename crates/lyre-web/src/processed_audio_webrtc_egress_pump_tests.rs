@@ -818,6 +818,63 @@ async fn switching_noise_off_does_not_replay_preexisting_source_rtp() {
     panic!("server relay did not forward fresh source RTP after switching noise off");
 }
 
+#[tokio::test]
+async fn switching_noise_on_after_raw_relay_and_source_reconnect_keeps_audio_flowing() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    register_audio_track(&state, &room_id, "source");
+    register_audio_track(&state, &room_id, "recipient");
+    state
+        .media_relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("recipient"),
+                source_user_ids: vec![UserId::from_external("source")],
+            },
+        )
+        .unwrap();
+    let source = connect_test_offer(&state, &room_id, "source").await;
+    let recipient = connect_test_offer(&state, &room_id, "recipient").await;
+
+    source.send_valid_opus_packets(5).await;
+    for _ in 0..150 {
+        if !recipient.received_remote_rtp_packets().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let received_before_switch = recipient.received_remote_rtp_packets().len();
+    assert!(received_before_switch > 0);
+
+    state
+        .update_media_relay_settings(
+            room_id.clone(),
+            lyre_core::UpdateMediaRelaySettingsRequest {
+                user_id: UserId::from_external("source"),
+                noise: NoiseCancellationConfig {
+                    provider: NoiseProvider::Rnnoise,
+                    intensity: 0.5,
+                    voice_activity_threshold: 0.35,
+                    ..NoiseCancellationConfig::default()
+                },
+            },
+        )
+        .unwrap();
+
+    let source = connect_test_offer(&state, &room_id, "source").await;
+    source.send_valid_opus_packets(20).await;
+    for _ in 0..150 {
+        if recipient.received_remote_rtp_packets().len() > received_before_switch {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("server relay did not forward processed audio after switching noise on");
+}
+
 async fn server_relay_noise_provider_reaches_recipient_with_audible_payload(
     provider: NoiseProvider,
 ) {
