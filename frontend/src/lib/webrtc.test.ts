@@ -60,6 +60,41 @@ describe("webrtc", () => {
     });
   });
 
+  it("uses the stored microphone device when opening local audio", async () => {
+    useSettingsStore.getState().setAudioDevices({
+      inputDeviceId: "mic-a",
+      outputDeviceId: ""
+    });
+
+    await expect(openLocalAudioStream()).resolves.toBe(stream);
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        deviceId: { exact: "mic-a" },
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true
+      }
+    });
+  });
+
+  it("omits the microphone device constraint when default input is selected", async () => {
+    useSettingsStore.getState().setAudioDevices({
+      inputDeviceId: "",
+      outputDeviceId: "speaker-a"
+    });
+
+    await expect(openLocalAudioStream()).resolves.toBe(stream);
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true
+      }
+    });
+  });
+
   it("constructs peer connection with configured ice servers and local tracks", () => {
     createPeerConnection([{ urls: ["stun:stun.example:3478"], username: null, credential: null }], stream);
 

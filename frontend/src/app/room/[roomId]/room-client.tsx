@@ -26,7 +26,7 @@ import {
   type PresenceState,
   type SignalMessage
 } from "@/lib/signalling";
-import { readNickname, readNoiseConfig } from "@/lib/storage";
+import { readAudioDeviceConfig, readAudioProcessingConfig, readNickname, readNoiseConfig } from "@/lib/storage";
 import { useSettingsStore, type SettingsSnapshot, type UserAudioSettings } from "@/lib/settings-store";
 import { VoiceActivityDetector } from "@/lib/voice-activity";
 import { openLocalAudioStream } from "@/lib/webrtc";
@@ -108,6 +108,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const reconnectRoomSocketRef = useRef<() => void>(() => undefined);
   const serverMediaCleanupNeededRef = useRef(false);
   const lastSubscribedSourceIdsRef = useRef<string[]>([]);
+  const appliedNoiseRef = useRef(readNoiseConfig());
+  const appliedAudioProcessingRef = useRef(readAudioProcessingConfig());
   const [relaySourceRefreshTick, setRelaySourceRefreshTick] = useState(0);
   const link = useMemo(() => shareRoomUrl(roomId), [roomId]);
   const remoteUsers = useMemo(
@@ -322,6 +324,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       const iceServers = await getIceServers();
       stream = await openLocalAudioStream();
       const noise = readNoiseConfig();
+      const audioDevices = readAudioDeviceConfig();
       const shouldStartRelay = !updateRelay && !relayStartedRef.current;
       if (shouldStartRelay) {
         await startMediaRelay(roomId, noise, accessToken);
@@ -358,6 +361,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         socket,
         iceServers,
         stream,
+        outputDeviceId: audioDevices.outputDeviceId,
         userAudio: audioSettings,
         onError: handleAudioError,
         onConnectionInterrupted: () => reconnectServerRelayAudioRef.current(),
@@ -376,6 +380,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
       clearReconnectRetry();
       setAudioDiagnosticsRefreshKey((key) => key + 1);
       setStatus("Server relay audio connected");
+      appliedNoiseRef.current = noise;
+      appliedAudioProcessingRef.current = readAudioProcessingConfig();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Audio connection failed";
       const waitingForSocket = message === AUDIO_SIGNALLING_SOCKET_ERROR;
@@ -458,6 +464,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   async function saveSettings(settings: SettingsSnapshot) {
     if (!audioStartedRef.current || !currentUser || !accessToken) {
+      return;
+    }
+    if (
+      JSON.stringify(appliedNoiseRef.current) === JSON.stringify(settings.noise) &&
+      JSON.stringify(appliedAudioProcessingRef.current) === JSON.stringify(settings.audioProcessing)
+    ) {
       return;
     }
     closeAudioSessions();

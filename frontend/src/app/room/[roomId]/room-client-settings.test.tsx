@@ -71,6 +71,70 @@ describe("RoomClient settings", () => {
     );
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
   });
+
+  it("saves device selections without recreating the active audio session", async () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia,
+        enumerateDevices: async () => [
+          { kind: "audioinput", deviceId: "mic-a", label: "Studio Mic" },
+          { kind: "audiooutput", deviceId: "speaker-a", label: "Desk Speakers" }
+        ]
+      }
+    });
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByText("Settings"));
+    await chooseSelectOption("Microphone", "Studio Mic");
+    await chooseSelectOption("Speaker", "Desk Speakers");
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument());
+    expect(apiMocks.updateMediaRelaySettings).not.toHaveBeenCalled();
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce();
+    expect(peerConnections[0].close).not.toHaveBeenCalled();
+    expect(stopTrack).not.toHaveBeenCalled();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(useSettingsStore.getState().audioDevices).toEqual({
+      inputDeviceId: "mic-a",
+      outputDeviceId: "speaker-a"
+    });
+  });
+
+  it("saves device selections without recreating audio after a prior noise update", async () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia,
+        enumerateDevices: async () => [
+          { kind: "audioinput", deviceId: "mic-a", label: "Studio Mic" },
+          { kind: "audiooutput", deviceId: "speaker-a", label: "Desk Speakers" }
+        ]
+      }
+    });
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByText("Settings"));
+    await chooseSelectOption("Server Noise Cancelling", "RNNoise");
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+
+    const closeCallsAfterNoiseUpdate = peerConnections.reduce((count, peer) => count + peer.close.mock.calls.length, 0);
+    const stoppedTracksAfterNoiseUpdate = stopTrack.mock.calls.length;
+    fireEvent.click(screen.getByText("Settings"));
+    await chooseSelectOption("Microphone", "Studio Mic");
+    await chooseSelectOption("Speaker", "Desk Speakers");
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument());
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(peerConnections.reduce((count, peer) => count + peer.close.mock.calls.length, 0)).toBe(closeCallsAfterNoiseUpdate);
+    expect(stopTrack).toHaveBeenCalledTimes(stoppedTracksAfterNoiseUpdate);
+  });
 });
 
 async function chooseSelectOption(label: string, option: string): Promise<void> {

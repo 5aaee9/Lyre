@@ -20,6 +20,7 @@ type ServerMediaAudioSessionInput = {
   audioTrackId?: string;
   iceServers: IceServerConfig[];
   stream: MediaStream;
+  outputDeviceId?: string;
   userAudio?: Record<string, UserAudioSettings>;
   pollIntervalMs?: number;
   onError?: (message: string) => void;
@@ -64,6 +65,10 @@ type DtxEncodingParameters = RTCRtpEncodingParameters & {
 
 type DtxRtpSendParameters = RTCRtpSendParameters & {
   encodings: DtxEncodingParameters[];
+};
+
+type AudioContextWithSinkId = AudioContext & {
+  setSinkId?: (sinkId: string) => Promise<void>;
 };
 
 const DEFAULT_AUDIO_TRACK_ID = "audio-main";
@@ -255,6 +260,7 @@ export class ServerMediaAudioSession {
     stream.addTrack(track);
     const audioContext = this.audioContext ?? new AudioContext();
     this.audioContext = audioContext;
+    this.applyOutputDevice(audioContext);
     const source = audioContext.createMediaStreamSource(stream);
     const voiceActivity = new VoiceActivityDetector(stream, (speaking) => {
       this.input.onRemoteSpeakingChange?.(sourceUserId, speaking);
@@ -272,6 +278,17 @@ export class ServerMediaAudioSession {
       this.input.userAudio?.[sourceUserId] ?? { muted: false, volumePercent: 100 }
     );
     this.input.onRemoteTrack?.();
+  }
+
+  private applyOutputDevice(audioContext: AudioContext): void {
+    const outputDeviceId = this.input.outputDeviceId;
+    const setSinkId = (audioContext as AudioContextWithSinkId).setSinkId;
+    if (!outputDeviceId || !setSinkId) {
+      return;
+    }
+    void setSinkId.call(audioContext, outputDeviceId).catch((error: unknown) => {
+      this.reportPlaybackError(error);
+    });
   }
 
   private requestServerCandidates({ report = true }: { report?: boolean } = {}): void {

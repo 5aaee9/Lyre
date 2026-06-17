@@ -1,10 +1,12 @@
 import type { IceServerConfig } from "./api";
-import { readAudioProcessingConfig } from "./storage";
+import { readAudioDeviceConfig, readAudioProcessingConfig } from "./storage";
 
 export async function openLocalAudioStream(): Promise<MediaStream> {
   const audioProcessing = readAudioProcessingConfig();
+  const audioDevices = readAudioDeviceConfig();
   return navigator.mediaDevices.getUserMedia({
     audio: {
+      ...(audioDevices.inputDeviceId ? { deviceId: { exact: audioDevices.inputDeviceId } } : {}),
       echoCancellation: audioConstraint(audioProcessing.echoCancellation),
       autoGainControl: audioConstraint(audioProcessing.autoGainControl),
       noiseSuppression: audioConstraint(audioProcessing.noiseSuppression)

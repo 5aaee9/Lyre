@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   defaultAudioProcessingConfig,
+  defaultAudioDeviceConfig,
   defaultNoiseConfig,
   readSettingsSnapshot,
   resetSettingsStoreForTests,
@@ -20,6 +21,7 @@ describe("settings store", () => {
       nickname: "",
       noise: defaultNoiseConfig,
       audioProcessing: defaultAudioProcessingConfig,
+      audioDevices: defaultAudioDeviceConfig,
       userAudio: {}
     });
   });
@@ -50,6 +52,10 @@ describe("settings store", () => {
       autoGainControl: true,
       noiseSuppression: true
     });
+    useSettingsStore.getState().setAudioDevices({
+      inputDeviceId: "mic-a",
+      outputDeviceId: "speaker-a"
+    });
     useSettingsStore.getState().setUserAudioSettings("user_a", {
       muted: true,
       volumePercent: 125
@@ -70,6 +76,10 @@ describe("settings store", () => {
           echoCancellation: false,
           autoGainControl: true,
           noiseSuppression: true
+        },
+        audioDevices: {
+          inputDeviceId: "mic-a",
+          outputDeviceId: "speaker-a"
         },
         userAudio: {
           user_a: {

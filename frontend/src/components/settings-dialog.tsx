@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,16 +28,42 @@ type SettingsDialogProps = {
   onSave?: (settings: SettingsSnapshot) => void | Promise<void>;
 };
 
+const DEFAULT_DEVICE_VALUE = "default";
+
 export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogProps) {
   const nickname = useSettingsStore((state) => state.nickname);
   const audioDiagnosticsEnabled = useSettingsStore((state) => state.audioDiagnosticsEnabled);
   const noise = useSettingsStore((state) => state.noise);
   const audioProcessing = useSettingsStore((state) => state.audioProcessing);
+  const audioDevices = useSettingsStore((state) => state.audioDevices);
   const setNickname = useSettingsStore((state) => state.setNickname);
   const setAudioDiagnosticsEnabled = useSettingsStore((state) => state.setAudioDiagnosticsEnabled);
   const setNoise = useSettingsStore((state) => state.setNoise);
   const setAudioProcessing = useSettingsStore((state) => state.setAudioProcessing);
+  const setAudioDevices = useSettingsStore((state) => state.setAudioDevices);
+  const [mediaDevices, setMediaDevices] = useState<MediaDeviceInfo[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let cancelled = false;
+    void navigator.mediaDevices?.enumerateDevices?.()
+      .then((devices) => {
+        if (!cancelled) {
+          setMediaDevices(devices);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMediaDevices([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   async function save() {
     setSaving(true);
@@ -176,6 +202,66 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
           </div>
           <div className="grid gap-4 border-t border-neutral-200 pt-4">
             <div className="text-sm font-medium">Browser Audio Processing</div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label className="text-right text-sm font-medium" htmlFor="settings-microphone">
+                Microphone
+              </label>
+              <Select
+                value={audioDevices.inputDeviceId || DEFAULT_DEVICE_VALUE}
+                onValueChange={(value) =>
+                  setAudioDevices({
+                    ...audioDevices,
+                    inputDeviceId: value === DEFAULT_DEVICE_VALUE ? "" : value
+                  })
+                }
+              >
+                <SelectTrigger
+                  aria-label="Microphone"
+                  className="col-span-3 w-full"
+                  id="settings-microphone"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DEFAULT_DEVICE_VALUE}>Default microphone</SelectItem>
+                  {mediaDevices.filter((device) => device.kind === "audioinput").map((device) => (
+                    <SelectItem key={device.deviceId} value={device.deviceId}>
+                      {device.label || "Microphone"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label className="text-right text-sm font-medium" htmlFor="settings-speaker">
+                Speaker
+              </label>
+              <Select
+                value={audioDevices.outputDeviceId || DEFAULT_DEVICE_VALUE}
+                onValueChange={(value) =>
+                  setAudioDevices({
+                    ...audioDevices,
+                    outputDeviceId: value === DEFAULT_DEVICE_VALUE ? "" : value
+                  })
+                }
+              >
+                <SelectTrigger
+                  aria-label="Speaker"
+                  className="col-span-3 w-full"
+                  id="settings-speaker"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DEFAULT_DEVICE_VALUE}>Default speaker</SelectItem>
+                  {mediaDevices.filter((device) => device.kind === "audiooutput").map((device) => (
+                    <SelectItem key={device.deviceId} value={device.deviceId}>
+                      {device.label || "Speaker"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <label className="text-right text-sm font-medium" htmlFor="settings-audio-diagnostics">
                 Diagnostics

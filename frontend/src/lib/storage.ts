@@ -1,7 +1,9 @@
 import type { NoiseCancellationConfig } from "./api";
 import {
   defaultAudioProcessingConfig,
+  defaultAudioDeviceConfig,
   readSettingsSnapshot,
+  type AudioDeviceConfig,
   type AudioProcessingConfig,
   useSettingsStore
 } from "./settings-store";
@@ -47,4 +49,15 @@ export function readAudioProcessingConfig(): AudioProcessingConfig {
 
 export function writeAudioProcessingConfig(config: AudioProcessingConfig): void {
   useSettingsStore.getState().setAudioProcessing(config);
+}
+
+export function readAudioDeviceConfig(): AudioDeviceConfig {
+  return {
+    ...defaultAudioDeviceConfig,
+    ...readSettingsSnapshot().audioDevices
+  };
+}
+
+export function writeAudioDeviceConfig(config: AudioDeviceConfig): void {
+  useSettingsStore.getState().setAudioDevices(config);
 }

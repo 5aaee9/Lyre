@@ -49,6 +49,7 @@ const peerStatsReports: Map<string, unknown>[] = [];
 const audioContexts: MockAudioContext[] = [];
 const mediaStreamSources: MockAudioSource[] = [];
 const gainNodes: MockGainNode[] = [];
+let rejectSetSinkId = false;
 
 const localAudioTrack = { id: "local-audio", enabled: true, stop: stopTrack };
 
@@ -91,6 +92,11 @@ class MockAudioContext {
   close = vi.fn();
   resume = vi.fn(async () => {
     this.state = "running";
+  });
+  setSinkId = vi.fn(async () => {
+    if (rejectSetSinkId) {
+      throw new Error("speaker unavailable");
+    }
   });
 
   constructor() {
@@ -163,6 +169,7 @@ describe("ServerMediaAudioSession", () => {
     audioContexts.length = 0;
     mediaStreamSources.length = 0;
     gainNodes.length = 0;
+    rejectSetSinkId = false;
     voiceActivityMock.instances.length = 0;
     localAudioTrack.enabled = true;
     stopTrack.mockClear();
@@ -327,6 +334,65 @@ describe("ServerMediaAudioSession", () => {
 
     session.setUserAudioSettings("user_b", { muted: true, volumePercent: 150 });
     expect(gainNodes[0].gain.value).toBe(0);
+  });
+
+  it("routes remote playback through the selected speaker when supported", async () => {
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      pollIntervalMs: 10,
+      outputDeviceId: "speaker-a"
+    });
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    await vi.waitFor(() => expect(audioContexts[0].setSinkId).toHaveBeenCalledWith("speaker-a"));
+  });
+
+  it("reports selected speaker routing failures without dropping playback setup", async () => {
+    const onError = vi.fn();
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      pollIntervalMs: 10,
+      outputDeviceId: "speaker-a",
+      onError
+    });
+    await session.start();
+    rejectSetSinkId = true;
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+
+    expect(mediaStreamSources[0].connect).toHaveBeenCalledWith(gainNodes[0]);
+    expect(gainNodes[0].connect).toHaveBeenCalledWith(audioContexts[0].destination);
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("speaker unavailable"));
+  });
+
+  it("keeps default remote playback output when no speaker is selected", async () => {
+    const session = makeSession();
+    await session.start();
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    await Promise.resolve();
+
+    expect(audioContexts[0].setSinkId).not.toHaveBeenCalled();
   });
 
   it("starts remote voice activity detection for accepted source tracks", async () => {

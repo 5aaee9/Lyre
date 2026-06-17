@@ -104,10 +104,12 @@
 - Room leave cleanup now stops room-scoped processed/raw WebRTC egress pumps when the last relay participant leaves, preventing empty rooms from continuing audio fanout work.
 - Terminal server-media peer failure now removes the departed user from room membership, relay participant state, and persisted room state after reconnect recovery has failed.
 - Frontend room audio now shows client-side per-user active speaker indicators from local RMS analysis and requests Opus DTX for local WebRTC audio senders when supported.
+- Frontend settings now let users choose browser microphone and speaker devices, defaulting to system devices and applying selected devices on the next audio session start.
 
 ## Next
 
 - Add Nix packaging for the Next.js frontend if Nix becomes a deployment target.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
+- Track browser support for Web Audio speaker output selection, since selected speakers depend on `AudioContext.setSinkId`.
 - Add production Helm values for TLS, real hostnames, secrets, persistence, and scaling policy.
 - Add production-grade database/session management if anonymous JSON persistence stops being sufficient.

@@ -8,6 +8,11 @@ export type AudioProcessingConfig = {
   noiseSuppression: boolean;
 };
 
+export type AudioDeviceConfig = {
+  inputDeviceId: string;
+  outputDeviceId: string;
+};
+
 export type UserAudioSettings = {
   muted: boolean;
   volumePercent: number;
@@ -20,6 +25,7 @@ export type SettingsState = {
   audioDiagnosticsEnabled: boolean;
   noise: NoiseCancellationConfig;
   audioProcessing: AudioProcessingConfig;
+  audioDevices: AudioDeviceConfig;
   userAudio: Record<string, UserAudioSettings>;
   setRememberRoom: (rememberRoom: boolean) => void;
   setRoomId: (roomId: string) => void;
@@ -27,6 +33,7 @@ export type SettingsState = {
   setAudioDiagnosticsEnabled: (audioDiagnosticsEnabled: boolean) => void;
   setNoise: (noise: NoiseCancellationConfig) => void;
   setAudioProcessing: (audioProcessing: AudioProcessingConfig) => void;
+  setAudioDevices: (audioDevices: AudioDeviceConfig) => void;
   setUserAudioSettings: (userId: string, settings: Partial<UserAudioSettings>) => void;
   clearUserAudioSettings: (userId: string) => void;
 };
@@ -48,6 +55,11 @@ export const defaultAudioProcessingConfig: AudioProcessingConfig = {
   noiseSuppression: true
 };
 
+export const defaultAudioDeviceConfig: AudioDeviceConfig = {
+  inputDeviceId: "",
+  outputDeviceId: ""
+};
+
 export const defaultSettingsState = {
   rememberRoom: false,
   roomId: "DEFAULT",
@@ -55,6 +67,7 @@ export const defaultSettingsState = {
   audioDiagnosticsEnabled: false,
   noise: defaultNoiseConfig,
   audioProcessing: defaultAudioProcessingConfig,
+  audioDevices: defaultAudioDeviceConfig,
   userAudio: {}
 };
 
@@ -80,6 +93,10 @@ function mergeSettingsState(persistedState: unknown, currentState: SettingsState
       ...defaultAudioProcessingConfig,
       ...persisted.audioProcessing
     },
+    audioDevices: {
+      ...defaultAudioDeviceConfig,
+      ...persisted.audioDevices
+    },
     userAudio: persisted.userAudio ?? {}
   };
 }
@@ -94,6 +111,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAudioDiagnosticsEnabled: (audioDiagnosticsEnabled) => set({ audioDiagnosticsEnabled }),
       setNoise: (noise) => set({ noise }),
       setAudioProcessing: (audioProcessing) => set({ audioProcessing }),
+      setAudioDevices: (audioDevices) => set({ audioDevices }),
       setUserAudioSettings: (userId, settings) =>
         set((state) => {
           const current = state.userAudio[userId] ?? { muted: false, volumePercent: 100 };
