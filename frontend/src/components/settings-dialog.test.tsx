@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readNickname, readNoiseConfig } from "@/lib/storage";
 import { readSettingsSnapshot, resetSettingsStoreForTests } from "@/lib/settings-store";
@@ -112,6 +112,19 @@ describe("SettingsDialog", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       noise: expect.objectContaining({ provider: "rnnoise" })
     })));
+  });
+
+  it("keeps the dialog open when clicking inside it to dismiss an open dropdown", async () => {
+    const onOpenChange = vi.fn();
+    render(<SettingsDialog open onOpenChange={onOpenChange} />);
+
+    fireEvent.click(screen.getByLabelText("Microphone"));
+    expect(await screen.findByRole("option", { name: "Studio Mic" })).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { hidden: true });
+    expect(within(dialog).getByText("Settings")).toBeInTheDocument();
+    fireEvent.pointerDown(dialog);
+
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 });
 
