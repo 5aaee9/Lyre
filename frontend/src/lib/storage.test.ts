@@ -62,7 +62,7 @@ describe("storage", () => {
     expect(readAudioProcessingConfig()).toEqual({
       echoCancellation: false,
       autoGainControl: true,
-      noiseSuppression: false
+      noiseSuppression: true
     });
   });
 });

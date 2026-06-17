@@ -21,7 +21,6 @@ describe("RoomClient settings", () => {
     fireEvent.click(screen.getByText("Settings"));
     await chooseSelectOption("Server Noise Cancelling", "RNNoise");
     fireEvent.change(screen.getByLabelText("Intensity"), { target: { value: "0.75" } });
-    fireEvent.click(screen.getByLabelText("Browser noise suppression"));
     fireEvent.click(screen.getByText("Save"));
 
     await waitFor(() =>

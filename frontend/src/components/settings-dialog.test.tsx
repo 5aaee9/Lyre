@@ -34,7 +34,7 @@ describe("SettingsDialog", () => {
     expect(readSettingsSnapshot().audioProcessing).toEqual({
       echoCancellation: false,
       autoGainControl: true,
-      noiseSuppression: false
+      noiseSuppression: true
     });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });

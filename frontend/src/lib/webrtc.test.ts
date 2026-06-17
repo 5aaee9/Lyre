@@ -37,7 +37,7 @@ describe("webrtc", () => {
       audio: {
         echoCancellation: true,
         autoGainControl: true,
-        noiseSuppression: { exact: false }
+        noiseSuppression: true
       }
     });
   });
@@ -76,7 +76,7 @@ describe("webrtc", () => {
       audio: {
         echoCancellation: true,
         autoGainControl: true,
-        noiseSuppression: { exact: false }
+        noiseSuppression: true
       }
     });
     expect(peerConstructor).toHaveBeenCalledOnce();

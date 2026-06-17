@@ -45,7 +45,7 @@ export const defaultNoiseConfig: NoiseCancellationConfig = {
 export const defaultAudioProcessingConfig: AudioProcessingConfig = {
   echoCancellation: true,
   autoGainControl: true,
-  noiseSuppression: false
+  noiseSuppression: true
 };
 
 export const defaultSettingsState = {
