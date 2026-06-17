@@ -76,6 +76,7 @@ function clearRoomSession() {
 const AUDIO_RECONNECT_RETRY_MS = 1_000;
 const RELAY_SOURCE_REFRESH_RETRY_MS = 1_000;
 const SOCKET_RECONNECT_RETRY_MS = 1_000;
+const AUDIO_SIGNALLING_SOCKET_ERROR = "Audio signalling websocket is not connected";
 const DEFAULT_USER_AUDIO_SETTINGS: UserAudioSettings = { muted: false, volumePercent: 100 };
 
 export function RoomClient({ roomId }: { roomId: string }) {
@@ -160,6 +161,17 @@ export function RoomClient({ roomId }: { roomId: string }) {
       relaySourceRefreshRetryRef.current = null;
     }
   }, []);
+
+  const handleAudioError = useCallback((message: string) => {
+    setStatus(message);
+    if (message !== AUDIO_SIGNALLING_SOCKET_ERROR) {
+      return;
+    }
+    socketRef.current = null;
+    setSocketOpen(false);
+    closeAudioSessions();
+    reconnectRoomSocketRef.current();
+  }, [closeAudioSessions]);
 
   const scheduleRelaySourceRefreshRetry = useCallback(() => {
     if (relaySourceRefreshRetryRef.current !== null) {
@@ -315,7 +327,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         }
         setSocketOpen(false);
         reconnectRoomSocketRef.current();
-        throw new Error("Audio signalling websocket is not connected");
+        throw new Error(AUDIO_SIGNALLING_SOCKET_ERROR);
       }
       const session = new ServerMediaAudioSession({
         roomId,
@@ -325,7 +337,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         iceServers,
         stream,
         userAudio: audioSettings,
-        onError: setStatus,
+        onError: handleAudioError,
         onConnectionInterrupted: () => reconnectServerRelayAudioRef.current(),
         onRemoteTrack: () => setAudioDiagnosticsRefreshKey((key) => key + 1)
       });
@@ -338,7 +350,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setStatus("Server relay audio connected");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Audio connection failed";
-      const waitingForSocket = message === "Audio signalling websocket is not connected";
+      const waitingForSocket = message === AUDIO_SIGNALLING_SOCKET_ERROR;
       if (!updateRelay && !waitingForSocket) {
         audioStartedRef.current = false;
         setAudioStarted(false);
@@ -367,6 +379,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     clearReconnectRetry,
     clearRelaySourceRefreshRetry,
     currentUser,
+    handleAudioError,
     muted,
     refreshRelaySourceIds,
     remoteUsers,

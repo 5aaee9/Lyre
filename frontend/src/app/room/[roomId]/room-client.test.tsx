@@ -556,6 +556,22 @@ describe("RoomClient", () => {
     expect(peerConnections).toHaveLength(1);
   });
 
+  it("reconnects signalling when server media candidate polling finds a closed websocket", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    act(() => {
+      sockets[0].readyState = WebSocket.CLOSED;
+    });
+
+    await waitFor(() => expect(screen.getByText("Audio signalling websocket is not connected")).toBeInTheDocument(), {
+      timeout: 2_000
+    });
+    await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2_000 });
+    await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2);
+  });
+
   it("does not start media when ice server fetch fails", async () => {
     apiMocks.getIceServers.mockRejectedValueOnce(new Error("ice unavailable"));
     render(<RoomClient roomId="DEFAULT" />);
