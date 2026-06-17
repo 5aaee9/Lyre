@@ -45,7 +45,7 @@ export const defaultNoiseConfig: NoiseCancellationConfig = {
   intensity: 0.5,
   voice_activity_threshold: 0.35,
   dpdfnet: {
-    model: "dpdfnet8_48khz_hr"
+    model: "dpdfnet2_48khz_hr"
   }
 };
 
