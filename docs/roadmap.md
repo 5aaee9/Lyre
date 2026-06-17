@@ -101,6 +101,7 @@
 - Server-media runtime pumps now close terminal WebRTC peers and sessions instead of keeping failed peer drivers active.
 - Frontend room signalling WebSockets now reconnect automatically with the stored room session, while backend WebSocket disconnect cleanup preserves room membership and active server-media state for reconnecting users.
 - Room leave cleanup now stops room-scoped processed/raw WebRTC egress pumps when the last relay participant leaves, preventing empty rooms from continuing audio fanout work.
+- Terminal server-media peer failure now removes the departed user from room membership, relay participant state, and persisted room state after reconnect recovery has failed.
 
 ## Next
 

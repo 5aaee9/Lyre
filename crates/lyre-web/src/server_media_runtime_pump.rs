@@ -2,17 +2,27 @@ use crate::{media_runtime::WebMediaRuntime, server_media_runtime};
 use dashmap::DashMap;
 use lyre_core::RoomId;
 use lyre_webrtc::{ServerMediaNegotiator, ServerMediaSessionKey};
-use std::{sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 pub const SERVER_MEDIA_RUNTIME_PUMP_INTERVAL: Duration = Duration::from_millis(20);
 
-#[derive(Debug)]
 pub struct ServerMediaRuntimePump {
     tasks: DashMap<ServerMediaSessionKey, ServerMediaRuntimePumpTask>,
     runtime: Arc<WebMediaRuntime>,
     negotiator: Arc<ServerMediaNegotiator>,
+    on_terminal_peer: Arc<dyn Fn(ServerMediaSessionKey) + Send + Sync>,
+}
+
+impl fmt::Debug for ServerMediaRuntimePump {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ServerMediaRuntimePump")
+            .field("tasks", &self.tasks)
+            .field("runtime", &self.runtime)
+            .field("negotiator", &self.negotiator)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug)]
@@ -23,10 +33,19 @@ struct ServerMediaRuntimePumpTask {
 
 impl ServerMediaRuntimePump {
     pub fn new(runtime: Arc<WebMediaRuntime>, negotiator: Arc<ServerMediaNegotiator>) -> Self {
+        Self::with_terminal_peer_handler(runtime, negotiator, Arc::new(|_| {}))
+    }
+
+    pub fn with_terminal_peer_handler(
+        runtime: Arc<WebMediaRuntime>,
+        negotiator: Arc<ServerMediaNegotiator>,
+        on_terminal_peer: Arc<dyn Fn(ServerMediaSessionKey) + Send + Sync>,
+    ) -> Self {
         Self {
             tasks: DashMap::new(),
             runtime,
             negotiator,
+            on_terminal_peer,
         }
     }
 
@@ -34,6 +53,7 @@ impl ServerMediaRuntimePump {
         self.stop(&key);
         let runtime = Arc::clone(&self.runtime);
         let negotiator = Arc::clone(&self.negotiator);
+        let on_terminal_peer = Arc::clone(&self.on_terminal_peer);
         let token = CancellationToken::new();
         let task_token = token.clone();
         let task_key = key.clone();
@@ -52,6 +72,7 @@ impl ServerMediaRuntimePump {
                         "server media runtime pump closing terminal peer"
                     );
                     negotiator.close(&task_key);
+                    on_terminal_peer(task_key.clone());
                     break;
                 }
                 let process_result = {
