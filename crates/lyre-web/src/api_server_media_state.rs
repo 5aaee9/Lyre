@@ -72,11 +72,12 @@ impl AppState {
         };
         self.server_media_runtime_pump.stop(&key);
         self.server_media_negotiator.close(&key);
-        match self
+        let media_relay = match self
             .media_relays
             .remove_participant(room_id.clone(), user_id)
         {
-            Ok(_) | Err(MediaRelayError::Inactive { .. }) => {}
+            Ok(media_relay) => Some(media_relay),
+            Err(MediaRelayError::Inactive { .. }) => None,
             Err(error) => {
                 tracing::debug!(
                     error = %error,
@@ -84,7 +85,15 @@ impl AppState {
                     user_id = %user_id,
                     "failed to remove departed user from media relay"
                 );
+                None
             }
+        };
+        if media_relay
+            .as_ref()
+            .is_some_and(|status| status.participants.is_empty())
+        {
+            self.processed_audio_webrtc_egress_pump.stop(room_id);
+            self.raw_opus_webrtc_egress_pump.stop(room_id);
         }
     }
 

@@ -158,6 +158,56 @@ async fn app_state_start_and_stop_manage_egress_pump() {
 }
 
 #[tokio::test]
+async fn leaving_last_participant_stops_processed_egress_pump() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let user = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap()
+        .user;
+
+    state.start_media_relay(
+        room_id.clone(),
+        StartMediaRelayRequest {
+            noise: Some(NoiseCancellationConfig {
+                provider: NoiseProvider::Dpdfnet,
+                ..NoiseCancellationConfig::default()
+            }),
+        },
+    );
+    assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 1);
+
+    state
+        .leave_room_persisted(&room_id, &user.id)
+        .await
+        .unwrap();
+
+    assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 0);
+}
+
+#[tokio::test]
+async fn leaving_last_participant_stops_raw_opus_egress_pump() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let user = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap()
+        .user;
+
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 1);
+
+    state
+        .leave_room_persisted(&room_id, &user.id)
+        .await
+        .unwrap();
+
+    assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 0);
+}
+
+#[tokio::test]
 async fn close_server_media_sessions_stops_egress_pump() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
