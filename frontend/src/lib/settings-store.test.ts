@@ -24,6 +24,17 @@ describe("settings store", () => {
     });
   });
 
+  it("defaults server noise cancelling to DPDFNet high-resolution model", () => {
+    expect(readSettingsSnapshot().noise).toEqual({
+      provider: "dpdfnet",
+      intensity: 0.5,
+      voice_activity_threshold: 0.35,
+      dpdfnet: {
+        model: "dpdfnet8_48khz_hr"
+      }
+    });
+  });
+
   it("persists settings through the Zustand store", () => {
     useSettingsStore.getState().setRoomId("Team");
     useSettingsStore.getState().setRememberRoom(true);

@@ -34,11 +34,11 @@ export type SettingsState = {
 export type SettingsSnapshot = SettingsState;
 
 export const defaultNoiseConfig: NoiseCancellationConfig = {
-  provider: "off",
+  provider: "dpdfnet",
   intensity: 0.5,
   voice_activity_threshold: 0.35,
   dpdfnet: {
-    model: "dpdfnet2_48khz_hr"
+    model: "dpdfnet8_48khz_hr"
   }
 };
 
