@@ -200,6 +200,13 @@ impl ServerMediaNegotiator {
             .unwrap_or_default()
     }
 
+    pub fn drain_rtp_packets(&self, key: &ServerMediaSessionKey) -> Vec<ServerMediaRtpPacket> {
+        self.peer_connections
+            .get(key)
+            .map(|peer_connection| peer_connection.drain_rtp_packets())
+            .unwrap_or_default()
+    }
+
     pub fn connection_state(
         &self,
         key: &ServerMediaSessionKey,

@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use lyre_core::{MediaRelayError, NoiseProvider, RoomId};
 use lyre_webrtc::{ServerMediaEgressRtpPacket, ServerMediaNegotiator, ServerMediaSessionKey};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -40,13 +40,12 @@ impl RawOpusWebRtcEgressPump {
         let task_token = token.clone();
         let task_room_id = room_id.clone();
         let handle = tokio::spawn(async move {
-            let mut forwarded = HashMap::<ServerMediaSessionKey, usize>::new();
             loop {
                 if task_token.is_cancelled() {
                     break;
                 }
                 if room_uses_raw_opus_relay(&relays, &task_room_id) {
-                    forward_new_packets(&relays, &negotiator, &task_room_id, &mut forwarded).await;
+                    forward_new_packets(&relays, &negotiator, &task_room_id).await;
                 }
                 tokio::select! {
                     () = task_token.cancelled() => break,
@@ -76,6 +75,10 @@ impl RawOpusWebRtcEgressPump {
         self.tasks.len()
     }
 
+    pub fn discard_room_packets(&self, room_id: &RoomId) {
+        discard_room_packets(&self.relays, &self.negotiator, room_id);
+    }
+
     #[cfg(test)]
     pub async fn stop_and_wait_for_test(&self, room_id: &RoomId) {
         let Some((_, task)) = self.tasks.remove(room_id) else {
@@ -90,11 +93,27 @@ fn room_uses_raw_opus_relay(relays: &lyre_core::MediaRelayRegistry, room_id: &Ro
     relays.status(room_id.clone()).noise.provider == NoiseProvider::Off
 }
 
+fn discard_room_packets(
+    relays: &lyre_core::MediaRelayRegistry,
+    negotiator: &ServerMediaNegotiator,
+    room_id: &RoomId,
+) {
+    let Ok(participants) = relays.active_participants(room_id) else {
+        return;
+    };
+    for participant in participants {
+        let key = ServerMediaSessionKey {
+            room_id: room_id.clone(),
+            user_id: participant.user_id,
+        };
+        let _ = negotiator.drain_rtp_packets(&key);
+    }
+}
+
 async fn forward_new_packets(
     relays: &lyre_core::MediaRelayRegistry,
     negotiator: &ServerMediaNegotiator,
     room_id: &RoomId,
-    forwarded: &mut HashMap<ServerMediaSessionKey, usize>,
 ) {
     let Ok(participants) = relays.active_participants(room_id) else {
         return;
@@ -107,9 +126,7 @@ async fn forward_new_packets(
         })
         .collect::<Vec<_>>();
     for source_key in &keys {
-        let packets = negotiator.received_rtp_packets(source_key);
-        let packet_count = packets.len();
-        let start = forwarded.get(source_key).copied().unwrap_or_default();
+        let packets = negotiator.drain_rtp_packets(source_key);
         let recipient_keys = match subscribed_recipient_keys(relays, room_id, source_key, &keys) {
             Ok(keys) => keys,
             Err(error) => {
@@ -122,7 +139,7 @@ async fn forward_new_packets(
                 continue;
             }
         };
-        for packet in packets.into_iter().skip(start) {
+        for packet in packets {
             for recipient_key in &recipient_keys {
                 if let Err(error) = negotiator
                     .send_opus_rtp_packet(
@@ -148,7 +165,6 @@ async fn forward_new_packets(
                 }
             }
         }
-        forwarded.insert(source_key.clone(), packet_count);
     }
 }
 

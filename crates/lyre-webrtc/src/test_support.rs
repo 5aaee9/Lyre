@@ -147,6 +147,7 @@ impl ServerMediaTestOffer {
             _offerer: self.offerer,
             track: self.track,
             remote_rtp_packets: self.remote_rtp_packets,
+            next_packet_index: Mutex::new(0),
         }
     }
 
@@ -163,6 +164,7 @@ pub struct ServerMediaConnectedOffer {
     _offerer: Arc<dyn PeerConnection>,
     track: Arc<TrackLocalStaticRTP>,
     remote_rtp_packets: Arc<Mutex<Vec<rtc::rtp::Packet>>>,
+    next_packet_index: Mutex<usize>,
 }
 
 impl ServerMediaConnectedOffer {
@@ -172,12 +174,22 @@ impl ServerMediaConnectedOffer {
 
     pub async fn send_valid_opus_packets(&self, count: usize) {
         let payloads = encoded_opus_payloads(count);
+        let start_index = {
+            let mut next_packet_index = self
+                .next_packet_index
+                .lock()
+                .expect("test RTP packet index lock must not be poisoned");
+            let start_index = *next_packet_index;
+            *next_packet_index += count;
+            start_index
+        };
         for (index, payload) in payloads.into_iter().enumerate() {
+            let packet_index = start_index + index;
             let _ = self
                 .track
                 .write_rtp(opus_rtp_packet_for_test(
-                    42_u16.wrapping_add(index as u16),
-                    1234_u32.wrapping_add((index * SERVER_MEDIA_OPUS_FRAME_SIZE) as u32),
+                    42_u16.wrapping_add(packet_index as u16),
+                    1234_u32.wrapping_add((packet_index * SERVER_MEDIA_OPUS_FRAME_SIZE) as u32),
                     payload,
                 ))
                 .await;

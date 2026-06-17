@@ -293,9 +293,13 @@ impl AppState {
     ) {
         if noise.provider == lyre_core::NoiseProvider::Off {
             self.processed_audio_webrtc_egress_pump.stop(room_id);
+            self.raw_opus_webrtc_egress_pump
+                .discard_room_packets(room_id);
             self.raw_opus_webrtc_egress_pump.start(room_id.clone());
         } else {
             self.raw_opus_webrtc_egress_pump.stop(room_id);
+            self.raw_opus_webrtc_egress_pump
+                .discard_room_packets(room_id);
             self.processed_audio_webrtc_egress_pump
                 .start(room_id.clone());
         }

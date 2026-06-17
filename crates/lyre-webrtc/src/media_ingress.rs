@@ -87,6 +87,16 @@ impl MediaIngressRecorder {
             .clone()
     }
 
+    pub(crate) fn drain_rtp_packets(&self) -> Vec<ServerMediaRtpPacket> {
+        std::mem::take(
+            &mut self
+                .inner
+                .lock()
+                .expect("media ingress recorder lock must not be poisoned")
+                .received_rtp_packets,
+        )
+    }
+
     pub(crate) fn drain_pcm_frames(&self) -> Vec<ServerMediaPcmFrame> {
         std::mem::take(
             &mut self
@@ -163,6 +173,18 @@ mod tests {
                 payload: vec![1, 2, 3],
             }]
         );
+        assert_eq!(
+            recorder.drain_rtp_packets(),
+            vec![ServerMediaRtpPacket {
+                track_id: "audio-1".to_owned(),
+                sequence_number: 7,
+                timestamp: 48_000,
+                marker: true,
+                payload_type: 111,
+                payload: vec![1, 2, 3],
+            }]
+        );
+        assert!(recorder.drain_rtp_packets().is_empty());
         assert_eq!(
             recorder.drain_pcm_frames(),
             vec![ServerMediaPcmFrame {

@@ -442,6 +442,10 @@ impl WebRtcPeerConnectionHandle {
         self.media_ingress.received_rtp_packets()
     }
 
+    pub fn drain_rtp_packets(&self) -> Vec<ServerMediaRtpPacket> {
+        self.media_ingress.drain_rtp_packets()
+    }
+
     pub fn connection_state(&self) -> crate::ServerMediaConnectionStateSnapshot {
         self.connection_state.snapshot()
     }
