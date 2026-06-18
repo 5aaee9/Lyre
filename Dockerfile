@@ -19,10 +19,11 @@ CMD ["/usr/local/bin/lyre", "serve"]
 
 FROM node:22-bookworm-slim AS frontend-build
 WORKDIR /workspace/frontend
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN corepack enable pnpm && corepack install -g pnpm@10.25.0
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY frontend ./
-RUN npm run build
+RUN pnpm run build
 
 FROM node:22-bookworm-slim AS web
 WORKDIR /app

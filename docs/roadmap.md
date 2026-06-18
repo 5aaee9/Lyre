@@ -121,6 +121,7 @@
 - Frontend internationalization now uses `next-intl` with English and Simplified Chinese messages, request-time Accept-Language detection, and a persisted settings language preference that syncs to the locale cookie without rewriting existing routes.
 - Frontend room controls, participant list labels, relay summary, and audio diagnostics now render through the same `next-intl` English and Simplified Chinese message catalogs.
 - Frontend audio diagnostics now keep compact icon actions for refresh and copying the current diagnostics snapshot, scroll their own long content, and no longer stretch the voice channel card when enabled.
+- Docker frontend image builds now use pnpm with a frozen lockfile, and the frontend declares its direct locale matcher dependency instead of relying on transitive npm hoisting.
 
 ## Next
 
