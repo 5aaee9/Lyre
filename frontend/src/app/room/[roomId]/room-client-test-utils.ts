@@ -5,6 +5,7 @@ import { defaultNoiseConfig, resetSettingsStoreForTests } from "@/lib/settings-s
 const send = vi.fn();
 const sockets: MockWebSocket[] = [];
 const getUserMedia = vi.fn();
+const writeClipboardText = vi.fn();
 const stopTrack = vi.fn();
 const localAudioTrack = { id: "track", enabled: true, stop: stopTrack };
 const addRemoteTrack = vi.fn();
@@ -202,7 +203,8 @@ export {
   send,
   sockets,
   stopTrack,
-  voiceActivityMock
+  voiceActivityMock,
+  writeClipboardText
 };
 
 afterEach(() => {
@@ -221,6 +223,8 @@ beforeEach(() => {
   resetSettingsStoreForTests();
   send.mockClear();
   getUserMedia.mockReset();
+  writeClipboardText.mockReset();
+  writeClipboardText.mockResolvedValue(undefined);
   localAudioTrack.enabled = true;
   stopTrack.mockClear();
   addRemoteTrack.mockClear();
@@ -296,6 +300,12 @@ beforeEach(() => {
     configurable: true,
     value: {
       getUserMedia
+    }
+  });
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: writeClipboardText
     }
   });
 });

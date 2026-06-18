@@ -120,7 +120,7 @@
 - Processed server-media runtime now discards raw RTP ingress history after denoise-mode PCM processing, preventing long-lived calls from retaining every inbound packet while preserving raw Opus relay queues for noise-off forwarding.
 - Frontend internationalization now uses `next-intl` with English and Simplified Chinese messages, request-time Accept-Language detection, and a persisted settings language preference that syncs to the locale cookie without rewriting existing routes.
 - Frontend room controls, participant list labels, relay summary, and audio diagnostics now render through the same `next-intl` English and Simplified Chinese message catalogs.
-- Frontend audio diagnostics now style manual refresh as a standard button, scroll their own long content, and no longer stretch the voice channel card when enabled.
+- Frontend audio diagnostics now keep compact icon actions for refresh and copying the current diagnostics snapshot, scroll their own long content, and no longer stretch the voice channel card when enabled.
 
 ## Next
 

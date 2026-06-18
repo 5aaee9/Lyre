@@ -16,7 +16,8 @@ import {
   send,
   sockets,
   stopTrack,
-  voiceActivityMock
+  voiceActivityMock,
+  writeClipboardText
 } from "./room-client-test-utils";
 import { RoomClient } from "./room-client";
 
@@ -395,6 +396,28 @@ describe("RoomClient", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     await waitFor(() => expect(screen.getByText("13")).toBeInTheDocument());
+  });
+
+  it("copies the current audio diagnostics snapshot", async () => {
+    useSettingsStore.getState().setAudioDiagnosticsEnabled(true);
+    peerStatsReports[0] = new Map([
+      ["outbound-audio", {
+        type: "outbound-rtp",
+        kind: "audio",
+        packetsSent: 12,
+        bytesSent: 3456
+      }]
+    ]);
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(screen.getByText("3456")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics" }));
+
+    await waitFor(() => expect(writeClipboardText).toHaveBeenCalledOnce());
+    expect(writeClipboardText).toHaveBeenCalledWith(expect.stringContaining("Audio diagnostics"));
+    expect(writeClipboardText).toHaveBeenCalledWith(expect.stringContaining("Packets sent: 12"));
+    expect(writeClipboardText).toHaveBeenCalledWith(expect.stringContaining("Bytes sent: 3456"));
+    expect(writeClipboardText).toHaveBeenCalledWith(expect.stringContaining("Relay participants: user_b, user_c"));
   });
 
   it("shows rejected server media track ids in diagnostics", async () => {

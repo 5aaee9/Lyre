@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { RefreshCw } from "lucide-react";
+import { Check, Copy, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ServerMediaAudioDiagnostics } from "@/lib/server-media-audio";
 
@@ -24,7 +24,68 @@ export function RoomAudioDiagnostics({
   const t = useTranslations("RoomDiagnostics");
   const [diagnostics, setDiagnostics] = useState<ServerMediaAudioDiagnostics | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const copyLabel = copied ? t("copied") : t("copy");
+  const diagnosticsText = useMemo(() => {
+    const unavailable = t("unavailable");
+    const none = t("none");
+    const formatList = (items: string[] | undefined) => items?.length ? items.join(", ") : none;
+    const formatNullableNumber = (
+      value: number | null | undefined,
+      formatter: (numberValue: number) => string = String
+    ) => value === null || value === undefined ? unavailable : formatter(value);
+
+    return [
+      t("title"),
+      ...(error ? ["", `${t("error")}: ${error}`] : []),
+      "",
+      `${t("peer")}: ${diagnostics?.connectionState ?? unavailable}`,
+      `ICE: ${diagnostics?.iceConnectionState ?? unavailable}`,
+      `${t("signaling")}: ${diagnostics?.signalingState ?? unavailable}`,
+      `${t("audioContext")}: ${diagnostics?.audioContextState ?? unavailable}`,
+      `${t("localIceCandidates")}: ${diagnostics?.ice.localCandidateCount ?? 0}`,
+      `${t("serverIceCandidates")}: ${diagnostics?.ice.serverCandidateCount ?? 0}`,
+      `${t("lastServerIceBatch")}: ${diagnostics?.ice.lastServerCandidateCount ?? 0}`,
+      `${t("lastLocalIce")}: ${diagnostics?.ice.lastLocalCandidateAt ?? unavailable}`,
+      `${t("lastServerIce")}: ${diagnostics?.ice.lastServerCandidateAt ?? unavailable}`,
+      `${t("iceCandidateError")}: ${diagnostics?.ice.lastServerCandidateError ?? none}`,
+      "",
+      `${t("packetsSent")}: ${diagnostics?.stats.packetsSent ?? 0}`,
+      `${t("bytesSent")}: ${diagnostics?.stats.bytesSent ?? 0}`,
+      `${t("packetsReceived")}: ${diagnostics?.stats.packetsReceived ?? 0}`,
+      `${t("bytesReceived")}: ${diagnostics?.stats.bytesReceived ?? 0}`,
+      `${t("packetsLost")}: ${diagnostics?.stats.packetsLost ?? 0}`,
+      `${t("remoteLost")}: ${diagnostics?.stats.remotePacketsLost ?? 0}`,
+      `${t("audioLevel")}: ${formatNullableNumber(diagnostics?.stats.audioLevel, (value) => value.toFixed(4))}`,
+      `${t("audioEnergy")}: ${formatNullableNumber(diagnostics?.stats.totalAudioEnergy, (value) => value.toFixed(4))}`,
+      `${t("audioDuration")}: ${formatNullableNumber(diagnostics?.stats.totalSamplesDuration, (value) => `${value.toFixed(2)} s`)}`,
+      `RTT: ${formatNullableNumber(diagnostics?.stats.roundTripTimeMs, (value) => `${value} ms`)}`,
+      "",
+      `${t("relayParticipants")}: ${formatList(relaySourceIds)}`,
+      `${t("subscribedSources")}: ${formatList(subscribedSourceIds)}`,
+      `${t("remoteTracks")}: ${formatList(diagnostics?.remoteTrackIds)}`,
+      `${t("receiverTracks")}: ${formatList(diagnostics?.receiverTrackIds)}`,
+      `${t("trackEvents")}: ${formatList(diagnostics?.onTrackTrackIds)}`,
+      `${t("rejectedTracks")}: ${formatList(diagnostics?.rejectedTrackIds)}`,
+      `${t("remoteSources")}: ${diagnostics?.remoteSources.length
+        ? diagnostics.remoteSources
+          .map((source) =>
+            t("remoteSourceSummary", {
+              userId: source.userId,
+              gain: source.gain.toFixed(2),
+              muted: String(source.muted),
+              volume: source.volumePercent,
+              tracks: source.trackIds.join("/"),
+              states: source.readyStates.join("/"),
+              enabled: source.enabled.join("/")
+            })
+          )
+          .join("; ")
+        : none}`,
+      `${t("playbackError")}: ${diagnostics?.lastPlaybackError ?? none}`
+    ].join("\n");
+  }, [diagnostics, error, relaySourceIds, subscribedSourceIds, t]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -38,6 +99,15 @@ export function RoomAudioDiagnostics({
     }
   }, [loadDiagnostics, t]);
 
+  const copyDiagnostics = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(diagnosticsText);
+      setCopied(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? `${t("copyFailed")}: ${caught.message}` : t("copyFailed"));
+    }
+  }, [diagnosticsText, t]);
+
   useEffect(() => {
     const timeout = window.setTimeout(() => void refresh(), 0);
     const interval = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
@@ -47,14 +117,26 @@ export function RoomAudioDiagnostics({
     };
   }, [refresh, refreshKey]);
 
+  useEffect(() => {
+    if (!copied) {
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => setCopied(false), 1_500);
+    return () => window.clearTimeout(timeout);
+  }, [copied]);
+
   return (
     <div className="rounded-md border border-lyre-border bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-lyre-border px-4 py-3">
         <div className="text-sm font-semibold">{t("title")}</div>
-        <Button disabled={refreshing} onClick={() => void refresh()} size="sm" variant="outline">
-          <RefreshCw aria-hidden="true" className={`size-3.5 ${refreshing ? "motion-safe:animate-spin" : ""}`} />
-          {t("refresh")}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button aria-label={copyLabel} onClick={() => void copyDiagnostics()} size="icon-sm" title={copyLabel} variant="outline">
+            {copied ? <Check aria-hidden="true" className="size-3.5" /> : <Copy aria-hidden="true" className="size-3.5" />}
+          </Button>
+          <Button aria-label={t("refresh")} disabled={refreshing} onClick={() => void refresh()} size="icon-sm" title={t("refresh")} variant="outline">
+            <RefreshCw aria-hidden="true" className={`size-3.5 ${refreshing ? "motion-safe:animate-spin" : ""}`} />
+          </Button>
+        </div>
       </div>
       <div className="grid max-h-[calc(100vh-16rem)] gap-4 overflow-y-auto p-4 text-sm">
         {error ? <div className="text-lyre-danger-text">{error}</div> : null}
