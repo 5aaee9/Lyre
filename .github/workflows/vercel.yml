@@ -24,15 +24,15 @@ jobs:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v5
+      - name: Enable pnpm
+        run: |
+          corepack enable pnpm
+          corepack install -g pnpm@10.25.0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Enable pnpm
-        run: |
-          corepack enable pnpm
-          corepack install -g pnpm@10.25.0
       - name: Validate Vercel configuration
         run: |
           test -n "$VERCEL_TOKEN"
