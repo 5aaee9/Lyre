@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Settings } from "lucide-react";
-import { SettingsDialog } from "@/components/settings-dialog";
-import { Button } from "@/components/ui/button";
-import { RoomAudioDiagnostics } from "./room-audio-diagnostics";
+import { RoomView } from "./room-view";
 import {
   closeServerMediaSession,
   getMediaRelay,
@@ -116,6 +113,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     () => (room?.users ?? []).filter((user) => user.id !== currentUser?.id),
     [currentUser?.id, room?.users]
   );
+
   const subscribedSourceIds = useMemo(
     () => remoteUsers
       .filter((user) => relaySourceIds.includes(user.id))
@@ -582,78 +580,29 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }
 
   return (
-    <section className="grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">{roomId}</h1>
-          <p className="mt-1 text-sm text-[#5c6a61]">{status}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button aria-label="Settings" onClick={() => setSettingsOpen(true)} variant="outline">
-            <Settings className="h-4 w-4" />
-            <span className="ml-2">Settings</span>
-          </Button>
-          <Button disabled={!audioStarted} onClick={toggleMuted}>{muted ? "Unmute" : "Mute"}</Button>
-          <Button onClick={leave} variant="destructive">Leave</Button>
-        </div>
-      </div>
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} onSave={saveSettings} />
-      <div className="rounded-md border border-[#d8ded6] bg-white p-4">
-        <div className="text-xs text-[#5c6a61]">Share</div>
-        <div className="mt-1 break-all text-sm">{link}</div>
-      </div>
-      {audioDiagnosticsEnabled ? (
-        <RoomAudioDiagnostics
-          loadDiagnostics={loadAudioDiagnostics}
-          relaySourceIds={relaySourceIds}
-          refreshKey={audioDiagnosticsRefreshKey}
-          subscribedSourceIds={subscribedSourceIds}
-        />
-      ) : null}
-      <div className="rounded-md border border-[#d8ded6] bg-white">
-        <div className="border-b border-[#d8ded6] px-4 py-3 text-sm font-semibold">Users</div>
-        <ul className="divide-y divide-[#edf0ec]">
-          {(room?.users ?? []).map((user) => (
-            <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm" key={user.id}>
-              <span className="flex min-w-0 items-center gap-2">
-                <span>{user.nickname}</span>
-                {speakingUserIds.has(user.id) ? (
-                  <span
-                    aria-label={`${user.nickname} is speaking`}
-                    className="size-2 rounded-full bg-[#2f8f46]"
-                  />
-                ) : null}
-              </span>
-              {user.id !== currentUser?.id ? (
-                <div className="flex items-center gap-2">
-                  <Button
-                    onClick={() => void applyUserAudioSettings(user.id, { muted: !(userAudio[user.id]?.muted ?? false) })}
-                    size="sm"
-                    variant="outline"
-                  >
-                    {userAudio[user.id]?.muted ? `Unmute ${user.nickname}` : `Mute ${user.nickname}`}
-                  </Button>
-                  <label className="flex items-center gap-2 text-xs text-[#5c6a61]">
-                    <span>{userAudio[user.id]?.volumePercent ?? 100}%</span>
-                    <input
-                      aria-label={`${user.nickname} volume`}
-                      className="w-28"
-                      max={150}
-                      min={0}
-                      onChange={(event) =>
-                        void applyUserAudioSettings(user.id, { volumePercent: Number(event.target.value) })
-                      }
-                      type="range"
-                      value={userAudio[user.id]?.volumePercent ?? 100}
-                    />
-                  </label>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
+    <RoomView
+      accessToken={accessToken}
+      audioDiagnosticsEnabled={audioDiagnosticsEnabled}
+      audioDiagnosticsRefreshKey={audioDiagnosticsRefreshKey}
+      audioStarted={audioStarted}
+      currentUser={currentUser}
+      link={link}
+      loadAudioDiagnostics={loadAudioDiagnostics}
+      muted={muted}
+      onApplyUserAudioSettings={applyUserAudioSettings}
+      onLeave={leave}
+      onSaveSettings={saveSettings}
+      onSettingsOpenChange={setSettingsOpen}
+      onToggleMuted={toggleMuted}
+      relaySourceIds={relaySourceIds}
+      room={room}
+      roomId={roomId}
+      settingsOpen={settingsOpen}
+      speakingUserIds={speakingUserIds}
+      status={status}
+      subscribedSourceIds={subscribedSourceIds}
+      userAudio={userAudio}
+    />
   );
 }
 

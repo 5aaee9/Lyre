@@ -14,7 +14,7 @@ export function runtimeConfig(): RuntimeConfig {
     return window.__LYRE_CONFIG__;
   }
   return {
-    appBaseUrl: "http://localhost:3000",
-    appApiUrl: "http://localhost:8080"
+    appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
+    appApiUrl: process.env.APP_API_URL ?? "http://localhost:8080"
   };
 }

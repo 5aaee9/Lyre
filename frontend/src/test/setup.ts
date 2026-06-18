@@ -24,3 +24,12 @@ Object.defineProperty(globalThis, "sessionStorage", {
 });
 
 Element.prototype.scrollIntoView = function scrollIntoView() {};
+
+Object.defineProperty(globalThis, "ResizeObserver", {
+  value: class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+  configurable: true
+});

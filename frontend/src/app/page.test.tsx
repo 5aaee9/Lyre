@@ -57,7 +57,7 @@ describe("Home", () => {
     render(<Home />);
 
     expect(screen.queryByText("Noise cancellation")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("Join"));
+    fireEvent.click(screen.getByRole("button", { name: /join voice/i }));
 
     await waitFor(() => {
       expect(joinRoom).toHaveBeenCalledWith("DEFAULT", {
@@ -75,5 +75,37 @@ describe("Home", () => {
       accessToken: "token_a",
       user: { id: "user_a" }
     });
+  });
+
+  it("submits a custom room and nickname from the keyboard-first form", async () => {
+    render(<Home />);
+
+    fireEvent.change(screen.getByLabelText(/room id/i), { target: { value: "design/review" } });
+    fireEvent.change(screen.getByLabelText(/nickname/i), { target: { value: "Nora" } });
+    fireEvent.submit(screen.getByRole("button", { name: /join voice/i }).closest("form")!);
+
+    await waitFor(() => {
+      expect(joinRoom).toHaveBeenCalledWith("design/review", {
+        nickname: "Nora",
+        noise: defaultNoiseConfig
+      });
+    });
+    expect(navigation.push).toHaveBeenCalledWith("/room/design%2Freview");
+    expect(JSON.parse(sessionStorage.getItem("lyre.roomSession") ?? "{}")).toMatchObject({
+      roomId: "design/review",
+      accessToken: "token_a",
+      user: { id: "user_a" }
+    });
+  });
+
+  it("shows a recoverable error when joining fails", async () => {
+    vi.mocked(joinRoom).mockRejectedValueOnce(new Error("relay unavailable"));
+
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: /join voice/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("relay unavailable");
+    expect(screen.getByRole("button", { name: /join voice/i })).toBeEnabled();
+    expect(navigation.push).not.toHaveBeenCalled();
   });
 });

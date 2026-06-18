@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Script from "next/script";
 import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={cn("font-sans", geist.variable)}>
       <head>
-        <script
+        <Script
+          id="lyre-runtime-config"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `window.__LYRE_CONFIG__=${JSON.stringify(runtimeConfig)};`
           }}
