@@ -118,6 +118,7 @@
 - Raw Opus relay now consumes inbound RTP as a live queue and discards accumulated raw packets while denoise providers are active, preventing noise-off switches from replaying old speech or growing raw RTP history.
 - Processed server-media runtime now discards raw RTP ingress history after denoise-mode PCM processing, preventing long-lived calls from retaining every inbound packet while preserving raw Opus relay queues for noise-off forwarding.
 - Frontend internationalization now uses `next-intl` with English and Simplified Chinese messages, request-time Accept-Language detection, and a persisted settings language preference that syncs to the locale cookie without rewriting existing routes.
+- Frontend room controls, participant list labels, relay summary, and audio diagnostics now render through the same `next-intl` English and Simplified Chinese message catalogs.
 
 ## Next
 

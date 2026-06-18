@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { LogOut, Mic, MicOff, Radio, Settings, Share2, Users, Volume2, VolumeX } from "lucide-react";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ export function RoomView({
   subscribedSourceIds,
   userAudio
 }: RoomViewProps) {
+  const t = useTranslations("Room");
   const users = room?.users ?? [];
   const remoteCount = users.filter((user) => user.id !== currentUser?.id).length;
   const isRecovering = status.toLowerCase().includes("reconnect") || status.toLowerCase().includes("joining");
@@ -72,28 +74,28 @@ export function RoomView({
               <h1 className="truncate text-2xl font-semibold tracking-tight">{roomId}</h1>
               <span className="inline-flex items-center gap-1 rounded-full border border-lyre-border bg-lyre-app px-2 py-1 text-xs font-medium text-lyre-soft-foreground">
                 <Users className="size-3.5" aria-hidden="true" />
-                {users.length} online
+                {t("online", { count: users.length })}
               </span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <RoomStatusBadge isProblem={isProblem} isRecovering={isRecovering} status={status} />
               <span className="text-sm text-lyre-muted-foreground">
-                {remoteCount === 1 ? "1 listener available" : `${remoteCount} listeners available`}
+                {t("listenersAvailable", { count: remoteCount })}
               </span>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button aria-label="Settings" onClick={() => onSettingsOpenChange(true)} variant="outline">
+            <Button aria-label={t("settings")} onClick={() => onSettingsOpenChange(true)} variant="outline">
               <Settings aria-hidden="true" className="size-4" />
-              <span>Settings</span>
+              <span>{t("settings")}</span>
             </Button>
             <Button aria-pressed={muted} disabled={!audioStarted} onClick={onToggleMuted} variant={muted ? "outline" : "default"}>
               {muted ? <MicOff aria-hidden="true" className="size-4" /> : <Mic aria-hidden="true" className="size-4" />}
-              <span>{muted ? "Unmute" : "Mute"}</span>
+              <span>{muted ? t("unmute") : t("mute")}</span>
             </Button>
             <Button onClick={() => void onLeave()} variant="destructive">
               <LogOut aria-hidden="true" className="size-4" />
-              <span>Leave</span>
+              <span>{t("leave")}</span>
             </Button>
           </div>
         </div>
@@ -101,7 +103,7 @@ export function RoomView({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-xs font-medium text-lyre-muted-foreground">
               <Share2 aria-hidden="true" className="size-3.5" />
-              Invite link
+              {t("inviteLink")}
             </div>
             <div className="min-w-0 break-all rounded-lg bg-lyre-app px-3 py-2 text-sm text-foreground sm:max-w-[70%]">
               {link}
@@ -114,11 +116,11 @@ export function RoomView({
         <div className="rounded-xl border border-lyre-border bg-card">
           <div className="flex items-center justify-between gap-3 border-b border-lyre-border px-4 py-3">
             <div>
-              <div className="text-sm font-semibold">Voice channel</div>
-              <div className="text-xs text-lyre-muted-foreground">Server relay audio</div>
+              <div className="text-sm font-semibold">{t("voiceChannel")}</div>
+              <div className="text-xs text-lyre-muted-foreground">{t("serverRelayAudio")}</div>
             </div>
             <span className="rounded-full bg-lyre-soft px-2 py-1 text-xs font-medium text-lyre-soft-foreground">
-              {users.length} {users.length === 1 ? "user" : "users"}
+              {t("userCount", { count: users.length })}
             </span>
           </div>
           <ul className="divide-y divide-lyre-subtle-border">
@@ -136,25 +138,25 @@ export function RoomView({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="truncate font-medium text-foreground">{user.nickname}</span>
                         {isCurrentUser ? (
-                          <span className="rounded-full border border-lyre-border px-2 py-0.5 text-xs text-lyre-muted-foreground">You</span>
+                          <span className="rounded-full border border-lyre-border px-2 py-0.5 text-xs text-lyre-muted-foreground">{t("you")}</span>
                         ) : null}
                         {isSpeaking ? (
                           <span
-                            aria-label={`${user.nickname} is speaking`}
+                            aria-label={t("speakingLabel", { name: user.nickname })}
                             className="inline-flex items-center gap-1 rounded-full bg-lyre-success-bg px-2 py-0.5 text-xs font-medium text-lyre-success-text ring-1 ring-lyre-success-border"
                           >
                             <Radio aria-hidden="true" className="size-3" />
-                            Speaking
+                            {t("speaking")}
                           </span>
                         ) : null}
                         {!isCurrentUser && audioSettings.muted ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-lyre-muted-status-bg px-2 py-0.5 text-xs font-medium text-lyre-muted-status-text ring-1 ring-lyre-muted-status-border">
                             <VolumeX aria-hidden="true" className="size-3" />
-                            Muted
+                            {t("remoteMuted")}
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 text-xs text-lyre-muted-foreground">{isCurrentUser ? "Local microphone" : "Remote audio"}</div>
+                      <div className="mt-0.5 text-xs text-lyre-muted-foreground">{isCurrentUser ? t("localMicrophone") : t("remoteAudio")}</div>
                     </div>
                   </div>
                   {!isCurrentUser ? (
@@ -170,12 +172,12 @@ export function RoomView({
                         ) : (
                           <VolumeX aria-hidden="true" className="size-3.5" />
                         )}
-                        <span>{audioSettings.muted ? `Unmute ${user.nickname}` : `Mute ${user.nickname}`}</span>
+                        <span>{audioSettings.muted ? t("unmuteUser", { name: user.nickname }) : t("muteUser", { name: user.nickname })}</span>
                       </Button>
                       <label className="flex min-w-[11rem] items-center gap-2 text-xs text-lyre-muted-foreground">
                         <span className="w-9 text-right tabular-nums">{audioSettings.volumePercent}%</span>
                         <input
-                          aria-label={`${user.nickname} volume`}
+                          aria-label={t("volumeLabel", { name: user.nickname })}
                           className="h-8 w-28 accent-lyre-accent focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                           max={150}
                           min={0}
@@ -196,18 +198,18 @@ export function RoomView({
 
         <aside className="grid content-start gap-4">
           <div className="rounded-xl border border-lyre-border bg-card p-4">
-            <div className="text-sm font-semibold">Relay</div>
+            <div className="text-sm font-semibold">{t("relay")}</div>
             <dl className="mt-3 grid gap-2 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-lyre-muted-foreground">Session</dt>
-                <dd className="font-medium text-foreground">{accessToken ? "Authenticated" : "Joining"}</dd>
+                <dt className="text-lyre-muted-foreground">{t("session")}</dt>
+                <dd className="font-medium text-foreground">{accessToken ? t("authenticated") : t("joining")}</dd>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-lyre-muted-foreground">Subscribed</dt>
+                <dt className="text-lyre-muted-foreground">{t("subscribed")}</dt>
                 <dd className="font-medium text-foreground">{subscribedSourceIds.length}</dd>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-lyre-muted-foreground">Sources</dt>
+                <dt className="text-lyre-muted-foreground">{t("sources")}</dt>
                 <dd className="font-medium text-foreground">{relaySourceIds.length}</dd>
               </div>
             </dl>
@@ -235,6 +237,16 @@ function RoomStatusBadge({
   isRecovering: boolean;
   status: string;
 }) {
+  const t = useTranslations("Room");
+  const label = translateStatus(status, {
+    audioConnectionFailed: t("audioConnectionFailed"),
+    connected: t("connected"),
+    failedToUpdateAudioSubscription: t("failedToUpdateAudioSubscription"),
+    joining: t("joining"),
+    reconnecting: t("reconnecting"),
+    reconnectingAudio: t("reconnectingAudio"),
+    serverRelayAudioConnected: t("serverRelayAudioConnected")
+  });
   const tone = isProblem
     ? "border-lyre-danger-border bg-lyre-danger-bg text-lyre-danger-text"
     : isRecovering
@@ -244,9 +256,38 @@ function RoomStatusBadge({
   return (
     <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium ${tone}`}>
       <span className={`size-2 rounded-full ${dot}`} aria-hidden="true" />
-      <span>{status}</span>
+      <span>{label}</span>
     </span>
   );
+}
+
+function translateStatus(status: string, labels: {
+  audioConnectionFailed: string;
+  connected: string;
+  failedToUpdateAudioSubscription: string;
+  joining: string;
+  reconnecting: string;
+  reconnectingAudio: string;
+  serverRelayAudioConnected: string;
+}): string {
+  switch (status) {
+    case "Joining":
+      return labels.joining;
+    case "Connected":
+      return labels.connected;
+    case "Reconnecting":
+      return labels.reconnecting;
+    case "Server relay audio connected":
+      return labels.serverRelayAudioConnected;
+    case "Reconnecting audio":
+      return labels.reconnectingAudio;
+    case "Audio connection failed":
+      return labels.audioConnectionFailed;
+    case "Failed to update audio subscription":
+      return labels.failedToUpdateAudioSubscription;
+    default:
+      return status;
+  }
 }
 
 function initialsFor(name: string) {

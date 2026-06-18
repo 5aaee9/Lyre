@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { NoiseCancellationConfig } from "@/lib/api";
 import { defaultNoiseConfig, useSettingsStore } from "@/lib/settings-store";
 import messages from "../../../../messages/en-US.json";
+import zhMessages from "../../../../messages/zh-CN.json";
 import {
   apiMocks,
   gainNodes,
@@ -19,15 +20,25 @@ import {
 } from "./room-client-test-utils";
 import { RoomClient } from "./room-client";
 
-function render(ui: React.ReactElement) {
+function render(ui: React.ReactElement, locale = "en-US", localeMessages: typeof messages = messages) {
   return testingLibraryRender(
-    <NextIntlClientProvider locale="en-US" messages={messages}>
+    <NextIntlClientProvider locale={locale} messages={localeMessages}>
       {ui}
     </NextIntlClientProvider>
   );
 }
 
 describe("RoomClient", () => {
+  it("renders the room controls in Chinese when zh-CN messages are active", async () => {
+    render(<RoomClient roomId="DEFAULT" />, "zh-CN", zhMessages);
+
+    expect(await screen.findByText("语音频道")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
+    expect(screen.getByText("离开")).toBeInTheDocument();
+    expect(screen.getByText("邀请链接")).toBeInTheDocument();
+    expect(screen.queryByText("Voice channel")).not.toBeInTheDocument();
+  });
+
   it("waits for the room websocket to open before starting automatic audio", async () => {
     render(<RoomClient roomId="DEFAULT" />);
 
