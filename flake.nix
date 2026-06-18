@@ -68,6 +68,7 @@
           ORT_LIB_PATH = "${pkgs.onnxruntime}/lib";
           ORT_PREFER_DYNAMIC_LINK = "true";
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+            pkgs.libopus
             pkgs.onnxruntime
             pkgs.openssl
             pkgs.stdenv.cc.cc.lib

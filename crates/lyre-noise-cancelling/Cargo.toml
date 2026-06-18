@@ -6,7 +6,8 @@ version.workspace = true
 
 [features]
 default = ["server"]
-server = ["deep_filter", "lyre-core", "ort", "rubato", "rustfft", "tracing"]
+dsp = ["deep_filter", "rustfft"]
+server = ["dsp", "lyre-core", "ort", "rubato", "tracing"]
 
 [dependencies]
 deep_filter = { workspace = true, optional = true }

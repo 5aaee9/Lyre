@@ -65,3 +65,31 @@ Runtime parameters:
 - `--deepfilternet-inter-threads` / `LYRE_DEEPFILTERNET_INTER_THREADS`, default `1`
 
 The local `deepfilternet/` model directory is ignored by git so downloaded ONNX artifacts stay out of the source tree. Invalid runtime thread counts fail startup instead of falling back silently.
+
+## Client-Side Noise Models
+
+When browser-side noise cancellation is enabled, the frontend uses the same Rust WASM DSP crate as the server-side implementation boundary and runs ONNX inference with `onnxruntime-web`'s WebAssembly backend.
+
+The frontend build copies the matching ONNX Runtime Web asset from `onnxruntime-web` to:
+
+- `/ort/ort-wasm-simd-threaded.wasm`
+
+Client model files are served from `frontend/public/models/` at these paths and cached in the browser Cache API:
+
+- `/models/deepfilternet/enc.onnx`
+- `/models/deepfilternet/erb_dec.onnx`
+- `/models/deepfilternet/df_dec.onnx`
+- `/models/dpdfnet/dpdfnet2_48khz_hr.onnx`
+- `/models/dpdfnet/dpdfnet2_48khz_hr.json`
+- `/models/dpdfnet/dpdfnet8_48khz_hr.onnx`
+- `/models/dpdfnet/dpdfnet8_48khz_hr.json`
+
+The DPDFNet JSON manifest must contain the initial ONNX runtime state derived from the model metadata:
+
+```json
+{
+  "initialState": [0.0]
+}
+```
+
+The actual `initialState` array must match the selected ONNX model's state input length. Browser-side DPDFNet currently accepts only the 48 kHz HR models; 16 kHz DPDFNet models remain server-side because the browser path does not include resampling.

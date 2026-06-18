@@ -1,5 +1,8 @@
 mod rnnoise;
 
+#[cfg(feature = "dsp")]
+pub mod dsp;
+
 #[cfg(feature = "server")]
 mod deepfilternet;
 #[cfg(feature = "server")]

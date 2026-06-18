@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resetSettingsStoreForTests, useSettingsStore } from "./settings-store";
+import { defaultNoiseConfig, resetSettingsStoreForTests, useSettingsStore } from "./settings-store";
 import { createAudioPeerConnection, createPeerConnection, openLocalAudioStream } from "./webrtc";
 
 const clientNoise = vi.hoisted(() => ({
@@ -85,7 +85,32 @@ describe("webrtc", () => {
 
     await expect(openLocalAudioStream()).resolves.toBe(processedStream);
 
-    expect(clientNoise.processLocalAudioStream).toHaveBeenCalledWith(stream);
+    expect(clientNoise.processLocalAudioStream).toHaveBeenCalledWith(stream, {
+      noise: defaultNoiseConfig
+    });
+  });
+
+  it("passes the selected server denoise model into client noise cancellation", async () => {
+    const selectedNoise = {
+      ...defaultNoiseConfig,
+      provider: "dpdfnet" as const,
+      dpdfnet: {
+        model: "dpdfnet8_48khz_hr"
+      }
+    };
+    useSettingsStore.getState().setNoise(selectedNoise);
+    useSettingsStore.getState().setAudioProcessing({
+      echoCancellation: true,
+      autoGainControl: true,
+      noiseSuppression: true,
+      clientNoiseCancellation: true
+    });
+
+    await expect(openLocalAudioStream()).resolves.toBe(stream);
+
+    expect(clientNoise.processLocalAudioStream).toHaveBeenCalledWith(stream, {
+      noise: selectedNoise
+    });
   });
 
   it("keeps raw microphone stream when client noise cancellation cannot initialize", async () => {

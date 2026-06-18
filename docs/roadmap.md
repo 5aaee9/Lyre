@@ -124,6 +124,7 @@
 - Docker frontend image builds now use pnpm with a frozen lockfile, and the frontend declares its direct locale matcher dependency instead of relying on transitive npm hoisting.
 - Frontend settings now offer optional client-side RNNoise cancellation that runs the shared Rust noise implementation through a WebAssembly AudioWorklet before microphone audio enters the server relay.
 - Main CI now checks `lyre-noise-wasm` against `wasm32-unknown-unknown`, and the Nix Rust toolchain includes that target's standard library.
+- Client-side noise cancellation can now initialize ONNX Runtime Web for DeepFilterNet and 48 kHz DPDFNet models, caching model files and DPDFNet state manifests with the browser Cache API and using Rust WASM DSP helpers around ONNX inference.
 
 ## Next
 

@@ -8,4 +8,4 @@ version.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-lyre-noise-cancelling = { path = "../lyre-noise-cancelling", default-features = false }
+lyre-noise-cancelling = { path = "../lyre-noise-cancelling", default-features = false, features = ["dsp"] }

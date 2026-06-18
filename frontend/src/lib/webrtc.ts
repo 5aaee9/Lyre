@@ -1,10 +1,11 @@
 import type { IceServerConfig } from "./api";
 import { processLocalAudioStream } from "./client-noise-cancellation";
-import { readAudioDeviceConfig, readAudioProcessingConfig } from "./storage";
+import { readAudioDeviceConfig, readAudioProcessingConfig, readNoiseConfig } from "./storage";
 
 export async function openLocalAudioStream(): Promise<MediaStream> {
   const audioProcessing = readAudioProcessingConfig();
   const audioDevices = readAudioDeviceConfig();
+  const noise = readNoiseConfig();
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       ...(audioDevices.inputDeviceId ? { deviceId: { exact: audioDevices.inputDeviceId } } : {}),
@@ -17,7 +18,7 @@ export async function openLocalAudioStream(): Promise<MediaStream> {
     return stream;
   }
   try {
-    return await processLocalAudioStream(stream);
+    return await processLocalAudioStream(stream, { noise });
   } catch {
     return stream;
   }

@@ -5,6 +5,8 @@
 
 /frontend/.next
 /frontend/node_modules
+/frontend/public/ort
+/frontend/public/wasm
 /*.wav
 /deepfilternet/
 /dpdfnet/
