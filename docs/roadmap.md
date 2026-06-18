@@ -117,11 +117,13 @@
 - Processed server-media audio now publishes only live room broadcasts without retaining an unbounded per-room PCM history, so new subscribers do not replay stale audio after relay or noise-setting changes.
 - Raw Opus relay now consumes inbound RTP as a live queue and discards accumulated raw packets while denoise providers are active, preventing noise-off switches from replaying old speech or growing raw RTP history.
 - Processed server-media runtime now discards raw RTP ingress history after denoise-mode PCM processing, preventing long-lived calls from retaining every inbound packet while preserving raw Opus relay queues for noise-off forwarding.
+- Frontend internationalization now uses `next-intl` with English and Simplified Chinese messages, Accept-Language detection, and a persisted settings language preference that syncs to the locale cookie.
 
 ## Next
 
 - Add Nix packaging for the Next.js frontend if Nix becomes a deployment target.
 - Add optional client-side noise cancellation using Rust compiled to WebAssembly.
+- Localize the remaining room, diagnostics, and error surfaces beyond the entry and settings flows.
 - Track browser support for Web Audio speaker output selection, since selected speakers depend on `AudioContext.setSinkId`.
 - Add production Helm values for TLS, real hostnames, secrets, persistence, and scaling policy.
 - Add production-grade database/session management if anonymous JSON persistence stops being sufficient.

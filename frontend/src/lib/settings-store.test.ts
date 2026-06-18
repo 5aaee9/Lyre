@@ -19,6 +19,7 @@ describe("settings store", () => {
       rememberRoom: false,
       roomId: "DEFAULT",
       nickname: "",
+      language: "system",
       noise: defaultNoiseConfig,
       audioProcessing: defaultAudioProcessingConfig,
       audioDevices: defaultAudioDeviceConfig,
@@ -41,6 +42,7 @@ describe("settings store", () => {
     useSettingsStore.getState().setRoomId("Team");
     useSettingsStore.getState().setRememberRoom(true);
     useSettingsStore.getState().setNickname("Ada");
+    useSettingsStore.getState().setLanguage("zh-CN");
     useSettingsStore.getState().setNoise({
       provider: "rnnoise",
       intensity: 0.6,
@@ -66,6 +68,7 @@ describe("settings store", () => {
         rememberRoom: true,
         roomId: "Team",
         nickname: "Ada",
+        language: "zh-CN",
         noise: {
           provider: "rnnoise",
           intensity: 0.6,
@@ -104,6 +107,29 @@ describe("settings store", () => {
     useSettingsStore.getState().clearUserAudioSettings("user_a");
 
     expect(readSettingsSnapshot().userAudio.user_a).toBeUndefined();
+  });
+
+  it("syncs explicit language settings to the next-intl locale cookie", () => {
+    useSettingsStore.getState().setLanguage("zh-CN");
+    expect(document.cookie).toContain("NEXT_LOCALE=zh-CN");
+
+    useSettingsStore.getState().setLanguage("system");
+    expect(document.cookie).not.toContain("NEXT_LOCALE=");
+  });
+
+  it("syncs persisted language settings to the locale cookie after hydration", async () => {
+    localStorage.setItem(
+      "lyre.settings",
+      JSON.stringify({
+        state: {
+          language: "zh-CN"
+        }
+      })
+    );
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(document.cookie).toContain("NEXT_LOCALE=zh-CN");
   });
 
   it("hydrates legacy noise settings with DPDFNet defaults", async () => {

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Headphones, SlidersHorizontal, UserRound, Waves } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +24,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { parseNoiseProvider } from "@/lib/api";
-import { readSettingsSnapshot, useSettingsStore, type SettingsSnapshot } from "@/lib/settings-store";
+import { readSettingsSnapshot, supportedLanguages, useSettingsStore, type SettingsSnapshot } from "@/lib/settings-store";
 
 type SettingsDialogProps = {
   open: boolean;
@@ -33,12 +35,16 @@ type SettingsDialogProps = {
 const DEFAULT_DEVICE_VALUE = "default";
 
 export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogProps) {
+  const t = useTranslations("Settings");
+  const router = useRouter();
   const nickname = useSettingsStore((state) => state.nickname);
+  const language = useSettingsStore((state) => state.language);
   const audioDiagnosticsEnabled = useSettingsStore((state) => state.audioDiagnosticsEnabled);
   const noise = useSettingsStore((state) => state.noise);
   const audioProcessing = useSettingsStore((state) => state.audioProcessing);
   const audioDevices = useSettingsStore((state) => state.audioDevices);
   const setNickname = useSettingsStore((state) => state.setNickname);
+  const setLanguage = useSettingsStore((state) => state.setLanguage);
   const setAudioDiagnosticsEnabled = useSettingsStore((state) => state.setAudioDiagnosticsEnabled);
   const setNoise = useSettingsStore((state) => state.setNoise);
   const setAudioProcessing = useSettingsStore((state) => state.setAudioProcessing);
@@ -72,6 +78,7 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
     try {
       await onSave?.(readSettingsSnapshot());
       onOpenChange(false);
+      router.refresh();
     } finally {
       setSaving(false);
     }
@@ -85,8 +92,8 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
       <DialogContent className="max-h-[calc(100vh-2rem)] overflow-hidden p-0 sm:max-w-2xl">
         <div className="grid max-h-[calc(100vh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto]">
           <DialogHeader className="px-4 pt-4 sm:px-5 sm:pt-5">
-            <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>Local voice, relay, and device preferences for this browser.</DialogDescription>
+            <DialogTitle>{t("title")}</DialogTitle>
+            <DialogDescription>{t("description")}</DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="profile" className="min-h-0 gap-0 overflow-hidden">
@@ -94,19 +101,19 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
               <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-4">
                 <TabsTrigger value="profile">
                   <UserRound aria-hidden="true" className="size-4" />
-                  <span>Profile</span>
+                  <span>{t("profile")}</span>
                 </TabsTrigger>
                 <TabsTrigger value="noise">
                   <Waves aria-hidden="true" className="size-4" />
-                  <span>Noise</span>
+                  <span>{t("noise")}</span>
                 </TabsTrigger>
                 <TabsTrigger value="devices">
                   <Headphones aria-hidden="true" className="size-4" />
-                  <span>Devices</span>
+                  <span>{t("devices")}</span>
                 </TabsTrigger>
                 <TabsTrigger value="advanced">
                   <SlidersHorizontal aria-hidden="true" className="size-4" />
-                  <span>Advanced</span>
+                  <span>{t("advanced")}</span>
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -114,15 +121,30 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
             <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
               <TabsContent value="profile">
                 <SettingsSection
-                  description="Set the name people see when you enter a voice room."
-                  title="Room identity"
+                  description={t("identityDescription")}
+                  title={t("identityTitle")}
                 >
-                  <FieldRow htmlFor="settings-nickname" label="Nickname">
+                  <FieldRow htmlFor="settings-language" label={t("language")}>
+                    <Select value={language} onValueChange={setLanguage}>
+                      <SelectTrigger aria-label={t("language")} className="w-full" id="settings-language">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="system">{t("languageSystem")}</SelectItem>
+                        {supportedLanguages.map((locale) => (
+                          <SelectItem key={locale} value={locale}>
+                            {locale}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FieldRow>
+                  <FieldRow htmlFor="settings-nickname" label={t("nickname")}>
                     <Input
                       id="settings-nickname"
                       value={nickname}
                       onChange={(event) => setNickname(event.target.value)}
-                      placeholder="Assigned automatically if blank"
+                      placeholder={t("nicknamePlaceholder")}
                     />
                   </FieldRow>
                 </SettingsSection>
@@ -130,10 +152,10 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
 
               <TabsContent value="noise">
                 <SettingsSection
-                  description="Server-side denoise runs in the relay path after audio reaches Lyre."
-                  title="Server noise cancelling"
+                  description={t("serverNoiseDescription")}
+                  title={t("serverNoiseTitle")}
                 >
-                  <FieldRow htmlFor="settings-server-noise" label="Provider">
+                  <FieldRow htmlFor="settings-server-noise" label={t("provider")}>
                     <Select
                       value={noise.provider}
                       onValueChange={(value) =>
@@ -143,7 +165,7 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                         })
                       }
                     >
-                      <SelectTrigger aria-label="Server Noise Cancelling" className="w-full" id="settings-server-noise">
+                      <SelectTrigger aria-label={t("serverNoiseCancelling")} className="w-full" id="settings-server-noise">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -168,7 +190,7 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                           })
                         }
                       >
-                        <SelectTrigger aria-label="DPDFNet model" className="w-full" id="settings-dpdfnet-model">
+                        <SelectTrigger aria-label={t("dpdfnetModel")} className="w-full" id="settings-dpdfnet-model">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -183,9 +205,9 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                     </FieldRow>
                   ) : null}
 
-                  <FieldRow htmlFor="settings-intensity" label="Intensity">
+                  <FieldRow htmlFor="settings-intensity" label={t("intensity")}>
                     <Input
-                      aria-label="Intensity"
+                      aria-label={t("intensity")}
                       id="settings-intensity"
                       max={1}
                       min={0}
@@ -201,9 +223,9 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                     />
                   </FieldRow>
 
-                  <FieldRow htmlFor="settings-vad" label="VAD">
+                  <FieldRow htmlFor="settings-vad" label={t("vad")}>
                     <Input
-                      aria-label="Voice activity threshold"
+                      aria-label={t("vadInput")}
                       id="settings-vad"
                       max={1}
                       min={0}
@@ -223,10 +245,10 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
 
               <TabsContent value="devices">
                 <SettingsSection
-                  description="Choose browser input and output devices for the next audio session."
-                  title="Audio devices"
+                  description={t("deviceDescription")}
+                  title={t("deviceTitle")}
                 >
-                  <FieldRow htmlFor="settings-microphone" label="Microphone">
+                  <FieldRow htmlFor="settings-microphone" label={t("microphone")}>
                     <Select
                       value={audioDevices.inputDeviceId || DEFAULT_DEVICE_VALUE}
                       onValueChange={(value) =>
@@ -236,21 +258,21 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                         })
                       }
                     >
-                      <SelectTrigger aria-label="Microphone" className="w-full" id="settings-microphone">
+                      <SelectTrigger aria-label={t("microphone")} className="w-full" id="settings-microphone">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={DEFAULT_DEVICE_VALUE}>Default microphone</SelectItem>
+                        <SelectItem value={DEFAULT_DEVICE_VALUE}>{t("microphoneDefault")}</SelectItem>
                         {microphones.map((device) => (
                           <SelectItem key={device.deviceId} value={device.deviceId}>
-                            {device.label || "Microphone"}
+                            {device.label || t("microphone")}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </FieldRow>
 
-                  <FieldRow htmlFor="settings-speaker" label="Speaker">
+                  <FieldRow htmlFor="settings-speaker" label={t("speaker")}>
                     <Select
                       value={audioDevices.outputDeviceId || DEFAULT_DEVICE_VALUE}
                       onValueChange={(value) =>
@@ -260,14 +282,14 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                         })
                       }
                     >
-                      <SelectTrigger aria-label="Speaker" className="w-full" id="settings-speaker">
+                      <SelectTrigger aria-label={t("speaker")} className="w-full" id="settings-speaker">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={DEFAULT_DEVICE_VALUE}>Default speaker</SelectItem>
+                        <SelectItem value={DEFAULT_DEVICE_VALUE}>{t("speakerDefault")}</SelectItem>
                         {speakers.map((device) => (
                           <SelectItem key={device.deviceId} value={device.deviceId}>
-                            {device.label || "Speaker"}
+                            {device.label || t("speaker")}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -278,21 +300,21 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
 
               <TabsContent value="advanced">
                 <SettingsSection
-                  description="Browser processing changes apply when Lyre opens or recreates local audio."
-                  title="Browser processing"
+                  description={t("browserProcessingDescription")}
+                  title={t("browserProcessing")}
                 >
                   <SwitchRow
                     checked={audioDiagnosticsEnabled}
-                    description="Show relay, RTP, and playback diagnostics in the room sidebar."
+                    description={t("audioDiagnosticsDescription")}
                     id="settings-audio-diagnostics"
-                    label="Audio diagnostics"
+                    label={t("audioDiagnostics")}
                     onCheckedChange={setAudioDiagnosticsEnabled}
                   />
                   <SwitchRow
                     checked={audioProcessing.echoCancellation}
-                    description="Ask the browser to reduce speaker feedback in the microphone stream."
+                    description={t("echoCancellationDescription")}
                     id="settings-echo-cancellation"
-                    label="Echo cancellation"
+                    label={t("echoCancellation")}
                     onCheckedChange={(checked) =>
                       setAudioProcessing({
                         ...audioProcessing,
@@ -302,9 +324,9 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                   />
                   <SwitchRow
                     checked={audioProcessing.autoGainControl}
-                    description="Let the browser smooth large microphone level changes."
+                    description={t("autoGainControlDescription")}
                     id="settings-auto-gain-control"
-                    label="Auto gain control"
+                    label={t("autoGainControl")}
                     onCheckedChange={(checked) =>
                       setAudioProcessing({
                         ...audioProcessing,
@@ -314,9 +336,9 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
                   />
                   <SwitchRow
                     checked={audioProcessing.noiseSuppression}
-                    description="Request browser-side noise suppression before relay processing."
+                    description={t("browserNoiseSuppressionDescription")}
                     id="settings-browser-noise"
-                    label="Browser noise suppression"
+                    label={t("browserNoiseSuppression")}
                     onCheckedChange={(checked) =>
                       setAudioProcessing({
                         ...audioProcessing,
@@ -331,7 +353,7 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
 
           <DialogFooter className="m-0">
             <Button disabled={saving} onClick={save}>
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("saving") : t("save")}
             </Button>
           </DialogFooter>
         </div>

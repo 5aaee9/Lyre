@@ -1,7 +1,9 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as testingLibraryRender, screen, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it } from "vitest";
 import type { NoiseCancellationConfig } from "@/lib/api";
 import { defaultNoiseConfig, useSettingsStore } from "@/lib/settings-store";
+import messages from "../../../../messages/en-US.json";
 import {
   apiMocks,
   gainNodes,
@@ -16,6 +18,14 @@ import {
   voiceActivityMock
 } from "./room-client-test-utils";
 import { RoomClient } from "./room-client";
+
+function render(ui: React.ReactElement) {
+  return testingLibraryRender(
+    <NextIntlClientProvider locale="en-US" messages={messages}>
+      {ui}
+    </NextIntlClientProvider>
+  );
+}
 
 describe("RoomClient", () => {
   it("waits for the room websocket to open before starting automatic audio", async () => {

@@ -52,6 +52,9 @@ const createOfferMock = vi.fn(async (peer: MockPeerConnection) => ({
   type: "offer",
   sdp: `local-offer-${peerConnections.indexOf(peer)}`
 }));
+const navigationMock = vi.hoisted(() => ({
+  refresh: vi.fn()
+}));
 
 function makeUser(id: string, nickname = id): UserProfile {
   return {
@@ -179,6 +182,10 @@ vi.mock("@/lib/voice-activity", () => ({
   VoiceActivityDetector: voiceActivityMock.MockVoiceActivityDetector
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => navigationMock
+}));
+
 export {
   addRemoteTrack,
   apiMocks,
@@ -187,6 +194,7 @@ export {
   getUserMedia,
   localAudioTrack,
   makeUser,
+  navigationMock,
   peerConnections,
   peerStatsReports,
   playAudio,
@@ -219,6 +227,7 @@ beforeEach(() => {
   removeAudio.mockClear();
   playAudio.mockReset();
   playAudio.mockResolvedValue(undefined);
+  navigationMock.refresh.mockClear();
   createOfferMock.mockReset();
   createOfferMock.mockImplementation(async (peer: MockPeerConnection) => ({
     type: "offer",

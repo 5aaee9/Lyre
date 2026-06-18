@@ -1,11 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "./page";
 import { joinRoom } from "@/lib/api";
 import { defaultNoiseConfig, resetSettingsStoreForTests, useSettingsStore } from "@/lib/settings-store";
+import messages from "../../messages/en-US.json";
 
 const navigation = vi.hoisted(() => ({
-  push: vi.fn()
+  push: vi.fn(),
+  refresh: vi.fn()
 }));
 
 vi.mock("next/navigation", () => ({
@@ -26,6 +29,7 @@ describe("Home", () => {
     sessionStorage.clear();
     resetSettingsStoreForTests();
     navigation.push.mockClear();
+    navigation.refresh.mockClear();
     vi.mocked(joinRoom).mockResolvedValue({
       access_token: "token_a",
       user: {
@@ -54,7 +58,7 @@ describe("Home", () => {
       dpdfnet: defaultNoiseConfig.dpdfnet
     });
 
-    render(<Home />);
+    renderWithIntl(<Home />);
 
     expect(screen.queryByText("Noise cancellation")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /join voice/i }));
@@ -78,7 +82,7 @@ describe("Home", () => {
   });
 
   it("opens settings before joining and uses the saved noise settings", async () => {
-    render(<Home />);
+    renderWithIntl(<Home />);
 
     fireEvent.click(screen.getByRole("button", { name: /settings/i }));
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
@@ -99,7 +103,7 @@ describe("Home", () => {
   });
 
   it("submits a custom room and nickname from the keyboard-first form", async () => {
-    render(<Home />);
+    renderWithIntl(<Home />);
 
     fireEvent.change(screen.getByLabelText(/room id/i), { target: { value: "design/review" } });
     fireEvent.change(screen.getByLabelText(/nickname/i), { target: { value: "Nora" } });
@@ -122,7 +126,7 @@ describe("Home", () => {
   it("shows a recoverable error when joining fails", async () => {
     vi.mocked(joinRoom).mockRejectedValueOnce(new Error("relay unavailable"));
 
-    render(<Home />);
+    renderWithIntl(<Home />);
     fireEvent.click(screen.getByRole("button", { name: /join voice/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("relay unavailable");
@@ -130,6 +134,14 @@ describe("Home", () => {
     expect(navigation.push).not.toHaveBeenCalled();
   });
 });
+
+function renderWithIntl(ui: React.ReactElement) {
+  return render(
+    <NextIntlClientProvider locale="en-US" messages={messages}>
+      {ui}
+    </NextIntlClientProvider>
+  );
+}
 
 async function chooseSelectOption(label: string, option: string): Promise<void> {
   fireEvent.click(screen.getByLabelText(label));

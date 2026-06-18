@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Script from "next/script";
+import { getLocale } from "next-intl/server";
+import { NextIntlClientProvider } from "next-intl";
 import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -12,14 +14,15 @@ export const metadata: Metadata = {
   description: "High performance VOIP rooms"
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await getLocale();
   const runtimeConfig = {
     appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
     appApiUrl: process.env.APP_API_URL ?? "http://localhost:8080"
   };
 
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
+    <html lang={locale} className={cn("font-sans", geist.variable)}>
       <head>
         <Script
           id="lyre-runtime-config"
@@ -38,7 +41,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               </Link>
             </nav>
           </header>
-          <main className="mx-auto max-w-5xl px-5 py-6">{children}</main>
+          <NextIntlClientProvider>
+            <main className="mx-auto max-w-5xl px-5 py-6">{children}</main>
+          </NextIntlClientProvider>
         </div>
       </body>
     </html>

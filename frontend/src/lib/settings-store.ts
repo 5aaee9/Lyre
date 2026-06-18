@@ -2,6 +2,10 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { NoiseCancellationConfig } from "./api";
 
+export const supportedLanguages = ["en-US", "zh-CN"] as const;
+export type SupportedLanguage = (typeof supportedLanguages)[number];
+export type LanguageSetting = "system" | SupportedLanguage;
+
 export type AudioProcessingConfig = {
   echoCancellation: boolean;
   autoGainControl: boolean;
@@ -22,6 +26,7 @@ export type SettingsState = {
   rememberRoom: boolean;
   roomId: string;
   nickname: string;
+  language: LanguageSetting;
   audioDiagnosticsEnabled: boolean;
   noise: NoiseCancellationConfig;
   audioProcessing: AudioProcessingConfig;
@@ -30,6 +35,7 @@ export type SettingsState = {
   setRememberRoom: (rememberRoom: boolean) => void;
   setRoomId: (roomId: string) => void;
   setNickname: (nickname: string) => void;
+  setLanguage: (language: LanguageSetting) => void;
   setAudioDiagnosticsEnabled: (audioDiagnosticsEnabled: boolean) => void;
   setNoise: (noise: NoiseCancellationConfig) => void;
   setAudioProcessing: (audioProcessing: AudioProcessingConfig) => void;
@@ -64,6 +70,7 @@ export const defaultSettingsState = {
   rememberRoom: false,
   roomId: "DEFAULT",
   nickname: "",
+  language: "system" as LanguageSetting,
   audioDiagnosticsEnabled: false,
   noise: defaultNoiseConfig,
   audioProcessing: defaultAudioProcessingConfig,
@@ -73,6 +80,19 @@ export const defaultSettingsState = {
 
 function clampUserVolume(volume: number): number {
   return Math.min(150, Math.max(0, volume));
+}
+
+function syncLanguageCookie(language: LanguageSetting): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  if (language === "system") {
+    document.cookie = "NEXT_LOCALE=; path=/; max-age=0; sameSite=lax";
+    return;
+  }
+
+  document.cookie = `NEXT_LOCALE=${language}; path=/; max-age=31536000; sameSite=lax`;
 }
 
 function mergeSettingsState(persistedState: unknown, currentState: SettingsState): SettingsState {
@@ -108,6 +128,10 @@ export const useSettingsStore = create<SettingsState>()(
       setRememberRoom: (rememberRoom) => set({ rememberRoom }),
       setRoomId: (roomId) => set({ roomId }),
       setNickname: (nickname) => set({ nickname }),
+      setLanguage: (language) => {
+        syncLanguageCookie(language);
+        set({ language });
+      },
       setAudioDiagnosticsEnabled: (audioDiagnosticsEnabled) => set({ audioDiagnosticsEnabled }),
       setNoise: (noise) => set({ noise }),
       setAudioProcessing: (audioProcessing) => set({ audioProcessing }),
@@ -139,7 +163,12 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "lyre.settings",
       storage: createJSONStorage(() => localStorage),
-      merge: mergeSettingsState
+      merge: mergeSettingsState,
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          syncLanguageCookie(state.language);
+        }
+      }
     }
   )
 );

@@ -1,8 +1,18 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render as testingLibraryRender, screen, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it } from "vitest";
 import { defaultNoiseConfig, useSettingsStore } from "@/lib/settings-store";
+import messages from "../../../../messages/en-US.json";
 import { addRemoteTrack, apiMocks, getUserMedia, peerConnections, playAudio, stopTrack } from "./room-client-test-utils";
 import { RoomClient } from "./room-client";
+
+function render(ui: React.ReactElement) {
+  return testingLibraryRender(
+    <NextIntlClientProvider locale="en-US" messages={messages}>
+      {ui}
+    </NextIntlClientProvider>
+  );
+}
 
 describe("RoomClient settings", () => {
   it("opens settings as a dialog in the room", async () => {

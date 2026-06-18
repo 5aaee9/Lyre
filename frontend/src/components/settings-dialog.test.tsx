@@ -1,13 +1,24 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readNickname, readNoiseConfig } from "@/lib/storage";
 import { readSettingsSnapshot, resetSettingsStoreForTests } from "@/lib/settings-store";
+import messages from "../../messages/en-US.json";
 import { SettingsDialog } from "./settings-dialog";
+
+const navigation = vi.hoisted(() => ({
+  refresh: vi.fn()
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => navigation
+}));
 
 describe("SettingsDialog", () => {
   beforeEach(() => {
     localStorage.clear();
     resetSettingsStoreForTests();
+    navigation.refresh.mockClear();
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
@@ -21,7 +32,7 @@ describe("SettingsDialog", () => {
 
   it("saves settings and closes the dialog", async () => {
     const onOpenChange = vi.fn();
-    render(<SettingsDialog open onOpenChange={onOpenChange} />);
+    renderWithIntl(<SettingsDialog open onOpenChange={onOpenChange} />);
 
     expect(screen.getByRole("tab", { name: /profile/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /noise/i })).toBeInTheDocument();
@@ -60,6 +71,7 @@ describe("SettingsDialog", () => {
       outputDeviceId: "speaker-a"
     });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(navigation.refresh).toHaveBeenCalled();
   });
 
   it("keeps default devices when device enumeration fails", async () => {
@@ -72,7 +84,7 @@ describe("SettingsDialog", () => {
       }
     });
     const onOpenChange = vi.fn();
-    render(<SettingsDialog open onOpenChange={onOpenChange} />);
+    renderWithIntl(<SettingsDialog open onOpenChange={onOpenChange} />);
 
     openSettingsTab("Devices");
     await chooseSelectOption("Microphone", "Default microphone");
@@ -94,7 +106,7 @@ describe("SettingsDialog", () => {
       value: undefined
     });
     const onOpenChange = vi.fn();
-    render(<SettingsDialog open onOpenChange={onOpenChange} />);
+    renderWithIntl(<SettingsDialog open onOpenChange={onOpenChange} />);
 
     openSettingsTab("Devices");
     await chooseSelectOption("Microphone", "Default microphone");
@@ -112,7 +124,7 @@ describe("SettingsDialog", () => {
 
   it("calls onSave with the saved settings snapshot", async () => {
     const onSave = vi.fn();
-    render(<SettingsDialog open onOpenChange={vi.fn()} onSave={onSave} />);
+    renderWithIntl(<SettingsDialog open onOpenChange={vi.fn()} onSave={onSave} />);
 
     openSettingsTab("Noise");
     await chooseSelectOption("Server Noise Cancelling", "RNNoise");
@@ -125,7 +137,7 @@ describe("SettingsDialog", () => {
 
   it("keeps the dialog open when clicking inside it to dismiss an open dropdown", async () => {
     const onOpenChange = vi.fn();
-    render(<SettingsDialog open onOpenChange={onOpenChange} />);
+    renderWithIntl(<SettingsDialog open onOpenChange={onOpenChange} />);
 
     openSettingsTab("Devices");
     fireEvent.click(screen.getByLabelText("Microphone"));
@@ -138,6 +150,14 @@ describe("SettingsDialog", () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 });
+
+function renderWithIntl(ui: React.ReactElement) {
+  return render(
+    <NextIntlClientProvider locale="en-US" messages={messages}>
+      {ui}
+    </NextIntlClientProvider>
+  );
+}
 
 async function chooseSelectOption(label: string, option: string): Promise<void> {
   fireEvent.click(screen.getByLabelText(label));

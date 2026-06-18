@@ -2,6 +2,7 @@
 
 import { FormEvent, useId, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { AlertCircle, CheckCircle2, Hash, Keyboard, Mic, Radio, Server, Settings, UserRound, Waves } from "lucide-react";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { joinRoom } from "@/lib/api";
 import { useSettingsStore } from "@/lib/settings-store";
 
 export default function Home() {
+  const t = useTranslations("Home");
   const router = useRouter();
   const roomIdInputId = useId();
   const nicknameInputId = useId();
@@ -27,7 +29,7 @@ export default function Home() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const targetRoom = roomId.trim() || "DEFAULT";
-  const displayName = nickname.trim() || "Auto-assigned";
+  const displayName = nickname.trim() || t("autoAssigned");
   const noiseLabel = noiseProviderLabel(noise.provider);
 
   async function onJoin(event: FormEvent<HTMLFormElement>) {
@@ -48,7 +50,7 @@ export default function Home() {
       );
       router.push(`/room/${encodeURIComponent(targetRoom)}`);
     } catch (error) {
-      setJoinError(error instanceof Error ? error.message : "Failed to join room");
+      setJoinError(error instanceof Error ? error.message : t("failedToJoin"));
       setJoining(false);
     }
   }
@@ -64,18 +66,18 @@ export default function Home() {
                 <span className="grid size-8 place-items-center rounded-lg bg-lyre-soft">
                   <Radio aria-hidden="true" className="size-4" />
                 </span>
-                Server relay voice
+                {t("kicker")}
               </div>
               <div>
-                <h1 className="text-2xl font-semibold tracking-tight">Join a voice room</h1>
+                <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
                 <p className="mt-1 max-w-2xl text-sm text-lyre-muted-foreground">
-                  Pick a room, set the name people will see, and Lyre will start relay audio when you enter.
+                  {t("subtitle")}
                 </p>
               </div>
             </div>
-            <Button aria-label="Settings" className="self-start" onClick={() => setSettingsOpen(true)} variant="outline">
+            <Button aria-label={t("settings")} className="self-start" onClick={() => setSettingsOpen(true)} variant="outline">
               <Settings aria-hidden="true" className="size-4" />
-              <span>Settings</span>
+              <span>{t("settings")}</span>
             </Button>
           </div>
 
@@ -84,27 +86,27 @@ export default function Home() {
               <label className="grid gap-2 text-sm font-medium text-foreground" htmlFor={roomIdInputId}>
                 <span className="flex items-center gap-2">
                   <Hash aria-hidden="true" className="size-4 text-lyre-muted-foreground" />
-                  Room ID
+                  {t("roomId")}
                 </span>
                 <Input
                   autoComplete="off"
                   id={roomIdInputId}
                   value={roomId}
                   onChange={(event) => setRoomId(event.target.value)}
-                  placeholder="DEFAULT"
+                  placeholder={t("roomPlaceholder")}
                 />
               </label>
               <label className="grid gap-2 text-sm font-medium text-foreground" htmlFor={nicknameInputId}>
                 <span className="flex items-center gap-2">
                   <UserRound aria-hidden="true" className="size-4 text-lyre-muted-foreground" />
-                  Nickname
+                  {t("nickname")}
                 </span>
                 <Input
                   autoComplete="nickname"
                   id={nicknameInputId}
                   value={nickname}
                   onChange={(event) => setNickname(event.target.value)}
-                  placeholder="Assigned automatically if blank"
+                  placeholder={t("nicknamePlaceholder")}
                 />
               </label>
             </div>
@@ -113,16 +115,16 @@ export default function Home() {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-lyre-soft-foreground">
                 <label className="flex items-center gap-2" htmlFor={rememberInputId}>
                   <Switch checked={remember} id={rememberInputId} onCheckedChange={setRemember} />
-                  Remember this room
+                  {t("rememberRoom")}
                 </label>
                 <span className="inline-flex items-center gap-1.5 text-lyre-muted-foreground">
                   <Keyboard aria-hidden="true" className="size-4" />
-                  Enter joins
+                  {t("enterJoins")}
                 </span>
               </div>
               <Button className="sm:min-w-36" disabled={joining} type="submit">
                 <Mic aria-hidden="true" className="size-4" />
-                <span>{joining ? "Joining..." : "Join voice"}</span>
+                <span>{joining ? t("joiningButton") : t("joinButton")}</span>
               </Button>
             </div>
 
@@ -141,19 +143,19 @@ export default function Home() {
 
       <aside className="rounded-xl border border-lyre-border bg-card">
         <div className="border-b border-lyre-subtle-border px-4 py-3">
-          <div className="text-sm font-semibold">Entry preview</div>
-          <div className="text-xs text-lyre-muted-foreground">What Lyre will use after join</div>
+          <div className="text-sm font-semibold">{t("entryPreview")}</div>
+          <div className="text-xs text-lyre-muted-foreground">{t("entryPreviewDescription")}</div>
         </div>
         <dl className="grid divide-y divide-lyre-subtle-border">
-          <EntryRow icon={Hash} label="Room" value={targetRoom} />
-          <EntryRow icon={UserRound} label="Name" value={displayName} />
-          <EntryRow icon={Server} label="Audio path" value="Server relay" />
-          <EntryRow icon={Waves} label="Noise" value={noiseLabel} />
+          <EntryRow icon={Hash} label={t("room")} value={targetRoom} />
+          <EntryRow icon={UserRound} label={t("nameLabel")} value={displayName} />
+          <EntryRow icon={Server} label={t("audioPath")} value={t("serverRelay")} />
+          <EntryRow icon={Waves} label={t("noise")} value={noiseLabel} />
         </dl>
         <div className="border-t border-lyre-subtle-border px-4 py-3">
           <span className="inline-flex items-center gap-2 rounded-full border border-lyre-success-border bg-lyre-success-bg px-2.5 py-1 text-xs font-medium text-lyre-success-text">
             <CheckCircle2 aria-hidden="true" className="size-3.5" />
-            Ready for voice
+            {t("ready")}
           </span>
         </div>
       </aside>
