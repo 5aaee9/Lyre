@@ -27,6 +27,10 @@ describe("settings store", () => {
     });
   });
 
+  it("defaults client noise cancellation to disabled", () => {
+    expect(readSettingsSnapshot().audioProcessing.clientNoiseCancellation).toBe(false);
+  });
+
   it("defaults server noise cancelling to DPDFNet high-resolution model", () => {
     expect(readSettingsSnapshot().noise).toEqual({
       provider: "dpdfnet",
@@ -52,7 +56,8 @@ describe("settings store", () => {
     useSettingsStore.getState().setAudioProcessing({
       echoCancellation: false,
       autoGainControl: true,
-      noiseSuppression: true
+      noiseSuppression: true,
+      clientNoiseCancellation: true
     });
     useSettingsStore.getState().setAudioDevices({
       inputDeviceId: "mic-a",
@@ -78,7 +83,8 @@ describe("settings store", () => {
         audioProcessing: {
           echoCancellation: false,
           autoGainControl: true,
-          noiseSuppression: true
+          noiseSuppression: true,
+          clientNoiseCancellation: true
         },
         audioDevices: {
           inputDeviceId: "mic-a",

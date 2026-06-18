@@ -2,6 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetSettingsStoreForTests, useSettingsStore } from "./settings-store";
 import { createAudioPeerConnection, createPeerConnection, openLocalAudioStream } from "./webrtc";
 
+const clientNoise = vi.hoisted(() => ({
+  processLocalAudioStream: vi.fn()
+}));
+
+vi.mock("./client-noise-cancellation", () => ({
+  processLocalAudioStream: clientNoise.processLocalAudioStream
+}));
+
 describe("webrtc", () => {
   const addTrack = vi.fn();
   const peerConstructor = vi.fn();
@@ -22,6 +30,8 @@ describe("webrtc", () => {
     resetSettingsStoreForTests();
     addTrack.mockClear();
     peerConstructor.mockClear();
+    clientNoise.processLocalAudioStream.mockReset();
+    clientNoise.processLocalAudioStream.mockImplementation(async (input: MediaStream) => input);
     vi.stubGlobal("RTCPeerConnection", MockPeerConnection);
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -46,7 +56,8 @@ describe("webrtc", () => {
     useSettingsStore.getState().setAudioProcessing({
       echoCancellation: false,
       autoGainControl: true,
-      noiseSuppression: true
+      noiseSuppression: true,
+      clientNoiseCancellation: false
     });
 
     await expect(openLocalAudioStream()).resolves.toBe(stream);
@@ -58,6 +69,35 @@ describe("webrtc", () => {
         noiseSuppression: true
       }
     });
+  });
+
+  it("wraps the microphone stream when client noise cancellation is enabled", async () => {
+    const processedStream = {
+      getAudioTracks: () => [{ id: "processed-track" }]
+    } as unknown as MediaStream;
+    clientNoise.processLocalAudioStream.mockResolvedValue(processedStream);
+    useSettingsStore.getState().setAudioProcessing({
+      echoCancellation: true,
+      autoGainControl: true,
+      noiseSuppression: true,
+      clientNoiseCancellation: true
+    });
+
+    await expect(openLocalAudioStream()).resolves.toBe(processedStream);
+
+    expect(clientNoise.processLocalAudioStream).toHaveBeenCalledWith(stream);
+  });
+
+  it("keeps raw microphone stream when client noise cancellation cannot initialize", async () => {
+    clientNoise.processLocalAudioStream.mockRejectedValue(new Error("missing wasm"));
+    useSettingsStore.getState().setAudioProcessing({
+      echoCancellation: true,
+      autoGainControl: true,
+      noiseSuppression: true,
+      clientNoiseCancellation: true
+    });
+
+    await expect(openLocalAudioStream()).resolves.toBe(stream);
   });
 
   it("uses the stored microphone device when opening local audio", async () => {

@@ -1,0 +1,11 @@
+[package]
+name = "lyre-noise-wasm"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lyre-noise-cancelling = { path = "../lyre-noise-cancelling", default-features = false }

@@ -5,6 +5,10 @@ on:
     branches: ["main"]
     paths:
       - "frontend/**"
+      - "crates/lyre-noise-cancelling/**"
+      - "crates/lyre-noise-wasm/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/vercel.yml"
   workflow_dispatch:
 
@@ -24,6 +28,9 @@ jobs:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - name: Enable pnpm
         run: |
           corepack enable pnpm
@@ -40,11 +47,13 @@ jobs:
           test -n "$VERCEL_PROJECT_ID"
       - name: Install dependencies
         run: pnpm --dir frontend install --frozen-lockfile
+      - name: Build noise wasm
+        run: pnpm --dir frontend run build:noise-wasm
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
       - name: Pull Vercel environment
         run: vercel --cwd frontend pull --yes --environment=production --token="$VERCEL_TOKEN"
       - name: Build frontend
-        run: vercel --cwd frontend build --prod --token="$VERCEL_TOKEN"
+        run: LYRE_USE_EXISTING_NOISE_WASM=1 vercel --cwd frontend build --prod --token="$VERCEL_TOKEN"
       - name: Deploy frontend
         run: vercel --cwd frontend deploy --prebuilt --prod --token="$VERCEL_TOKEN"

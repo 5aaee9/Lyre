@@ -107,6 +107,8 @@
     "browserNoiseSuppressionDescription": "在中继处理前请求浏览器侧降噪。",
     "browserProcessing": "浏览器处理",
     "browserProcessingDescription": "浏览器处理设置会在 Lyre 打开或重建本地音频时生效。",
+    "clientNoiseCancellation": "客户端降噪",
+    "clientNoiseCancellationDescription": "在此浏览器中运行 Lyre 的 Rust RNNoise 处理器，再发送麦克风音频。",
     "devices": "设备",
     "deviceDescription": "为下一次音频会话选择浏览器输入和输出设备。",
     "deviceTitle": "音频设备",

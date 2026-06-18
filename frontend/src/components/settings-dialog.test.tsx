@@ -50,6 +50,7 @@ describe("SettingsDialog", () => {
     await chooseSelectOption("Speaker", "Desk Speakers");
     openSettingsTab("Advanced");
     fireEvent.click(screen.getByLabelText("Echo cancellation"));
+    fireEvent.click(screen.getByLabelText("Client noise cancellation"));
     fireEvent.click(screen.getByText("Save"));
 
     expect(readNickname()).toBe("Ada");
@@ -64,7 +65,8 @@ describe("SettingsDialog", () => {
     expect(readSettingsSnapshot().audioProcessing).toEqual({
       echoCancellation: false,
       autoGainControl: true,
-      noiseSuppression: true
+      noiseSuppression: true,
+      clientNoiseCancellation: true
     });
     expect(readSettingsSnapshot().audioDevices).toEqual({
       inputDeviceId: "mic-a",

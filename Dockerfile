@@ -7,6 +7,8 @@ COPY Cargo.toml ./
 COPY Cargo.lock ./
 COPY crates ./crates
 RUN cargo build --release -p lyre-app
+RUN rustup target add wasm32-unknown-unknown \
+    && cargo build --release -p lyre-noise-wasm --target wasm32-unknown-unknown
 
 FROM debian:trixie-slim AS api
 RUN apt-get update \
@@ -23,7 +25,9 @@ RUN corepack enable pnpm && corepack install -g pnpm@10.25.0
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend ./
-RUN pnpm run build
+RUN mkdir -p ./public/wasm
+COPY --from=rust-build /workspace/target/wasm32-unknown-unknown/release/lyre_noise_wasm.wasm ./public/wasm/lyre_noise_wasm.wasm
+RUN LYRE_USE_EXISTING_NOISE_WASM=1 pnpm run build
 
 FROM node:22-bookworm-slim AS web
 WORKDIR /app

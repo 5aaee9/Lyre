@@ -10,6 +10,7 @@ export type AudioProcessingConfig = {
   echoCancellation: boolean;
   autoGainControl: boolean;
   noiseSuppression: boolean;
+  clientNoiseCancellation: boolean;
 };
 
 export type AudioDeviceConfig = {
@@ -58,7 +59,8 @@ export const defaultNoiseConfig: NoiseCancellationConfig = {
 export const defaultAudioProcessingConfig: AudioProcessingConfig = {
   echoCancellation: true,
   autoGainControl: true,
-  noiseSuppression: true
+  noiseSuppression: true,
+  clientNoiseCancellation: false
 };
 
 export const defaultAudioDeviceConfig: AudioDeviceConfig = {

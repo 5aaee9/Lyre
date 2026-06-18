@@ -3,6 +3,7 @@ members = [
     "crates/lyre-app",
     "crates/lyre-core",
     "crates/lyre-noise-cancelling",
+    "crates/lyre-noise-wasm",
     "crates/lyre-turn",
     "crates/lyre-webrtc",
     "crates/lyre-web",

@@ -1,5 +1,8 @@
 use super::*;
 use lyre_core::{AudioFrame, AudioFrameProcessor, DpdfNetConfig, RoomId, UserId};
+use nnnoiseless::DenoiseState;
+
+use crate::server::NoiseConfigKey;
 
 mod deepfilternet;
 
@@ -164,6 +167,30 @@ fn rnnoise_matches_16_bit_pcm_contract_for_decoded_opus_pcm() {
         .map(|(actual, expected)| (actual - expected / PCM_F32_TO_I16_SCALE).abs())
         .fold(0.0_f32, f32::max);
     assert!(max_delta < 0.000001, "max_delta={max_delta}");
+}
+
+#[test]
+fn shared_rnnoise_processor_matches_server_canceller_output() {
+    let input = (0..RNNOISE_FRAME_SIZE)
+        .map(|index| ((index as f32) / 24.0).sin() * 0.1)
+        .collect::<Vec<_>>();
+    let mut shared = RnnoiseFrameProcessor::new();
+    let mut server = build_noise_canceller(config(NoiseProvider::Rnnoise)).unwrap();
+
+    let shared_output = shared.process_samples(&input);
+    let server_output = server
+        .process_frame(NoiseFrame {
+            sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
+            channels: RNNOISE_CHANNELS,
+            samples: &input,
+        })
+        .unwrap();
+
+    assert_eq!(shared_output.samples, server_output.samples);
+    assert_eq!(
+        Some(shared_output.voice_activity_probability),
+        server_output.voice_activity_probability
+    );
 }
 
 #[test]

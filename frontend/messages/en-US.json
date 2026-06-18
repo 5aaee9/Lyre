@@ -107,6 +107,8 @@
     "browserNoiseSuppressionDescription": "Request browser-side noise suppression before relay processing.",
     "browserProcessing": "Browser processing",
     "browserProcessingDescription": "Browser processing changes apply when Lyre opens or recreates local audio.",
+    "clientNoiseCancellation": "Client noise cancellation",
+    "clientNoiseCancellationDescription": "Run Lyre's Rust RNNoise processor in this browser before sending microphone audio.",
     "devices": "Devices",
     "deviceDescription": "Choose browser input and output devices for the next audio session.",
     "deviceTitle": "Audio devices",

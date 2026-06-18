@@ -25,6 +25,8 @@ jobs:
         run: nix flake check
       - name: Build API package
         run: nix build .#lyre-api
+      - name: Check noise wasm
+        run: nix develop --command cargo check -p lyre-noise-wasm --target wasm32-unknown-unknown
       - name: Clippy
         run: nix develop --command cargo clippy --workspace --all-targets -- --deny warnings
       - name: Rustfmt

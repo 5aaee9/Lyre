@@ -1691,6 +1691,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyre-noise-wasm"
+version = "0.1.0"
+dependencies = [
+ "lyre-noise-cancelling",
+]
+
+[[package]]
 name = "lyre-turn"
 version = "0.1.0"
 dependencies = [

@@ -38,7 +38,12 @@ describe("storage", () => {
       voice_activity_threshold: 0.2,
       dpdfnet: defaultNoiseConfig.dpdfnet
     });
-    writeAudioProcessingConfig({ echoCancellation: false, autoGainControl: true, noiseSuppression: true });
+    writeAudioProcessingConfig({
+      echoCancellation: false,
+      autoGainControl: true,
+      noiseSuppression: true,
+      clientNoiseCancellation: true
+    });
 
     expect(readNickname()).toBe("Ada");
     expect(readNoiseConfig()).toEqual({
@@ -50,7 +55,8 @@ describe("storage", () => {
     expect(readAudioProcessingConfig()).toEqual({
       echoCancellation: false,
       autoGainControl: true,
-      noiseSuppression: true
+      noiseSuppression: true,
+      clientNoiseCancellation: true
     });
   });
 
@@ -62,7 +68,8 @@ describe("storage", () => {
     expect(readAudioProcessingConfig()).toEqual({
       echoCancellation: false,
       autoGainControl: true,
-      noiseSuppression: true
+      noiseSuppression: true,
+      clientNoiseCancellation: false
     });
   });
 });

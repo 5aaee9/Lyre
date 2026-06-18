@@ -4,12 +4,16 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[features]
+default = ["server"]
+server = ["deep_filter", "lyre-core", "ort", "rubato", "rustfft", "tracing"]
+
 [dependencies]
-deep_filter.workspace = true
-lyre-core = { path = "../lyre-core" }
+deep_filter = { workspace = true, optional = true }
+lyre-core = { path = "../lyre-core", optional = true }
 nnnoiseless.workspace = true
-ort.workspace = true
-rubato.workspace = true
-rustfft.workspace = true
+ort = { workspace = true, optional = true }
+rubato = { workspace = true, optional = true }
+rustfft = { workspace = true, optional = true }
 thiserror.workspace = true
-tracing.workspace = true
+tracing = { workspace = true, optional = true }

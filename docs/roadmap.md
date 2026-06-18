@@ -122,11 +122,12 @@
 - Frontend room controls, participant list labels, relay summary, and audio diagnostics now render through the same `next-intl` English and Simplified Chinese message catalogs.
 - Frontend audio diagnostics now keep compact icon actions for refresh and copying the current diagnostics snapshot as structured JSON, scroll their own long content, and no longer stretch the voice channel card when enabled.
 - Docker frontend image builds now use pnpm with a frozen lockfile, and the frontend declares its direct locale matcher dependency instead of relying on transitive npm hoisting.
+- Frontend settings now offer optional client-side RNNoise cancellation that runs the shared Rust noise implementation through a WebAssembly AudioWorklet before microphone audio enters the server relay.
+- Main CI now checks `lyre-noise-wasm` against `wasm32-unknown-unknown`, and the Nix Rust toolchain includes that target's standard library.
 
 ## Next
 
 - Add Nix packaging for the Next.js frontend if Nix becomes a deployment target.
-- Add optional client-side noise cancellation using Rust compiled to WebAssembly.
 - Localize the remaining room, diagnostics, and error surfaces beyond the entry and settings flows.
 - Track browser support for Web Audio speaker output selection, since selected speakers depend on `AudioContext.setSinkId`.
 - Add production Helm values for TLS, real hostnames, secrets, persistence, and scaling policy.

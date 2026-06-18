@@ -29,14 +29,16 @@
         pkgs = nixpkgs.legacyPackages.${system};
         fenixPkgs = fenix.packages.${system};
 
-        toolchain = fenixPkgs.stable.toolchain;
-        devToolchain = fenixPkgs.stable.withComponents [
-          "cargo"
-          "clippy"
-          "rust-src"
-          "rust-std"
-          "rustc"
-          "rustfmt"
+        toolchain = fenixPkgs.combine [
+          (fenixPkgs.stable.withComponents [
+            "cargo"
+            "clippy"
+            "rust-src"
+            "rust-std"
+            "rustc"
+            "rustfmt"
+          ])
+          fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
         ];
 
         craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
@@ -159,7 +161,7 @@
 
           packages = with pkgs; [
             cargo-nextest
-            devToolchain
+            toolchain
             fenixPkgs.rust-analyzer
             libopus
             onnxruntime
