@@ -67,7 +67,7 @@
     "bytesReceived": "已接收字节",
     "bytesSent": "已发送字节",
     "copied": "已复制",
-    "copy": "复制诊断",
+    "copy": "复制诊断 JSON",
     "copyFailed": "复制音频诊断失败",
     "error": "错误",
     "failedToLoad": "加载音频诊断失败",

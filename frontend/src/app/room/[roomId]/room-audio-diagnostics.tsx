@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Check, Copy, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,65 +27,6 @@ export function RoomAudioDiagnostics({
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const copyLabel = copied ? t("copied") : t("copy");
-  const diagnosticsText = useMemo(() => {
-    const unavailable = t("unavailable");
-    const none = t("none");
-    const formatList = (items: string[] | undefined) => items?.length ? items.join(", ") : none;
-    const formatNullableNumber = (
-      value: number | null | undefined,
-      formatter: (numberValue: number) => string = String
-    ) => value === null || value === undefined ? unavailable : formatter(value);
-
-    return [
-      t("title"),
-      ...(error ? ["", `${t("error")}: ${error}`] : []),
-      "",
-      `${t("peer")}: ${diagnostics?.connectionState ?? unavailable}`,
-      `ICE: ${diagnostics?.iceConnectionState ?? unavailable}`,
-      `${t("signaling")}: ${diagnostics?.signalingState ?? unavailable}`,
-      `${t("audioContext")}: ${diagnostics?.audioContextState ?? unavailable}`,
-      `${t("localIceCandidates")}: ${diagnostics?.ice.localCandidateCount ?? 0}`,
-      `${t("serverIceCandidates")}: ${diagnostics?.ice.serverCandidateCount ?? 0}`,
-      `${t("lastServerIceBatch")}: ${diagnostics?.ice.lastServerCandidateCount ?? 0}`,
-      `${t("lastLocalIce")}: ${diagnostics?.ice.lastLocalCandidateAt ?? unavailable}`,
-      `${t("lastServerIce")}: ${diagnostics?.ice.lastServerCandidateAt ?? unavailable}`,
-      `${t("iceCandidateError")}: ${diagnostics?.ice.lastServerCandidateError ?? none}`,
-      "",
-      `${t("packetsSent")}: ${diagnostics?.stats.packetsSent ?? 0}`,
-      `${t("bytesSent")}: ${diagnostics?.stats.bytesSent ?? 0}`,
-      `${t("packetsReceived")}: ${diagnostics?.stats.packetsReceived ?? 0}`,
-      `${t("bytesReceived")}: ${diagnostics?.stats.bytesReceived ?? 0}`,
-      `${t("packetsLost")}: ${diagnostics?.stats.packetsLost ?? 0}`,
-      `${t("remoteLost")}: ${diagnostics?.stats.remotePacketsLost ?? 0}`,
-      `${t("audioLevel")}: ${formatNullableNumber(diagnostics?.stats.audioLevel, (value) => value.toFixed(4))}`,
-      `${t("audioEnergy")}: ${formatNullableNumber(diagnostics?.stats.totalAudioEnergy, (value) => value.toFixed(4))}`,
-      `${t("audioDuration")}: ${formatNullableNumber(diagnostics?.stats.totalSamplesDuration, (value) => `${value.toFixed(2)} s`)}`,
-      `RTT: ${formatNullableNumber(diagnostics?.stats.roundTripTimeMs, (value) => `${value} ms`)}`,
-      "",
-      `${t("relayParticipants")}: ${formatList(relaySourceIds)}`,
-      `${t("subscribedSources")}: ${formatList(subscribedSourceIds)}`,
-      `${t("remoteTracks")}: ${formatList(diagnostics?.remoteTrackIds)}`,
-      `${t("receiverTracks")}: ${formatList(diagnostics?.receiverTrackIds)}`,
-      `${t("trackEvents")}: ${formatList(diagnostics?.onTrackTrackIds)}`,
-      `${t("rejectedTracks")}: ${formatList(diagnostics?.rejectedTrackIds)}`,
-      `${t("remoteSources")}: ${diagnostics?.remoteSources.length
-        ? diagnostics.remoteSources
-          .map((source) =>
-            t("remoteSourceSummary", {
-              userId: source.userId,
-              gain: source.gain.toFixed(2),
-              muted: String(source.muted),
-              volume: source.volumePercent,
-              tracks: source.trackIds.join("/"),
-              states: source.readyStates.join("/"),
-              enabled: source.enabled.join("/")
-            })
-          )
-          .join("; ")
-        : none}`,
-      `${t("playbackError")}: ${diagnostics?.lastPlaybackError ?? none}`
-    ].join("\n");
-  }, [diagnostics, error, relaySourceIds, subscribedSourceIds, t]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -101,12 +42,21 @@ export function RoomAudioDiagnostics({
 
   const copyDiagnostics = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(diagnosticsText);
+      const diagnosticsJson = JSON.stringify({
+        schema: "lyre.audioDiagnostics",
+        version: 1,
+        capturedAt: new Date().toISOString(),
+        error,
+        relaySourceIds,
+        subscribedSourceIds,
+        diagnostics
+      }, null, 2);
+      await navigator.clipboard.writeText(diagnosticsJson);
       setCopied(true);
     } catch (caught) {
       setError(caught instanceof Error ? `${t("copyFailed")}: ${caught.message}` : t("copyFailed"));
     }
-  }, [diagnosticsText, t]);
+  }, [diagnostics, error, relaySourceIds, subscribedSourceIds, t]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void refresh(), 0);

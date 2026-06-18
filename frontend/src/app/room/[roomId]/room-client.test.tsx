@@ -411,13 +411,25 @@ describe("RoomClient", () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(screen.getByText("3456")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics JSON" }));
 
     await waitFor(() => expect(writeClipboardText).toHaveBeenCalledOnce());
-    expect(writeClipboardText).toHaveBeenCalledWith(expect.stringContaining("Audio diagnostics"));
-    expect(writeClipboardText).toHaveBeenCalledWith(expect.stringContaining("Packets sent: 12"));
-    expect(writeClipboardText).toHaveBeenCalledWith(expect.stringContaining("Bytes sent: 3456"));
-    expect(writeClipboardText).toHaveBeenCalledWith(expect.stringContaining("Relay participants: user_b, user_c"));
+    const copiedDiagnostics = JSON.parse(writeClipboardText.mock.calls[0]?.[0] as string);
+    expect(copiedDiagnostics).toMatchObject({
+      schema: "lyre.audioDiagnostics",
+      version: 1,
+      error: null,
+      relaySourceIds: ["user_b", "user_c"],
+      subscribedSourceIds: ["user_b", "user_c"],
+      diagnostics: {
+        connectionState: "connected",
+        stats: {
+          packetsSent: 12,
+          bytesSent: 3456
+        }
+      }
+    });
+    expect(copiedDiagnostics.capturedAt).toEqual(expect.any(String));
   });
 
   it("shows rejected server media track ids in diagnostics", async () => {

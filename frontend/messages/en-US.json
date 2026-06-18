@@ -67,7 +67,7 @@
     "bytesReceived": "Bytes received",
     "bytesSent": "Bytes sent",
     "copied": "Copied",
-    "copy": "Copy diagnostics",
+    "copy": "Copy diagnostics JSON",
     "copyFailed": "Failed to copy audio diagnostics",
     "error": "Error",
     "failedToLoad": "Failed to load audio diagnostics",
