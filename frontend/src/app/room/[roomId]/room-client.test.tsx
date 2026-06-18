@@ -253,6 +253,7 @@ describe("RoomClient", () => {
     expect(screen.queryByText("Audio diagnostics")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Settings"));
+    openSettingsTab("Advanced");
     fireEvent.click(screen.getByLabelText("Audio diagnostics"));
     fireEvent.click(screen.getByText("Save"));
 
@@ -623,3 +624,7 @@ describe("RoomClient", () => {
     expect(apiMocks.startMediaRelay).not.toHaveBeenCalled();
   });
 });
+
+function openSettingsTab(name: string): void {
+  fireEvent.mouseDown(screen.getByRole("tab", { name }), { button: 0, ctrlKey: false });
+}

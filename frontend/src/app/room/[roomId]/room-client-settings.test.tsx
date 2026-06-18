@@ -19,6 +19,7 @@ describe("RoomClient settings", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));
+    openSettingsTab("Noise");
     await chooseSelectOption("Server Noise Cancelling", "RNNoise");
     fireEvent.change(screen.getByLabelText("Intensity"), { target: { value: "0.75" } });
     fireEvent.click(screen.getByText("Save"));
@@ -56,6 +57,7 @@ describe("RoomClient settings", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));
+    openSettingsTab("Noise");
     await chooseSelectOption("Server Noise Cancelling", "RNNoise");
     fireEvent.click(screen.getByText("Save"));
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
@@ -80,6 +82,7 @@ describe("RoomClient settings", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));
+    openSettingsTab("Noise");
     await chooseSelectOption("Server Noise Cancelling", "Off");
     fireEvent.click(screen.getByText("Save"));
 
@@ -109,6 +112,7 @@ describe("RoomClient settings", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));
+    openSettingsTab("Devices");
     await chooseSelectOption("Microphone", "Studio Mic");
     await chooseSelectOption("Speaker", "Desk Speakers");
     fireEvent.click(screen.getByText("Save"));
@@ -140,6 +144,7 @@ describe("RoomClient settings", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByText("Settings"));
+    openSettingsTab("Noise");
     await chooseSelectOption("Server Noise Cancelling", "RNNoise");
     fireEvent.click(screen.getByText("Save"));
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
@@ -147,6 +152,7 @@ describe("RoomClient settings", () => {
     const closeCallsAfterNoiseUpdate = peerConnections.reduce((count, peer) => count + peer.close.mock.calls.length, 0);
     const stoppedTracksAfterNoiseUpdate = stopTrack.mock.calls.length;
     fireEvent.click(screen.getByText("Settings"));
+    openSettingsTab("Devices");
     await chooseSelectOption("Microphone", "Studio Mic");
     await chooseSelectOption("Speaker", "Desk Speakers");
     fireEvent.click(screen.getByText("Save"));
@@ -162,4 +168,8 @@ describe("RoomClient settings", () => {
 async function chooseSelectOption(label: string, option: string): Promise<void> {
   fireEvent.click(screen.getByLabelText(label));
   fireEvent.click(await screen.findByRole("option", { name: option }));
+}
+
+function openSettingsTab(name: string): void {
+  fireEvent.mouseDown(screen.getByRole("tab", { name }), { button: 0, ctrlKey: false });
 }

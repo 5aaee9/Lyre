@@ -23,13 +23,21 @@ describe("SettingsDialog", () => {
     const onOpenChange = vi.fn();
     render(<SettingsDialog open onOpenChange={onOpenChange} />);
 
+    expect(screen.getByRole("tab", { name: /profile/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /noise/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /devices/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /advanced/i })).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText("Nickname"), { target: { value: "Ada" } });
+    openSettingsTab("Noise");
     await chooseSelectOption("Server Noise Cancelling", "DPDFNet");
     await chooseSelectOption("DPDFNet model", "dpdfnet8_48khz_hr");
-    await chooseSelectOption("Microphone", "Studio Mic");
-    await chooseSelectOption("Speaker", "Desk Speakers");
     fireEvent.change(screen.getByLabelText("Intensity"), { target: { value: "0.75" } });
     fireEvent.change(screen.getByLabelText("Voice activity threshold"), { target: { value: "0.2" } });
+    openSettingsTab("Devices");
+    await chooseSelectOption("Microphone", "Studio Mic");
+    await chooseSelectOption("Speaker", "Desk Speakers");
+    openSettingsTab("Advanced");
     fireEvent.click(screen.getByLabelText("Echo cancellation"));
     fireEvent.click(screen.getByText("Save"));
 
@@ -66,10 +74,10 @@ describe("SettingsDialog", () => {
     const onOpenChange = vi.fn();
     render(<SettingsDialog open onOpenChange={onOpenChange} />);
 
-    fireEvent.click(screen.getByLabelText("Microphone"));
-    expect(await screen.findByRole("option", { name: "Default microphone" })).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("Speaker"));
-    expect(await screen.findByRole("option", { name: "Default speaker" })).toBeInTheDocument();
+    openSettingsTab("Devices");
+    await chooseSelectOption("Microphone", "Default microphone");
+    await chooseSelectOption("Speaker", "Default speaker");
+    openSettingsTab("Profile");
     fireEvent.change(screen.getByLabelText("Nickname"), { target: { value: "Ada" } });
     fireEvent.click(screen.getByText("Save"));
 
@@ -88,10 +96,10 @@ describe("SettingsDialog", () => {
     const onOpenChange = vi.fn();
     render(<SettingsDialog open onOpenChange={onOpenChange} />);
 
-    fireEvent.click(screen.getByLabelText("Microphone"));
-    expect(await screen.findByRole("option", { name: "Default microphone" })).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("Speaker"));
-    expect(await screen.findByRole("option", { name: "Default speaker" })).toBeInTheDocument();
+    openSettingsTab("Devices");
+    await chooseSelectOption("Microphone", "Default microphone");
+    await chooseSelectOption("Speaker", "Default speaker");
+    openSettingsTab("Profile");
     fireEvent.change(screen.getByLabelText("Nickname"), { target: { value: "Ada" } });
     fireEvent.click(screen.getByText("Save"));
 
@@ -106,6 +114,7 @@ describe("SettingsDialog", () => {
     const onSave = vi.fn();
     render(<SettingsDialog open onOpenChange={vi.fn()} onSave={onSave} />);
 
+    openSettingsTab("Noise");
     await chooseSelectOption("Server Noise Cancelling", "RNNoise");
     fireEvent.click(screen.getByText("Save"));
 
@@ -118,6 +127,7 @@ describe("SettingsDialog", () => {
     const onOpenChange = vi.fn();
     render(<SettingsDialog open onOpenChange={onOpenChange} />);
 
+    openSettingsTab("Devices");
     fireEvent.click(screen.getByLabelText("Microphone"));
     expect(await screen.findByRole("option", { name: "Studio Mic" })).toBeInTheDocument();
     const dialog = screen.getByRole("dialog", { hidden: true });
@@ -132,4 +142,8 @@ describe("SettingsDialog", () => {
 async function chooseSelectOption(label: string, option: string): Promise<void> {
   fireEvent.click(screen.getByLabelText(label));
   fireEvent.click(await screen.findByRole("option", { name: option }));
+}
+
+function openSettingsTab(name: string): void {
+  fireEvent.mouseDown(screen.getByRole("tab", { name }), { button: 0, ctrlKey: false });
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Headphones, SlidersHorizontal, UserRound, Waves } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { parseNoiseProvider } from "@/lib/api";
 import { readSettingsSnapshot, useSettingsStore, type SettingsSnapshot } from "@/lib/settings-store";
 
@@ -75,264 +77,333 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
     }
   }
 
+  const microphones = mediaDevices.filter((device) => device.kind === "audioinput");
+  const speakers = mediaDevices.filter((device) => device.kind === "audiooutput");
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Saved locally in this browser.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-5 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <label className="text-right text-sm font-medium" htmlFor="settings-nickname">
-              Nickname
-            </label>
-            <Input
-              className="col-span-3"
-              id="settings-nickname"
-              value={nickname}
-              onChange={(event) => setNickname(event.target.value)}
-            />
-          </div>
-          <div className="grid gap-4 border-t border-neutral-200 pt-4">
-            <div className="text-sm font-medium">Server Noise Cancelling</div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-server-noise">
-                Provider
-              </label>
-              <Select
-                value={noise.provider}
-                onValueChange={(value) =>
-                  setNoise({
-                    ...noise,
-                    provider: parseNoiseProvider(value)
-                  })
-                }
-              >
-                <SelectTrigger
-                  aria-label="Server Noise Cancelling"
-                  className="col-span-3 w-full"
-                  id="settings-server-noise"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="off">Off</SelectItem>
-                  <SelectItem value="rnnoise">RNNoise</SelectItem>
-                  <SelectItem value="deepfilternet">DeepFilterNet</SelectItem>
-                  <SelectItem value="dpdfnet">DPDFNet</SelectItem>
-                </SelectContent>
-              </Select>
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-hidden p-0 sm:max-w-2xl">
+        <div className="grid max-h-[calc(100vh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto]">
+          <DialogHeader className="px-4 pt-4 sm:px-5 sm:pt-5">
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>Local voice, relay, and device preferences for this browser.</DialogDescription>
+          </DialogHeader>
+
+          <Tabs defaultValue="profile" className="min-h-0 gap-0 overflow-hidden">
+            <div className="border-y border-[#edf0ec] px-4 py-3 sm:px-5">
+              <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-4">
+                <TabsTrigger value="profile">
+                  <UserRound aria-hidden="true" className="size-4" />
+                  <span>Profile</span>
+                </TabsTrigger>
+                <TabsTrigger value="noise">
+                  <Waves aria-hidden="true" className="size-4" />
+                  <span>Noise</span>
+                </TabsTrigger>
+                <TabsTrigger value="devices">
+                  <Headphones aria-hidden="true" className="size-4" />
+                  <span>Devices</span>
+                </TabsTrigger>
+                <TabsTrigger value="advanced">
+                  <SlidersHorizontal aria-hidden="true" className="size-4" />
+                  <span>Advanced</span>
+                </TabsTrigger>
+              </TabsList>
             </div>
-            {noise.provider === "dpdfnet" ? (
-              <div className="grid grid-cols-4 items-center gap-4">
-                <label className="text-right text-sm font-medium" htmlFor="settings-dpdfnet-model">
-                  Model
-                </label>
-                <Select
-                  value={noise.dpdfnet.model}
-                  onValueChange={(value) =>
-                    setNoise({
-                      ...noise,
-                      dpdfnet: {
-                        model: value
+
+            <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
+              <TabsContent value="profile">
+                <SettingsSection
+                  description="Set the name people see when you enter a voice room."
+                  title="Room identity"
+                >
+                  <FieldRow htmlFor="settings-nickname" label="Nickname">
+                    <Input
+                      id="settings-nickname"
+                      value={nickname}
+                      onChange={(event) => setNickname(event.target.value)}
+                      placeholder="Assigned automatically if blank"
+                    />
+                  </FieldRow>
+                </SettingsSection>
+              </TabsContent>
+
+              <TabsContent value="noise">
+                <SettingsSection
+                  description="Server-side denoise runs in the relay path after audio reaches Lyre."
+                  title="Server noise cancelling"
+                >
+                  <FieldRow htmlFor="settings-server-noise" label="Provider">
+                    <Select
+                      value={noise.provider}
+                      onValueChange={(value) =>
+                        setNoise({
+                          ...noise,
+                          provider: parseNoiseProvider(value)
+                        })
                       }
-                    })
-                  }
+                    >
+                      <SelectTrigger aria-label="Server Noise Cancelling" className="w-full" id="settings-server-noise">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">Off</SelectItem>
+                        <SelectItem value="rnnoise">RNNoise</SelectItem>
+                        <SelectItem value="deepfilternet">DeepFilterNet</SelectItem>
+                        <SelectItem value="dpdfnet">DPDFNet</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FieldRow>
+
+                  {noise.provider === "dpdfnet" ? (
+                    <FieldRow htmlFor="settings-dpdfnet-model" label="Model">
+                      <Select
+                        value={noise.dpdfnet.model}
+                        onValueChange={(value) =>
+                          setNoise({
+                            ...noise,
+                            dpdfnet: {
+                              model: value
+                            }
+                          })
+                        }
+                      >
+                        <SelectTrigger aria-label="DPDFNet model" className="w-full" id="settings-dpdfnet-model">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="baseline">baseline</SelectItem>
+                          <SelectItem value="dpdfnet2">dpdfnet2</SelectItem>
+                          <SelectItem value="dpdfnet4">dpdfnet4</SelectItem>
+                          <SelectItem value="dpdfnet8">dpdfnet8</SelectItem>
+                          <SelectItem value="dpdfnet2_48khz_hr">dpdfnet2_48khz_hr</SelectItem>
+                          <SelectItem value="dpdfnet8_48khz_hr">dpdfnet8_48khz_hr</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FieldRow>
+                  ) : null}
+
+                  <FieldRow htmlFor="settings-intensity" label="Intensity">
+                    <Input
+                      aria-label="Intensity"
+                      id="settings-intensity"
+                      max={1}
+                      min={0}
+                      step={0.05}
+                      type="number"
+                      value={noise.intensity}
+                      onChange={(event) =>
+                        setNoise({
+                          ...noise,
+                          intensity: Number(event.target.value)
+                        })
+                      }
+                    />
+                  </FieldRow>
+
+                  <FieldRow htmlFor="settings-vad" label="VAD">
+                    <Input
+                      aria-label="Voice activity threshold"
+                      id="settings-vad"
+                      max={1}
+                      min={0}
+                      step={0.05}
+                      type="number"
+                      value={noise.voice_activity_threshold}
+                      onChange={(event) =>
+                        setNoise({
+                          ...noise,
+                          voice_activity_threshold: Number(event.target.value)
+                        })
+                      }
+                    />
+                  </FieldRow>
+                </SettingsSection>
+              </TabsContent>
+
+              <TabsContent value="devices">
+                <SettingsSection
+                  description="Choose browser input and output devices for the next audio session."
+                  title="Audio devices"
                 >
-                  <SelectTrigger
-                    aria-label="DPDFNet model"
-                    className="col-span-3 w-full"
-                    id="settings-dpdfnet-model"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="baseline">baseline</SelectItem>
-                    <SelectItem value="dpdfnet2">dpdfnet2</SelectItem>
-                    <SelectItem value="dpdfnet4">dpdfnet4</SelectItem>
-                    <SelectItem value="dpdfnet8">dpdfnet8</SelectItem>
-                    <SelectItem value="dpdfnet2_48khz_hr">dpdfnet2_48khz_hr</SelectItem>
-                    <SelectItem value="dpdfnet8_48khz_hr">dpdfnet8_48khz_hr</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-intensity">
-                Intensity
-              </label>
-              <Input
-                className="col-span-3"
-                id="settings-intensity"
-                max={1}
-                min={0}
-                step={0.05}
-                type="number"
-                value={noise.intensity}
-                onChange={(event) =>
-                  setNoise({
-                    ...noise,
-                    intensity: Number(event.target.value)
-                  })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-vad">
-                VAD
-              </label>
-              <Input
-                aria-label="Voice activity threshold"
-                className="col-span-3"
-                id="settings-vad"
-                max={1}
-                min={0}
-                step={0.05}
-                type="number"
-                value={noise.voice_activity_threshold}
-                onChange={(event) =>
-                  setNoise({
-                    ...noise,
-                    voice_activity_threshold: Number(event.target.value)
-                  })
-                }
-              />
-            </div>
-          </div>
-          <div className="grid gap-4 border-t border-neutral-200 pt-4">
-            <div className="text-sm font-medium">Browser Audio Processing</div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-microphone">
-                Microphone
-              </label>
-              <Select
-                value={audioDevices.inputDeviceId || DEFAULT_DEVICE_VALUE}
-                onValueChange={(value) =>
-                  setAudioDevices({
-                    ...audioDevices,
-                    inputDeviceId: value === DEFAULT_DEVICE_VALUE ? "" : value
-                  })
-                }
-              >
-                <SelectTrigger
-                  aria-label="Microphone"
-                  className="col-span-3 w-full"
-                  id="settings-microphone"
+                  <FieldRow htmlFor="settings-microphone" label="Microphone">
+                    <Select
+                      value={audioDevices.inputDeviceId || DEFAULT_DEVICE_VALUE}
+                      onValueChange={(value) =>
+                        setAudioDevices({
+                          ...audioDevices,
+                          inputDeviceId: value === DEFAULT_DEVICE_VALUE ? "" : value
+                        })
+                      }
+                    >
+                      <SelectTrigger aria-label="Microphone" className="w-full" id="settings-microphone">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={DEFAULT_DEVICE_VALUE}>Default microphone</SelectItem>
+                        {microphones.map((device) => (
+                          <SelectItem key={device.deviceId} value={device.deviceId}>
+                            {device.label || "Microphone"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FieldRow>
+
+                  <FieldRow htmlFor="settings-speaker" label="Speaker">
+                    <Select
+                      value={audioDevices.outputDeviceId || DEFAULT_DEVICE_VALUE}
+                      onValueChange={(value) =>
+                        setAudioDevices({
+                          ...audioDevices,
+                          outputDeviceId: value === DEFAULT_DEVICE_VALUE ? "" : value
+                        })
+                      }
+                    >
+                      <SelectTrigger aria-label="Speaker" className="w-full" id="settings-speaker">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={DEFAULT_DEVICE_VALUE}>Default speaker</SelectItem>
+                        {speakers.map((device) => (
+                          <SelectItem key={device.deviceId} value={device.deviceId}>
+                            {device.label || "Speaker"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FieldRow>
+                </SettingsSection>
+              </TabsContent>
+
+              <TabsContent value="advanced">
+                <SettingsSection
+                  description="Browser processing changes apply when Lyre opens or recreates local audio."
+                  title="Browser processing"
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={DEFAULT_DEVICE_VALUE}>Default microphone</SelectItem>
-                  {mediaDevices.filter((device) => device.kind === "audioinput").map((device) => (
-                    <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || "Microphone"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SwitchRow
+                    checked={audioDiagnosticsEnabled}
+                    description="Show relay, RTP, and playback diagnostics in the room sidebar."
+                    id="settings-audio-diagnostics"
+                    label="Audio diagnostics"
+                    onCheckedChange={setAudioDiagnosticsEnabled}
+                  />
+                  <SwitchRow
+                    checked={audioProcessing.echoCancellation}
+                    description="Ask the browser to reduce speaker feedback in the microphone stream."
+                    id="settings-echo-cancellation"
+                    label="Echo cancellation"
+                    onCheckedChange={(checked) =>
+                      setAudioProcessing({
+                        ...audioProcessing,
+                        echoCancellation: checked
+                      })
+                    }
+                  />
+                  <SwitchRow
+                    checked={audioProcessing.autoGainControl}
+                    description="Let the browser smooth large microphone level changes."
+                    id="settings-auto-gain-control"
+                    label="Auto gain control"
+                    onCheckedChange={(checked) =>
+                      setAudioProcessing({
+                        ...audioProcessing,
+                        autoGainControl: checked
+                      })
+                    }
+                  />
+                  <SwitchRow
+                    checked={audioProcessing.noiseSuppression}
+                    description="Request browser-side noise suppression before relay processing."
+                    id="settings-browser-noise"
+                    label="Browser noise suppression"
+                    onCheckedChange={(checked) =>
+                      setAudioProcessing({
+                        ...audioProcessing,
+                        noiseSuppression: checked
+                      })
+                    }
+                  />
+                </SettingsSection>
+              </TabsContent>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-speaker">
-                Speaker
-              </label>
-              <Select
-                value={audioDevices.outputDeviceId || DEFAULT_DEVICE_VALUE}
-                onValueChange={(value) =>
-                  setAudioDevices({
-                    ...audioDevices,
-                    outputDeviceId: value === DEFAULT_DEVICE_VALUE ? "" : value
-                  })
-                }
-              >
-                <SelectTrigger
-                  aria-label="Speaker"
-                  className="col-span-3 w-full"
-                  id="settings-speaker"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={DEFAULT_DEVICE_VALUE}>Default speaker</SelectItem>
-                  {mediaDevices.filter((device) => device.kind === "audiooutput").map((device) => (
-                    <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || "Speaker"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-audio-diagnostics">
-                Diagnostics
-              </label>
-              <Switch
-                aria-label="Audio diagnostics"
-                className="col-span-3"
-                id="settings-audio-diagnostics"
-                checked={audioDiagnosticsEnabled}
-                onCheckedChange={setAudioDiagnosticsEnabled}
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-echo-cancellation">
-                Echo
-              </label>
-              <Switch
-                aria-label="Echo cancellation"
-                className="col-span-3"
-                id="settings-echo-cancellation"
-                checked={audioProcessing.echoCancellation}
-                onCheckedChange={(checked) =>
-                  setAudioProcessing({
-                    ...audioProcessing,
-                    echoCancellation: checked
-                  })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-auto-gain-control">
-                Gain
-              </label>
-              <Switch
-                aria-label="Auto gain control"
-                className="col-span-3"
-                id="settings-auto-gain-control"
-                checked={audioProcessing.autoGainControl}
-                onCheckedChange={(checked) =>
-                  setAudioProcessing({
-                    ...audioProcessing,
-                    autoGainControl: checked
-                  })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label className="text-right text-sm font-medium" htmlFor="settings-browser-noise">
-                Suppression
-              </label>
-              <Switch
-                aria-label="Browser noise suppression"
-                className="col-span-3"
-                id="settings-browser-noise"
-                checked={audioProcessing.noiseSuppression}
-                onCheckedChange={(checked) =>
-                  setAudioProcessing({
-                    ...audioProcessing,
-                    noiseSuppression: checked
-                  })
-                }
-              />
-            </div>
-          </div>
+          </Tabs>
+
+          <DialogFooter className="m-0">
+            <Button disabled={saving} onClick={save}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
         </div>
-        <DialogFooter>
-          <Button disabled={saving} onClick={save}>
-            {saving ? "Saving..." : "Save"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SettingsSection({
+  children,
+  description,
+  title
+}: {
+  children: React.ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <section className="grid gap-4">
+      <div>
+        <h2 className="text-sm font-semibold text-[#18211c]">{title}</h2>
+        <p className="mt-1 text-sm text-[#5c6a61]">{description}</p>
+      </div>
+      <div className="grid gap-3">{children}</div>
+    </section>
+  );
+}
+
+function FieldRow({
+  children,
+  htmlFor,
+  label
+}: {
+  children: React.ReactNode;
+  htmlFor: string;
+  label: string;
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
+      <label className="text-sm font-medium text-[#334038] sm:text-right" htmlFor={htmlFor}>
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function SwitchRow({
+  checked,
+  description,
+  id,
+  label,
+  onCheckedChange
+}: {
+  checked: boolean;
+  description: string;
+  id: string;
+  label: string;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-[#edf0ec] px-3 py-3">
+      <label className="min-w-0 text-sm" htmlFor={id}>
+        <span className="font-medium text-[#18211c]">{label}</span>
+        <span className="mt-0.5 block text-[#5c6a61]">{description}</span>
+      </label>
+      <Switch
+        aria-label={label}
+        checked={checked}
+        id={id}
+        onCheckedChange={onCheckedChange}
+      />
+    </div>
   );
 }
