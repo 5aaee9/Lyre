@@ -64,6 +64,9 @@ pub fn process_pcm_frames(
     key: &ServerMediaSessionKey,
 ) -> Result<usize, MediaRelayError> {
     let frames = negotiator.drain_pcm_frames(key);
+    if runtime.uses_processed_audio(&key.room_id) {
+        let _ = negotiator.drain_rtp_packets(key);
+    }
     if frames.is_empty() {
         return Ok(0);
     }

@@ -111,6 +111,7 @@
 - Frontend Settings dropdowns now keep viewport-based popup positioning while open dropdown interactions no longer dismiss the Settings dialog.
 - Processed server-media audio now publishes only live room broadcasts without retaining an unbounded per-room PCM history, so new subscribers do not replay stale audio after relay or noise-setting changes.
 - Raw Opus relay now consumes inbound RTP as a live queue and discards accumulated raw packets while denoise providers are active, preventing noise-off switches from replaying old speech or growing raw RTP history.
+- Processed server-media runtime now discards raw RTP ingress history after denoise-mode PCM processing, preventing long-lived calls from retaining every inbound packet while preserving raw Opus relay queues for noise-off forwarding.
 
 ## Next
 

@@ -261,6 +261,73 @@ async fn app_state_processes_drained_server_media_pcm_under_negotiated_track_id(
 }
 
 #[tokio::test]
+async fn app_state_discards_raw_server_media_rtp_after_pcm_processing() {
+    let state = AppState::default();
+    let key = key();
+    state.media_relays.start(
+        key.room_id.clone(),
+        StartMediaRelayRequest {
+            noise: Some(NoiseCancellationConfig {
+                provider: NoiseProvider::Rnnoise,
+                intensity: 0.5,
+                voice_activity_threshold: 0.35,
+                ..NoiseCancellationConfig::default()
+            }),
+        },
+    );
+    state
+        .media_relays
+        .register_track(
+            key.room_id.clone(),
+            RegisterMediaTrackRequest {
+                user_id: key.user_id.clone(),
+                track_id: "audio-main".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
+
+    let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
+    let answer = state
+        .server_media_negotiator
+        .answer_offer(lyre_webrtc::ServerMediaOffer {
+            room_id: key.room_id.clone(),
+            user_id: key.user_id.clone(),
+            audio_track_id: "audio-main".to_owned(),
+            sdp: offer.offer_sdp.clone(),
+        })
+        .await
+        .unwrap();
+    for candidate in offer.remote_candidates().await {
+        state
+            .server_media_negotiator
+            .add_remote_ice_candidate(lyre_webrtc::ServerMediaIceCandidate {
+                room_id: key.room_id.clone(),
+                user_id: key.user_id.clone(),
+                candidate: candidate.candidate,
+                sdp_mid: candidate.sdp_mid,
+                sdp_mline_index: candidate.sdp_mline_index,
+                username_fragment: candidate.username_fragment,
+            })
+            .await
+            .unwrap();
+    }
+    offer
+        .accept_answer_and_send_valid_opus(&answer, state.server_media_ice_candidates(&key))
+        .await;
+
+    for _ in 0..100 {
+        if state.process_server_media_pcm_frames(&key).unwrap() > 0 {
+            assert!(state.server_media_received_rtp_packets(&key).is_empty());
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("server media PCM frame was not processed");
+}
+
+#[tokio::test]
 async fn app_state_discards_real_drained_server_media_pcm_batch_on_error() {
     let state = AppState::default();
     let key = key();

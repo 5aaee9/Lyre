@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use lyre_core::{
-    AudioFrame, MediaRelayError, MediaRelayRegistry, MediaRuntime, ProcessedAudioFrame,
-    ProcessedAudioSink, RoomId,
+    AudioFrame, MediaRelayError, MediaRelayRegistry, MediaRuntime, NoiseProvider,
+    ProcessedAudioFrame, ProcessedAudioSink, RoomId,
 };
 use lyre_noise_cancelling::{
     DeepFilterNetRuntimeConfig, NoiseCancellingAudioFrameProcessor, NoiseModelRuntimeConfig,
@@ -40,6 +40,7 @@ impl ProcessedAudioSink for ProcessedAudioBroadcaster {
 }
 
 pub struct WebMediaRuntime {
+    relays: Arc<MediaRelayRegistry>,
     runtime: MediaRuntime<NoiseCancellingAudioFrameProcessor, ProcessedAudioBroadcaster>,
     sink: ProcessedAudioBroadcaster,
 }
@@ -68,11 +69,15 @@ impl WebMediaRuntime {
     ) -> Self {
         let sink = ProcessedAudioBroadcaster::default();
         let runtime = MediaRuntime::new(
-            relays,
+            Arc::clone(&relays),
             NoiseCancellingAudioFrameProcessor::with_model_runtime(model_runtime),
             sink.clone(),
         );
-        Self { runtime, sink }
+        Self {
+            relays,
+            runtime,
+            sink,
+        }
     }
 
     pub fn process_frame(&self, frame: AudioFrame) -> Result<(), MediaRelayError> {
@@ -85,6 +90,10 @@ impl WebMediaRuntime {
 
     pub fn clear_room(&self, room_id: &RoomId) {
         self.sink.clear_room(room_id);
+    }
+
+    pub fn uses_processed_audio(&self, room_id: &RoomId) -> bool {
+        self.relays.status(room_id.clone()).noise.provider != NoiseProvider::Off
     }
 }
 
