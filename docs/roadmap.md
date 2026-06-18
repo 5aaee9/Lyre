@@ -91,6 +91,7 @@
 - Frontend server-media subscriptions now derive from registered relay participants and refresh after join races, avoiding 409s when a room user appears before their relay track registration completes.
 - Frontend server-media playback now resumes suspended Web Audio contexts when remote source tracks arrive, preventing connected-but-silent relay playback after automatic room audio startup.
 - Frontend settings can enable an in-room audio diagnostics panel with WebRTC connection state, RTP counters, relay participants, subscriptions, accepted remote tracks, receiver tracks, raw track events, rejected track IDs, and the last playback error for debugging silent calls.
+- Frontend audio diagnostics now include local/server ICE candidate counts, the last server candidate batch size, candidate timestamps, and candidate add errors so sender-side `ICE new` stalls can be isolated without browser devtools.
 - Frontend server-media playback now maps browser UUID remote track IDs through the WebRTC stream ID that carries the Lyre source user, avoiding false rejected-track silence when browsers do not preserve server track IDs.
 - Raw Opus server relay now drops failed realtime recipient sends instead of replaying historical RTP packets to healthy recipients.
 - Opt-in API CPU profiling endpoint at `/debug/pprof/profile`, enabled only with `LYRE_ENABLE_PROF`.

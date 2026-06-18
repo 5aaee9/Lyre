@@ -61,6 +61,15 @@ export type ServerMediaAudioStats = {
   roundTripTimeMs: number | null;
 };
 
+export type ServerMediaIceDiagnostics = {
+  localCandidateCount: number;
+  serverCandidateCount: number;
+  lastServerCandidateCount: number;
+  lastServerCandidateAt: string | null;
+  lastLocalCandidateAt: string | null;
+  lastServerCandidateError: string | null;
+};
+
 export type ServerMediaAudioDiagnostics = {
   connectionState: RTCPeerConnectionState;
   iceConnectionState: RTCIceConnectionState;
@@ -70,6 +79,7 @@ export type ServerMediaAudioDiagnostics = {
   receiverTrackIds: string[];
   onTrackTrackIds: string[];
   rejectedTrackIds: string[];
+  ice: ServerMediaIceDiagnostics;
   remoteSources: ServerMediaRemoteSourceDiagnostics[];
   lastPlaybackError: string | null;
   stats: ServerMediaAudioStats;
@@ -109,6 +119,12 @@ export class ServerMediaAudioSession {
   private readonly peer: RTCPeerConnection;
   private readonly seenCandidates = new Set<string>();
   private readonly pendingLocalCandidates: RTCIceCandidateInit[] = [];
+  private localCandidateCount = 0;
+  private serverCandidateCount = 0;
+  private lastServerCandidateCount = 0;
+  private lastServerCandidateAt: string | null = null;
+  private lastLocalCandidateAt: string | null = null;
+  private lastServerCandidateError: string | null = null;
   private readonly remotePlayback = new Map<string, RemotePlayback>();
   private readonly sourceTrackIdsByMid = new Map<string, string>();
   private candidatePoll?: number;
@@ -196,6 +212,14 @@ export class ServerMediaAudioSession {
         .filter((trackId): trackId is string => typeof trackId === "string" && trackId.length > 0),
       onTrackTrackIds: [...this.onTrackTrackIds],
       rejectedTrackIds: [...this.rejectedTrackIds],
+      ice: {
+        localCandidateCount: this.localCandidateCount,
+        serverCandidateCount: this.serverCandidateCount,
+        lastServerCandidateCount: this.lastServerCandidateCount,
+        lastServerCandidateAt: this.lastServerCandidateAt,
+        lastLocalCandidateAt: this.lastLocalCandidateAt,
+        lastServerCandidateError: this.lastServerCandidateError
+      },
       remoteSources: this.remoteSourceDiagnostics(),
       lastPlaybackError: this.lastPlaybackError,
       stats
@@ -249,7 +273,11 @@ export class ServerMediaAudioSession {
       for (const candidate of signal.payload.candidates) {
         await this.addServerCandidate(candidate);
       }
+      this.lastServerCandidateCount = signal.payload.candidates.length;
+      this.lastServerCandidateAt = new Date().toISOString();
+      this.lastServerCandidateError = null;
     } catch (error) {
+      this.lastServerCandidateError = error instanceof Error ? error.message : "Failed to add server ICE candidate";
       this.reportError(error);
     }
   }
@@ -271,6 +299,8 @@ export class ServerMediaAudioSession {
   private async addLocalCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     try {
       this.sendSignal(encodeServerMediaIceCandidate(this.input.roomId, this.input.userId, candidate));
+      this.localCandidateCount += 1;
+      this.lastLocalCandidateAt = new Date().toISOString();
     } catch (error) {
       this.reportError(error);
     }
@@ -378,6 +408,7 @@ export class ServerMediaAudioSession {
       return;
     }
     this.seenCandidates.add(key);
+    this.serverCandidateCount += 1;
     await this.peer.addIceCandidate({
       candidate: candidate.candidate,
       sdpMid: candidate.sdp_mid ?? undefined,

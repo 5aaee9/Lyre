@@ -594,6 +594,14 @@ describe("ServerMediaAudioSession", () => {
     expect(diagnostics.onTrackTrackIds).toEqual(["lyre-user:user_b:audio"]);
     expect(diagnostics.rejectedTrackIds).toEqual([]);
     expect(diagnostics.lastPlaybackError).toBeNull();
+    expect(diagnostics.ice).toEqual({
+      localCandidateCount: 0,
+      serverCandidateCount: 0,
+      lastServerCandidateCount: 0,
+      lastServerCandidateAt: null,
+      lastLocalCandidateAt: null,
+      lastServerCandidateError: null
+    });
     expect(diagnostics.remoteSources).toEqual([{
       userId: "user_b",
       trackIds: ["lyre-user:user_b:audio"],
@@ -762,6 +770,13 @@ describe("ServerMediaAudioSession", () => {
     });
 
     expect(peerConnections[0].addIceCandidate).toHaveBeenCalledTimes(1);
+    await expect(session.diagnostics()).resolves.toMatchObject({
+      ice: {
+        serverCandidateCount: 1,
+        lastServerCandidateCount: 2,
+        lastServerCandidateError: null
+      }
+    });
   });
 
   it("reports websocket connectivity failures when starting candidate requests", async () => {

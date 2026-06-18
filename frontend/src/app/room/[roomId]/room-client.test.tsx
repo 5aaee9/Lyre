@@ -306,10 +306,46 @@ describe("RoomClient", () => {
     ]);
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    act(() => {
+      peerConnections[0].onicecandidate?.({
+        candidate: {
+          toJSON: () => ({
+            candidate: "candidate:local",
+            sdpMid: "0",
+            sdpMLineIndex: 0
+          })
+        }
+      } as RTCPeerConnectionIceEvent);
+    });
     peerConnections[0].getReceivers.mockReturnValue([
       { track: { id: "lyre-user:user_b:audio" } as MediaStreamTrack } as RTCRtpReceiver,
       { track: { id: "receiver-only-track" } as MediaStreamTrack } as RTCRtpReceiver
     ]);
+    await act(async () => {
+      sockets[0].onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "server-media-ice-candidates",
+            room_id: "DEFAULT",
+            sender_id: "user_a",
+            recipient_id: "user_a",
+            payload: {
+              type: "server-media-ice-candidates",
+              candidates: [
+                {
+                  room_id: "DEFAULT",
+                  user_id: "user_a",
+                  candidate: "candidate:server",
+                  sdp_mid: "0",
+                  sdp_mline_index: 0,
+                  username_fragment: null
+                }
+              ]
+            }
+          })
+        })
+      );
+    });
     act(() => {
       peerConnections[0].ontrack?.({
         track: { id: "{f487de15-2380-429c-b975-21bc77253edc}" },
@@ -323,6 +359,10 @@ describe("RoomClient", () => {
     await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
 
     expect(screen.getByText("3456")).toBeInTheDocument();
+    expect(screen.getByText("Local ICE candidates")).toBeInTheDocument();
+    expect(screen.getByText("Server ICE candidates")).toBeInTheDocument();
+    expect(screen.getByText("Last server ICE batch")).toBeInTheDocument();
+    expect(screen.getAllByText("1")).toHaveLength(4);
     expect(screen.getByText("7")).toBeInTheDocument();
     expect(screen.getByText("890")).toBeInTheDocument();
     expect(screen.getByText("31 ms")).toBeInTheDocument();

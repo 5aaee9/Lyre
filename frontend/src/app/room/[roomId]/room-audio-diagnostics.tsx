@@ -60,6 +60,18 @@ export function RoomAudioDiagnostics({
           <dd>{diagnostics?.signalingState ?? t("unavailable")}</dd>
           <dt className="text-lyre-muted-foreground">{t("audioContext")}</dt>
           <dd>{diagnostics?.audioContextState ?? t("unavailable")}</dd>
+          <dt className="text-lyre-muted-foreground">{t("localIceCandidates")}</dt>
+          <dd>{diagnostics?.ice.localCandidateCount ?? 0}</dd>
+          <dt className="text-lyre-muted-foreground">{t("serverIceCandidates")}</dt>
+          <dd>{diagnostics?.ice.serverCandidateCount ?? 0}</dd>
+          <dt className="text-lyre-muted-foreground">{t("lastServerIceBatch")}</dt>
+          <dd>{diagnostics?.ice.lastServerCandidateCount ?? 0}</dd>
+          <dt className="text-lyre-muted-foreground">{t("lastLocalIce")}</dt>
+          <dd>{diagnostics?.ice.lastLocalCandidateAt ?? t("unavailable")}</dd>
+          <dt className="text-lyre-muted-foreground">{t("lastServerIce")}</dt>
+          <dd>{diagnostics?.ice.lastServerCandidateAt ?? t("unavailable")}</dd>
+          <dt className="text-lyre-muted-foreground">{t("iceCandidateError")}</dt>
+          <dd>{diagnostics?.ice.lastServerCandidateError ?? t("none")}</dd>
         </dl>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
           <dt className="text-lyre-muted-foreground">{t("packetsSent")}</dt>
