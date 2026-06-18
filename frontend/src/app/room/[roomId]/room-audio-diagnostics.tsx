@@ -40,61 +40,61 @@ export function RoomAudioDiagnostics({
   }, [refresh, refreshKey]);
 
   return (
-    <div className="rounded-md border border-[#d8ded6] bg-white">
-      <div className="flex items-center justify-between gap-3 border-b border-[#d8ded6] px-4 py-3">
+    <div className="rounded-md border border-lyre-border bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-lyre-border px-4 py-3">
         <div className="text-sm font-semibold">Audio diagnostics</div>
-        <button className="text-xs text-[#256141] underline underline-offset-2" onClick={() => void refresh()}>
+        <button className="text-xs text-lyre-accent underline underline-offset-2" onClick={() => void refresh()}>
           Refresh
         </button>
       </div>
       <div className="grid gap-4 p-4 text-sm">
-        {error ? <div className="text-red-700">{error}</div> : null}
+        {error ? <div className="text-lyre-danger-text">{error}</div> : null}
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-          <dt className="text-[#5c6a61]">Peer</dt>
+          <dt className="text-lyre-muted-foreground">Peer</dt>
           <dd>{diagnostics?.connectionState ?? "unavailable"}</dd>
-          <dt className="text-[#5c6a61]">ICE</dt>
+          <dt className="text-lyre-muted-foreground">ICE</dt>
           <dd>{diagnostics?.iceConnectionState ?? "unavailable"}</dd>
-          <dt className="text-[#5c6a61]">Signaling</dt>
+          <dt className="text-lyre-muted-foreground">Signaling</dt>
           <dd>{diagnostics?.signalingState ?? "unavailable"}</dd>
-          <dt className="text-[#5c6a61]">Audio context</dt>
+          <dt className="text-lyre-muted-foreground">Audio context</dt>
           <dd>{diagnostics?.audioContextState ?? "unavailable"}</dd>
         </dl>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-          <dt className="text-[#5c6a61]">Packets sent</dt>
+          <dt className="text-lyre-muted-foreground">Packets sent</dt>
           <dd>{diagnostics?.stats.packetsSent ?? 0}</dd>
-          <dt className="text-[#5c6a61]">Bytes sent</dt>
+          <dt className="text-lyre-muted-foreground">Bytes sent</dt>
           <dd>{diagnostics?.stats.bytesSent ?? 0}</dd>
-          <dt className="text-[#5c6a61]">Packets received</dt>
+          <dt className="text-lyre-muted-foreground">Packets received</dt>
           <dd>{diagnostics?.stats.packetsReceived ?? 0}</dd>
-          <dt className="text-[#5c6a61]">Bytes received</dt>
+          <dt className="text-lyre-muted-foreground">Bytes received</dt>
           <dd>{diagnostics?.stats.bytesReceived ?? 0}</dd>
-          <dt className="text-[#5c6a61]">Packets lost</dt>
+          <dt className="text-lyre-muted-foreground">Packets lost</dt>
           <dd>{diagnostics?.stats.packetsLost ?? 0}</dd>
-          <dt className="text-[#5c6a61]">Remote lost</dt>
+          <dt className="text-lyre-muted-foreground">Remote lost</dt>
           <dd>{diagnostics?.stats.remotePacketsLost ?? 0}</dd>
-          <dt className="text-[#5c6a61]">Audio level</dt>
+          <dt className="text-lyre-muted-foreground">Audio level</dt>
           <dd>{diagnostics?.stats.audioLevel === null ? "unavailable" : diagnostics?.stats.audioLevel.toFixed(4) ?? "unavailable"}</dd>
-          <dt className="text-[#5c6a61]">Audio energy</dt>
+          <dt className="text-lyre-muted-foreground">Audio energy</dt>
           <dd>{diagnostics?.stats.totalAudioEnergy === null ? "unavailable" : diagnostics?.stats.totalAudioEnergy.toFixed(4) ?? "unavailable"}</dd>
-          <dt className="text-[#5c6a61]">Audio duration</dt>
+          <dt className="text-lyre-muted-foreground">Audio duration</dt>
           <dd>{diagnostics?.stats.totalSamplesDuration === null ? "unavailable" : `${diagnostics?.stats.totalSamplesDuration.toFixed(2) ?? "0.00"} s`}</dd>
-          <dt className="text-[#5c6a61]">RTT</dt>
+          <dt className="text-lyre-muted-foreground">RTT</dt>
           <dd>{diagnostics?.stats.roundTripTimeMs === null ? "unavailable" : `${diagnostics?.stats.roundTripTimeMs ?? 0} ms`}</dd>
         </dl>
         <dl className="grid gap-2">
-          <dt className="text-[#5c6a61]">Relay participants</dt>
+          <dt className="text-lyre-muted-foreground">Relay participants</dt>
           <dd>{relaySourceIds.length ? relaySourceIds.join(", ") : "none"}</dd>
-          <dt className="text-[#5c6a61]">Subscribed sources</dt>
+          <dt className="text-lyre-muted-foreground">Subscribed sources</dt>
           <dd>{subscribedSourceIds.length ? subscribedSourceIds.join(", ") : "none"}</dd>
-          <dt className="text-[#5c6a61]">Remote tracks</dt>
+          <dt className="text-lyre-muted-foreground">Remote tracks</dt>
           <dd>{diagnostics?.remoteTrackIds.length ? diagnostics.remoteTrackIds.join(", ") : "none"}</dd>
-          <dt className="text-[#5c6a61]">Receiver tracks</dt>
+          <dt className="text-lyre-muted-foreground">Receiver tracks</dt>
           <dd>{diagnostics?.receiverTrackIds.length ? diagnostics.receiverTrackIds.join(", ") : "none"}</dd>
-          <dt className="text-[#5c6a61]">Track events</dt>
+          <dt className="text-lyre-muted-foreground">Track events</dt>
           <dd>{diagnostics?.onTrackTrackIds.length ? diagnostics.onTrackTrackIds.join(", ") : "none"}</dd>
-          <dt className="text-[#5c6a61]">Rejected tracks</dt>
+          <dt className="text-lyre-muted-foreground">Rejected tracks</dt>
           <dd>{diagnostics?.rejectedTrackIds.length ? diagnostics.rejectedTrackIds.join(", ") : "none"}</dd>
-          <dt className="text-[#5c6a61]">Remote sources</dt>
+          <dt className="text-lyre-muted-foreground">Remote sources</dt>
           <dd>
             {diagnostics?.remoteSources.length
               ? diagnostics.remoteSources
@@ -104,7 +104,7 @@ export function RoomAudioDiagnostics({
                 .join("; ")
               : "none"}
           </dd>
-          <dt className="text-[#5c6a61]">Playback error</dt>
+          <dt className="text-lyre-muted-foreground">Playback error</dt>
           <dd>{diagnostics?.lastPlaybackError ?? "none"}</dd>
         </dl>
       </div>

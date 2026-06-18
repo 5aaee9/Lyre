@@ -2,19 +2,20 @@
 
 ## Overview
 
-Lyre is a product UI for live voice rooms. The current interface uses a restrained light surface, Geist/system sans typography, Tailwind v4, and local shadcn-style primitives. Future design work should evolve toward Discord-like social immediacy while retaining a quiet, technical base for audio controls and diagnostics.
+Lyre is a product UI for live voice rooms. The current interface uses restrained system-responsive surfaces, Geist/system sans typography, Tailwind v4, and local shadcn-style primitives. Future design work should evolve toward Discord-like social immediacy while retaining a quiet, technical base for audio controls and diagnostics.
 
 ## Color Palette
 
-- Background: `#f6f8f5`, a soft green-tinted app shell.
-- Foreground: `#18211c`, the primary text color.
-- Panel surface: `#ffffff` / `oklch(1 0 0)`.
-- Border: `#d8ded6` plus shadcn `--border: oklch(0.922 0 0)`.
-- Muted text: current usage includes `#5c6a61`; keep muted text dark enough for WCAG AA on the app background.
+- Light background: `#f6f8f5`, a soft green-tinted app shell.
+- Dark background: `oklch(0.145 0.014 155)`, used only when `prefers-color-scheme: dark` is active.
+- Foreground: `#18211c` in light mode and `oklch(0.94 0.01 155)` in dark mode.
+- Panel surface: shadcn `--card` / `--popover`; never hard-code `bg-white` on app surfaces.
+- Borders: use `--lyre-border` for panel edges and `--lyre-subtle-border` for internal dividers.
+- Muted text: use `--lyre-muted-foreground`; keep muted text dark/light enough for WCAG AA on both system themes.
 - Primary action: shadcn `--primary: oklch(0.205 0 0)` with `--primary-foreground: oklch(0.985 0 0)`.
 - Destructive state: `--destructive: oklch(0.577 0.245 27.325)`.
 
-State colors should be color-blind-safe. Do not encode speaking, muted, disconnected, or error states with hue alone; pair color with labels, icons, ring patterns, or explicit text.
+State colors should be color-blind-safe and theme-aware through the `--lyre-success-*`, `--lyre-warning-*`, `--lyre-danger-*`, and `--lyre-muted-status-*` tokens. Do not encode speaking, muted, disconnected, or error states with hue alone; pair color with labels, icons, ring patterns, or explicit text.
 
 ## Typography
 
@@ -34,6 +35,7 @@ State colors should be color-blind-safe. Do not encode speaking, muted, disconne
 ## Components
 
 - UI primitives live under `frontend/src/components/ui` and follow shadcn/Radix conventions.
+- Theme colors live in `frontend/src/app/globals.css`; root, room, diagnostics, and settings surfaces should consume Tailwind token classes instead of fixed light hex values.
 - Buttons use `class-variance-authority`, rounded `lg` corners, clear focus rings, and compact heights.
 - Dialogs, selects, switches, and inputs should preserve the existing component vocabulary.
 - Settings are local-browser product controls, not a marketing or onboarding surface.

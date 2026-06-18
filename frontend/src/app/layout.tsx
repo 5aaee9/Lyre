@@ -30,8 +30,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         />
       </head>
       <body>
-        <div className="min-h-screen bg-[#f6f8f5] text-[#18211c]">
-          <header className="border-b border-[#d8ded6] bg-white">
+        <div className="min-h-screen bg-lyre-app text-foreground">
+          <header className="border-b border-lyre-border bg-card">
             <nav className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3">
               <Link className="text-lg font-semibold" href="/">
                 Lyre

@@ -53,18 +53,18 @@ export default function Home() {
 
   return (
     <section className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
-      <div className="rounded-xl border border-[#d8ded6] bg-white">
+      <div className="rounded-xl border border-lyre-border bg-card">
         <div className="grid gap-6 px-4 py-5 sm:px-5 lg:px-6 lg:py-6">
           <div className="grid gap-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-[#334038]">
-              <span className="grid size-8 place-items-center rounded-lg bg-[#eef3ed]">
+            <div className="flex items-center gap-2 text-sm font-medium text-lyre-soft-foreground">
+              <span className="grid size-8 place-items-center rounded-lg bg-lyre-soft">
                 <Radio aria-hidden="true" className="size-4" />
               </span>
               Server relay voice
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Join a voice room</h1>
-              <p className="mt-1 max-w-2xl text-sm text-[#5c6a61]">
+              <p className="mt-1 max-w-2xl text-sm text-lyre-muted-foreground">
                 Pick a room, set the name people will see, and Lyre will start relay audio when you enter.
               </p>
             </div>
@@ -72,9 +72,9 @@ export default function Home() {
 
           <form className="grid gap-4" onSubmit={onJoin}>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium text-[#18211c]" htmlFor={roomIdInputId}>
+              <label className="grid gap-2 text-sm font-medium text-foreground" htmlFor={roomIdInputId}>
                 <span className="flex items-center gap-2">
-                  <Hash aria-hidden="true" className="size-4 text-[#5c6a61]" />
+                  <Hash aria-hidden="true" className="size-4 text-lyre-muted-foreground" />
                   Room ID
                 </span>
                 <Input
@@ -85,9 +85,9 @@ export default function Home() {
                   placeholder="DEFAULT"
                 />
               </label>
-              <label className="grid gap-2 text-sm font-medium text-[#18211c]" htmlFor={nicknameInputId}>
+              <label className="grid gap-2 text-sm font-medium text-foreground" htmlFor={nicknameInputId}>
                 <span className="flex items-center gap-2">
-                  <UserRound aria-hidden="true" className="size-4 text-[#5c6a61]" />
+                  <UserRound aria-hidden="true" className="size-4 text-lyre-muted-foreground" />
                   Nickname
                 </span>
                 <Input
@@ -100,13 +100,13 @@ export default function Home() {
               </label>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-[#edf0ec] pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[#334038]">
+            <div className="flex flex-col gap-3 border-t border-lyre-subtle-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-lyre-soft-foreground">
                 <label className="flex items-center gap-2" htmlFor={rememberInputId}>
                   <Switch checked={remember} id={rememberInputId} onCheckedChange={setRemember} />
                   Remember this room
                 </label>
-                <span className="inline-flex items-center gap-1.5 text-[#5c6a61]">
+                <span className="inline-flex items-center gap-1.5 text-lyre-muted-foreground">
                   <Keyboard aria-hidden="true" className="size-4" />
                   Enter joins
                 </span>
@@ -119,7 +119,7 @@ export default function Home() {
 
             {joinError ? (
               <div
-                className="flex items-start gap-2 rounded-lg border border-[#efc2bc] bg-[#fff1ef] px-3 py-2 text-sm text-[#8b2e22]"
+                className="flex items-start gap-2 rounded-lg border border-lyre-danger-border bg-lyre-danger-bg px-3 py-2 text-sm text-lyre-danger-text"
                 role="alert"
               >
                 <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
@@ -130,19 +130,19 @@ export default function Home() {
         </div>
       </div>
 
-      <aside className="rounded-xl border border-[#d8ded6] bg-white">
-        <div className="border-b border-[#edf0ec] px-4 py-3">
+      <aside className="rounded-xl border border-lyre-border bg-card">
+        <div className="border-b border-lyre-subtle-border px-4 py-3">
           <div className="text-sm font-semibold">Entry preview</div>
-          <div className="text-xs text-[#5c6a61]">What Lyre will use after join</div>
+          <div className="text-xs text-lyre-muted-foreground">What Lyre will use after join</div>
         </div>
-        <dl className="grid divide-y divide-[#edf0ec]">
+        <dl className="grid divide-y divide-lyre-subtle-border">
           <EntryRow icon={Hash} label="Room" value={targetRoom} />
           <EntryRow icon={UserRound} label="Name" value={displayName} />
           <EntryRow icon={Server} label="Audio path" value="Server relay" />
           <EntryRow icon={Waves} label="Noise" value={noiseLabel} />
         </dl>
-        <div className="border-t border-[#edf0ec] px-4 py-3">
-          <span className="inline-flex items-center gap-2 rounded-full border border-[#b9d8bd] bg-[#eef8ef] px-2.5 py-1 text-xs font-medium text-[#255c33]">
+        <div className="border-t border-lyre-subtle-border px-4 py-3">
+          <span className="inline-flex items-center gap-2 rounded-full border border-lyre-success-border bg-lyre-success-bg px-2.5 py-1 text-xs font-medium text-lyre-success-text">
             <CheckCircle2 aria-hidden="true" className="size-3.5" />
             Ready for voice
           </span>
@@ -163,12 +163,12 @@ function EntryRow({
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3 text-sm">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#eef3ed] text-[#334038]">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-lyre-soft text-lyre-soft-foreground">
         <Icon aria-hidden="true" className="size-4" />
       </span>
       <div className="min-w-0">
-        <dt className="text-xs font-medium text-[#5c6a61]">{label}</dt>
-        <dd className="truncate font-medium text-[#18211c]">{value}</dd>
+        <dt className="text-xs font-medium text-lyre-muted-foreground">{label}</dt>
+        <dd className="truncate font-medium text-foreground">{value}</dd>
       </div>
     </div>
   );

@@ -112,6 +112,7 @@
 - Frontend room UI now uses a voice-channel layout with accessible status badges, clearer participant rows, keyboard-visible audio controls, and a relay summary while keeping diagnostics behind the existing settings toggle.
 - Frontend root route now uses a voice-room join surface with keyboard-first form submission, stored local preferences, color-blind-safe relay readiness cues, and a compact entry preview instead of generic SaaS onboarding cards.
 - Frontend Settings now use tabbed Profile, Noise, Devices, and Advanced panels so local identity, relay denoise, device selection, diagnostics, and browser DSP controls stay discoverable without one long mixed form.
+- Frontend app, room, diagnostics, and settings surfaces now follow `prefers-color-scheme` with shared light/dark tokens while preserving color-blind-safe status cues.
 - Processed server-media audio now publishes only live room broadcasts without retaining an unbounded per-room PCM history, so new subscribers do not replay stale audio after relay or noise-setting changes.
 - Raw Opus relay now consumes inbound RTP as a live queue and discards accumulated raw packets while denoise providers are active, preventing noise-off switches from replaying old speech or growing raw RTP history.
 - Processed server-media runtime now discards raw RTP ingress history after denoise-mode PCM processing, preventing long-lived calls from retaining every inbound packet while preserving raw Opus relay queues for noise-off forwarding.

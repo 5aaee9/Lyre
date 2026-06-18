@@ -65,19 +65,19 @@ export function RoomView({
   return (
     <section className="grid gap-4">
       <SettingsDialog open={settingsOpen} onOpenChange={onSettingsOpenChange} onSave={onSaveSettings} />
-      <div className="rounded-xl border border-[#d8ded6] bg-white">
+      <div className="rounded-xl border border-lyre-border bg-card">
         <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-2xl font-semibold tracking-tight">{roomId}</h1>
-              <span className="inline-flex items-center gap-1 rounded-full border border-[#d8ded6] bg-[#f6f8f5] px-2 py-1 text-xs font-medium text-[#334038]">
+              <span className="inline-flex items-center gap-1 rounded-full border border-lyre-border bg-lyre-app px-2 py-1 text-xs font-medium text-lyre-soft-foreground">
                 <Users className="size-3.5" aria-hidden="true" />
                 {users.length} online
               </span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <RoomStatusBadge isProblem={isProblem} isRecovering={isRecovering} status={status} />
-              <span className="text-sm text-[#5c6a61]">
+              <span className="text-sm text-lyre-muted-foreground">
                 {remoteCount === 1 ? "1 listener available" : `${remoteCount} listeners available`}
               </span>
             </div>
@@ -97,13 +97,13 @@ export function RoomView({
             </Button>
           </div>
         </div>
-        <div className="border-t border-[#edf0ec] px-4 py-3">
+        <div className="border-t border-lyre-subtle-border px-4 py-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-xs font-medium text-[#5c6a61]">
+            <div className="flex items-center gap-2 text-xs font-medium text-lyre-muted-foreground">
               <Share2 aria-hidden="true" className="size-3.5" />
               Invite link
             </div>
-            <div className="min-w-0 break-all rounded-lg bg-[#f6f8f5] px-3 py-2 text-sm text-[#18211c] sm:max-w-[70%]">
+            <div className="min-w-0 break-all rounded-lg bg-lyre-app px-3 py-2 text-sm text-foreground sm:max-w-[70%]">
               {link}
             </div>
           </div>
@@ -111,17 +111,17 @@ export function RoomView({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="rounded-xl border border-[#d8ded6] bg-white">
-          <div className="flex items-center justify-between gap-3 border-b border-[#d8ded6] px-4 py-3">
+        <div className="rounded-xl border border-lyre-border bg-card">
+          <div className="flex items-center justify-between gap-3 border-b border-lyre-border px-4 py-3">
             <div>
               <div className="text-sm font-semibold">Voice channel</div>
-              <div className="text-xs text-[#5c6a61]">Server relay audio</div>
+              <div className="text-xs text-lyre-muted-foreground">Server relay audio</div>
             </div>
-            <span className="rounded-full bg-[#eef3ed] px-2 py-1 text-xs font-medium text-[#334038]">
+            <span className="rounded-full bg-lyre-soft px-2 py-1 text-xs font-medium text-lyre-soft-foreground">
               {users.length} {users.length === 1 ? "user" : "users"}
             </span>
           </div>
-          <ul className="divide-y divide-[#edf0ec]">
+          <ul className="divide-y divide-lyre-subtle-border">
             {users.map((user) => {
               const audioSettings = userAudio[user.id] ?? DEFAULT_USER_AUDIO_SETTINGS;
               const isCurrentUser = user.id === currentUser?.id;
@@ -129,32 +129,32 @@ export function RoomView({
               return (
                 <li className="flex flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between" key={user.id}>
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#eef3ed] text-sm font-semibold text-[#334038]">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-lyre-soft text-sm font-semibold text-lyre-soft-foreground">
                       {initialsFor(user.nickname)}
                     </span>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate font-medium text-[#18211c]">{user.nickname}</span>
+                        <span className="truncate font-medium text-foreground">{user.nickname}</span>
                         {isCurrentUser ? (
-                          <span className="rounded-full border border-[#d8ded6] px-2 py-0.5 text-xs text-[#5c6a61]">You</span>
+                          <span className="rounded-full border border-lyre-border px-2 py-0.5 text-xs text-lyre-muted-foreground">You</span>
                         ) : null}
                         {isSpeaking ? (
                           <span
                             aria-label={`${user.nickname} is speaking`}
-                            className="inline-flex items-center gap-1 rounded-full bg-[#e9f5eb] px-2 py-0.5 text-xs font-medium text-[#1f5c31] ring-1 ring-[#9fd0a9]"
+                            className="inline-flex items-center gap-1 rounded-full bg-lyre-success-bg px-2 py-0.5 text-xs font-medium text-lyre-success-text ring-1 ring-lyre-success-border"
                           >
                             <Radio aria-hidden="true" className="size-3" />
                             Speaking
                           </span>
                         ) : null}
                         {!isCurrentUser && audioSettings.muted ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#f3efec] px-2 py-0.5 text-xs font-medium text-[#6c4b3c] ring-1 ring-[#dbc7bd]">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-lyre-muted-status-bg px-2 py-0.5 text-xs font-medium text-lyre-muted-status-text ring-1 ring-lyre-muted-status-border">
                             <VolumeX aria-hidden="true" className="size-3" />
                             Muted
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 text-xs text-[#5c6a61]">{isCurrentUser ? "Local microphone" : "Remote audio"}</div>
+                      <div className="mt-0.5 text-xs text-lyre-muted-foreground">{isCurrentUser ? "Local microphone" : "Remote audio"}</div>
                     </div>
                   </div>
                   {!isCurrentUser ? (
@@ -172,11 +172,11 @@ export function RoomView({
                         )}
                         <span>{audioSettings.muted ? `Unmute ${user.nickname}` : `Mute ${user.nickname}`}</span>
                       </Button>
-                      <label className="flex min-w-[11rem] items-center gap-2 text-xs text-[#5c6a61]">
+                      <label className="flex min-w-[11rem] items-center gap-2 text-xs text-lyre-muted-foreground">
                         <span className="w-9 text-right tabular-nums">{audioSettings.volumePercent}%</span>
                         <input
                           aria-label={`${user.nickname} volume`}
-                          className="h-8 w-28 accent-[#256141] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                          className="h-8 w-28 accent-lyre-accent focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                           max={150}
                           min={0}
                           onChange={(event) =>
@@ -195,20 +195,20 @@ export function RoomView({
         </div>
 
         <aside className="grid content-start gap-4">
-          <div className="rounded-xl border border-[#d8ded6] bg-white p-4">
+          <div className="rounded-xl border border-lyre-border bg-card p-4">
             <div className="text-sm font-semibold">Relay</div>
             <dl className="mt-3 grid gap-2 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-[#5c6a61]">Session</dt>
-                <dd className="font-medium text-[#18211c]">{accessToken ? "Authenticated" : "Joining"}</dd>
+                <dt className="text-lyre-muted-foreground">Session</dt>
+                <dd className="font-medium text-foreground">{accessToken ? "Authenticated" : "Joining"}</dd>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-[#5c6a61]">Subscribed</dt>
-                <dd className="font-medium text-[#18211c]">{subscribedSourceIds.length}</dd>
+                <dt className="text-lyre-muted-foreground">Subscribed</dt>
+                <dd className="font-medium text-foreground">{subscribedSourceIds.length}</dd>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-[#5c6a61]">Sources</dt>
-                <dd className="font-medium text-[#18211c]">{relaySourceIds.length}</dd>
+                <dt className="text-lyre-muted-foreground">Sources</dt>
+                <dd className="font-medium text-foreground">{relaySourceIds.length}</dd>
               </div>
             </dl>
           </div>
@@ -236,11 +236,11 @@ function RoomStatusBadge({
   status: string;
 }) {
   const tone = isProblem
-    ? "border-[#efc2bc] bg-[#fff1ef] text-[#8b2e22]"
+    ? "border-lyre-danger-border bg-lyre-danger-bg text-lyre-danger-text"
     : isRecovering
-      ? "border-[#d9cfaa] bg-[#fff8df] text-[#66540c]"
-      : "border-[#b9d8bd] bg-[#eef8ef] text-[#255c33]";
-  const dot = isProblem ? "bg-[#b83b2e]" : isRecovering ? "bg-[#8d7212]" : "bg-[#2f8f46]";
+      ? "border-lyre-warning-border bg-lyre-warning-bg text-lyre-warning-text"
+      : "border-lyre-success-border bg-lyre-success-bg text-lyre-success-text";
+  const dot = isProblem ? "bg-lyre-danger-dot" : isRecovering ? "bg-lyre-warning-dot" : "bg-lyre-success-dot";
   return (
     <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium ${tone}`}>
       <span className={`size-2 rounded-full ${dot}`} aria-hidden="true" />

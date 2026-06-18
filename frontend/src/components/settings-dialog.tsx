@@ -90,7 +90,7 @@ export function SettingsDialog({ open, onOpenChange, onSave }: SettingsDialogPro
           </DialogHeader>
 
           <Tabs defaultValue="profile" className="min-h-0 gap-0 overflow-hidden">
-            <div className="border-y border-[#edf0ec] px-4 py-3 sm:px-5">
+            <div className="border-y border-lyre-subtle-border px-4 py-3 sm:px-5">
               <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-4">
                 <TabsTrigger value="profile">
                   <UserRound aria-hidden="true" className="size-4" />
@@ -352,8 +352,8 @@ function SettingsSection({
   return (
     <section className="grid gap-4">
       <div>
-        <h2 className="text-sm font-semibold text-[#18211c]">{title}</h2>
-        <p className="mt-1 text-sm text-[#5c6a61]">{description}</p>
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <p className="mt-1 text-sm text-lyre-muted-foreground">{description}</p>
       </div>
       <div className="grid gap-3">{children}</div>
     </section>
@@ -371,7 +371,7 @@ function FieldRow({
 }) {
   return (
     <div className="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
-      <label className="text-sm font-medium text-[#334038] sm:text-right" htmlFor={htmlFor}>
+      <label className="text-sm font-medium text-lyre-soft-foreground sm:text-right" htmlFor={htmlFor}>
         {label}
       </label>
       {children}
@@ -393,10 +393,10 @@ function SwitchRow({
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-[#edf0ec] px-3 py-3">
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-lyre-subtle-border px-3 py-3">
       <label className="min-w-0 text-sm" htmlFor={id}>
-        <span className="font-medium text-[#18211c]">{label}</span>
-        <span className="mt-0.5 block text-[#5c6a61]">{description}</span>
+        <span className="font-medium text-foreground">{label}</span>
+        <span className="mt-0.5 block text-lyre-muted-foreground">{description}</span>
       </label>
       <Switch
         aria-label={label}

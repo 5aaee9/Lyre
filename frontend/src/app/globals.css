@@ -2,11 +2,10 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
-
 :root {
-  color: #18211c;
-  background: #f6f8f5;
+  color-scheme: light;
+  color: var(--foreground);
+  background: var(--lyre-app);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -39,6 +38,28 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --lyre-app: #f6f8f5;
+  --lyre-border: #d8ded6;
+  --lyre-subtle-border: #edf0ec;
+  --lyre-soft: #eef3ed;
+  --lyre-soft-foreground: #334038;
+  --lyre-muted-foreground: #5c6a61;
+  --lyre-accent: #256141;
+  --lyre-success-bg: #eef8ef;
+  --lyre-success-border: #b9d8bd;
+  --lyre-success-text: #255c33;
+  --lyre-success-dot: #2f8f46;
+  --lyre-warning-bg: #fff8df;
+  --lyre-warning-border: #d9cfaa;
+  --lyre-warning-text: #66540c;
+  --lyre-warning-dot: #8d7212;
+  --lyre-danger-bg: #fff1ef;
+  --lyre-danger-border: #efc2bc;
+  --lyre-danger-text: #8b2e22;
+  --lyre-danger-dot: #b83b2e;
+  --lyre-muted-status-bg: #f3efec;
+  --lyre-muted-status-border: #dbc7bd;
+  --lyre-muted-status-text: #6c4b3c;
 }
 
 * {
@@ -90,6 +111,28 @@ select {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-lyre-app: var(--lyre-app);
+  --color-lyre-border: var(--lyre-border);
+  --color-lyre-subtle-border: var(--lyre-subtle-border);
+  --color-lyre-soft: var(--lyre-soft);
+  --color-lyre-soft-foreground: var(--lyre-soft-foreground);
+  --color-lyre-muted-foreground: var(--lyre-muted-foreground);
+  --color-lyre-accent: var(--lyre-accent);
+  --color-lyre-success-bg: var(--lyre-success-bg);
+  --color-lyre-success-border: var(--lyre-success-border);
+  --color-lyre-success-text: var(--lyre-success-text);
+  --color-lyre-success-dot: var(--lyre-success-dot);
+  --color-lyre-warning-bg: var(--lyre-warning-bg);
+  --color-lyre-warning-border: var(--lyre-warning-border);
+  --color-lyre-warning-text: var(--lyre-warning-text);
+  --color-lyre-warning-dot: var(--lyre-warning-dot);
+  --color-lyre-danger-bg: var(--lyre-danger-bg);
+  --color-lyre-danger-border: var(--lyre-danger-border);
+  --color-lyre-danger-text: var(--lyre-danger-text);
+  --color-lyre-danger-dot: var(--lyre-danger-dot);
+  --color-lyre-muted-status-bg: var(--lyre-muted-status-bg);
+  --color-lyre-muted-status-border: var(--lyre-muted-status-border);
+  --color-lyre-muted-status-text: var(--lyre-muted-status-text);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -99,38 +142,63 @@ select {
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --background: oklch(0.17 0.012 155);
+    --foreground: oklch(0.94 0.01 155);
+    --card: oklch(0.205 0.014 155);
+    --card-foreground: oklch(0.94 0.01 155);
+    --popover: oklch(0.205 0.014 155);
+    --popover-foreground: oklch(0.94 0.01 155);
+    --primary: oklch(0.88 0.018 155);
+    --primary-foreground: oklch(0.17 0.012 155);
+    --secondary: oklch(0.285 0.016 155);
+    --secondary-foreground: oklch(0.94 0.01 155);
+    --muted: oklch(0.285 0.016 155);
+    --muted-foreground: oklch(0.74 0.018 155);
+    --accent: oklch(0.31 0.025 155);
+    --accent-foreground: oklch(0.94 0.01 155);
+    --destructive: oklch(0.76 0.13 30);
+    --border: oklch(0.36 0.018 155);
+    --input: oklch(0.36 0.018 155);
+    --ring: oklch(0.68 0.06 155);
+    --chart-1: oklch(0.83 0.04 155);
+    --chart-2: oklch(0.7 0.04 155);
+    --chart-3: oklch(0.58 0.035 155);
+    --chart-4: oklch(0.44 0.03 155);
+    --chart-5: oklch(0.32 0.025 155);
+    --sidebar: oklch(0.205 0.014 155);
+    --sidebar-foreground: oklch(0.94 0.01 155);
+    --sidebar-primary: oklch(0.76 0.1 150);
+    --sidebar-primary-foreground: oklch(0.17 0.012 155);
+    --sidebar-accent: oklch(0.285 0.016 155);
+    --sidebar-accent-foreground: oklch(0.94 0.01 155);
+    --sidebar-border: oklch(0.36 0.018 155);
+    --sidebar-ring: oklch(0.68 0.06 155);
+    --lyre-app: oklch(0.145 0.014 155);
+    --lyre-border: oklch(0.35 0.018 155);
+    --lyre-subtle-border: oklch(0.29 0.016 155);
+    --lyre-soft: oklch(0.285 0.018 155);
+    --lyre-soft-foreground: oklch(0.82 0.018 155);
+    --lyre-muted-foreground: oklch(0.75 0.018 155);
+    --lyre-accent: oklch(0.76 0.12 150);
+    --lyre-success-bg: oklch(0.27 0.045 145);
+    --lyre-success-border: oklch(0.48 0.075 145);
+    --lyre-success-text: oklch(0.84 0.105 145);
+    --lyre-success-dot: oklch(0.76 0.12 145);
+    --lyre-warning-bg: oklch(0.285 0.04 85);
+    --lyre-warning-border: oklch(0.52 0.075 85);
+    --lyre-warning-text: oklch(0.88 0.095 85);
+    --lyre-warning-dot: oklch(0.78 0.11 85);
+    --lyre-danger-bg: oklch(0.285 0.052 30);
+    --lyre-danger-border: oklch(0.5 0.09 30);
+    --lyre-danger-text: oklch(0.84 0.095 30);
+    --lyre-danger-dot: oklch(0.74 0.13 30);
+    --lyre-muted-status-bg: oklch(0.28 0.025 55);
+    --lyre-muted-status-border: oklch(0.46 0.045 55);
+    --lyre-muted-status-text: oklch(0.84 0.045 55);
+  }
 }
 
 @layer base {
