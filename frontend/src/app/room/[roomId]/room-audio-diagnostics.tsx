@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { ServerMediaAudioDiagnostics } from "@/lib/server-media-audio";
 
 type RoomAudioDiagnosticsProps = {
@@ -22,13 +24,17 @@ export function RoomAudioDiagnostics({
   const t = useTranslations("RoomDiagnostics");
   const [diagnostics, setDiagnostics] = useState<ServerMediaAudioDiagnostics | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
+    setRefreshing(true);
     try {
       setDiagnostics(await loadDiagnostics());
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("failedToLoad"));
+    } finally {
+      setRefreshing(false);
     }
   }, [loadDiagnostics, t]);
 
@@ -45,11 +51,12 @@ export function RoomAudioDiagnostics({
     <div className="rounded-md border border-lyre-border bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-lyre-border px-4 py-3">
         <div className="text-sm font-semibold">{t("title")}</div>
-        <button className="text-xs text-lyre-accent underline underline-offset-2" onClick={() => void refresh()}>
+        <Button disabled={refreshing} onClick={() => void refresh()} size="sm" variant="outline">
+          <RefreshCw aria-hidden="true" className={`size-3.5 ${refreshing ? "motion-safe:animate-spin" : ""}`} />
           {t("refresh")}
-        </button>
+        </Button>
       </div>
-      <div className="grid gap-4 p-4 text-sm">
+      <div className="grid max-h-[calc(100vh-16rem)] gap-4 overflow-y-auto p-4 text-sm">
         {error ? <div className="text-lyre-danger-text">{error}</div> : null}
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
           <dt className="text-lyre-muted-foreground">{t("peer")}</dt>

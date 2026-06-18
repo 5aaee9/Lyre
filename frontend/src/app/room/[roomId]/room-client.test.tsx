@@ -373,6 +373,30 @@ describe("RoomClient", () => {
     expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce();
   });
 
+  it("refreshes audio diagnostics from the refresh button", async () => {
+    useSettingsStore.getState().setAudioDiagnosticsEnabled(true);
+    peerStatsReports[0] = new Map([
+      ["outbound-audio", {
+        type: "outbound-rtp",
+        kind: "audio",
+        packetsSent: 12
+      }]
+    ]);
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
+
+    peerStatsReports[0] = new Map([
+      ["outbound-audio", {
+        type: "outbound-rtp",
+        kind: "audio",
+        packetsSent: 13
+      }]
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(screen.getByText("13")).toBeInTheDocument());
+  });
+
   it("shows rejected server media track ids in diagnostics", async () => {
     useSettingsStore.getState().setAudioDiagnosticsEnabled(true);
     render(<RoomClient roomId="DEFAULT" />);
@@ -385,7 +409,7 @@ describe("RoomClient", () => {
       } as unknown as RTCTrackEvent);
     });
 
-    await waitFor(() => expect(screen.getByText("Ignored server media track with invalid id: remote-track")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("Ignored server media track with invalid id: remote-track")).toHaveLength(2));
 
     expect(screen.getAllByText("remote-track")).toHaveLength(2);
     expect(screen.getAllByText("Ignored server media track with invalid id: remote-track")).toHaveLength(2);

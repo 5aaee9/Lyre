@@ -112,7 +112,7 @@ export function RoomView({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="rounded-xl border border-lyre-border bg-card">
           <div className="flex items-center justify-between gap-3 border-b border-lyre-border px-4 py-3">
             <div>
