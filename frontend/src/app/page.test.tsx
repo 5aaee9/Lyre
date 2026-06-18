@@ -77,6 +77,27 @@ describe("Home", () => {
     });
   });
 
+  it("opens settings before joining and uses the saved noise settings", async () => {
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+
+    openSettingsTab("Noise");
+    await chooseSelectOption("Server Noise Cancelling", "RNNoise");
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /join voice/i }));
+
+    await waitFor(() => {
+      expect(joinRoom).toHaveBeenCalledWith("DEFAULT", {
+        nickname: "",
+        noise: expect.objectContaining({ provider: "rnnoise" })
+      });
+    });
+  });
+
   it("submits a custom room and nickname from the keyboard-first form", async () => {
     render(<Home />);
 
@@ -109,3 +130,12 @@ describe("Home", () => {
     expect(navigation.push).not.toHaveBeenCalled();
   });
 });
+
+async function chooseSelectOption(label: string, option: string): Promise<void> {
+  fireEvent.click(screen.getByLabelText(label));
+  fireEvent.click(await screen.findByRole("option", { name: option }));
+}
+
+function openSettingsTab(name: string): void {
+  fireEvent.mouseDown(screen.getByRole("tab", { name }), { button: 0, ctrlKey: false });
+}

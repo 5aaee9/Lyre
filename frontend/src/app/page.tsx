@@ -2,7 +2,8 @@
 
 import { FormEvent, useId, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, Hash, Keyboard, Mic, Radio, Server, UserRound, Waves } from "lucide-react";
+import { AlertCircle, CheckCircle2, Hash, Keyboard, Mic, Radio, Server, Settings, UserRound, Waves } from "lucide-react";
+import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +25,7 @@ export default function Home() {
   const [roomId, setRoomId] = useState(() => (remember ? storedRoomId : "DEFAULT"));
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const targetRoom = roomId.trim() || "DEFAULT";
   const displayName = nickname.trim() || "Auto-assigned";
   const noiseLabel = noiseProviderLabel(noise.provider);
@@ -53,21 +55,28 @@ export default function Home() {
 
   return (
     <section className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <div className="rounded-xl border border-lyre-border bg-card">
         <div className="grid gap-6 px-4 py-5 sm:px-5 lg:px-6 lg:py-6">
-          <div className="grid gap-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-lyre-soft-foreground">
-              <span className="grid size-8 place-items-center rounded-lg bg-lyre-soft">
-                <Radio aria-hidden="true" className="size-4" />
-              </span>
-              Server relay voice
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="grid gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-lyre-soft-foreground">
+                <span className="grid size-8 place-items-center rounded-lg bg-lyre-soft">
+                  <Radio aria-hidden="true" className="size-4" />
+                </span>
+                Server relay voice
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">Join a voice room</h1>
+                <p className="mt-1 max-w-2xl text-sm text-lyre-muted-foreground">
+                  Pick a room, set the name people will see, and Lyre will start relay audio when you enter.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Join a voice room</h1>
-              <p className="mt-1 max-w-2xl text-sm text-lyre-muted-foreground">
-                Pick a room, set the name people will see, and Lyre will start relay audio when you enter.
-              </p>
-            </div>
+            <Button aria-label="Settings" className="self-start" onClick={() => setSettingsOpen(true)} variant="outline">
+              <Settings aria-hidden="true" className="size-4" />
+              <span>Settings</span>
+            </Button>
           </div>
 
           <form className="grid gap-4" onSubmit={onJoin}>
