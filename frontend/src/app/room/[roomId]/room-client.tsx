@@ -34,6 +34,12 @@ type RoomSession = {
   accessToken: string;
 };
 
+type ServerRelayAudioConnectionOptions = {
+  updateRelay: boolean;
+  sourceIds?: string[];
+  audioSettings?: Record<string, UserAudioSettings>;
+};
+
 function isStoredRoomSession(input: unknown, roomId: string): input is RoomSession {
   if (!input || typeof input !== "object") {
     return false;
@@ -97,6 +103,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const localVoiceActivityRef = useRef<VoiceActivityDetector | null>(null);
   const audioStartedRef = useRef(false);
   const relayStartedRef = useRef(false);
+  const audioConnectionInFlightRef = useRef(false);
+  const pendingAudioConnectionRef = useRef<ServerRelayAudioConnectionOptions | null>(null);
   const reconnectingAudioRef = useRef(false);
   const reconnectRetryRef = useRef<number | null>(null);
   const socketReconnectRetryRef = useRef<number | null>(null);
@@ -283,6 +291,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
       closeAudioSessions();
       audioStartedRef.current = false;
       relayStartedRef.current = false;
+      audioConnectionInFlightRef.current = false;
+      pendingAudioConnectionRef.current = null;
       reconnectingAudioRef.current = false;
       reconnectRoomSocketRef.current = () => undefined;
       clearReconnectRetry();
@@ -299,115 +309,132 @@ export function RoomClient({ roomId }: { roomId: string }) {
     };
   }, [clearReconnectRetry, clearRelaySourceRefreshRetry, clearSocketReconnectRetry, closeAudioSessions, roomId]);
 
-  const connectServerRelayAudio = useCallback(async ({
-    updateRelay,
-    sourceIds,
-    audioSettings = userAudio
-  }: {
-    updateRelay: boolean;
-    sourceIds?: string[];
-    audioSettings?: Record<string, UserAudioSettings>;
-  }) => {
+  const connectServerRelayAudio = useCallback(async (initialOptions: ServerRelayAudioConnectionOptions) => {
     if (!currentUser || !accessToken) {
       return;
     }
-    if (audioStartedRef.current && !updateRelay) {
+    if (audioStartedRef.current && !initialOptions.updateRelay) {
       return;
     }
-    let stream: MediaStream | null = null;
-    let cleanupNeeded = false;
+    if (audioConnectionInFlightRef.current) {
+      if (initialOptions.updateRelay) {
+        pendingAudioConnectionRef.current = initialOptions;
+      }
+      return;
+    }
+    audioConnectionInFlightRef.current = true;
     try {
-      audioStartedRef.current = true;
-      setAudioStarted(true);
-      const iceServers = await getIceServers();
-      stream = await openLocalAudioStream();
-      const noise = readNoiseConfig();
-      const audioDevices = readAudioDeviceConfig();
-      const shouldStartRelay = !updateRelay && !relayStartedRef.current;
-      if (shouldStartRelay) {
-        await startMediaRelay(roomId, noise, accessToken);
-        cleanupNeeded = true;
-        serverMediaCleanupNeededRef.current = true;
-        await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio", accessToken);
-        relayStartedRef.current = true;
-      }
-      const activeSourceIds = await refreshRelaySourceIds();
-      const waitingForRelaySources = remoteUsers.some((user) => !activeSourceIds.includes(user.id));
-      if (waitingForRelaySources) {
-        scheduleRelaySourceRefreshRetry();
-      } else {
-        clearRelaySourceRefreshRetry();
-      }
-      const nextSourceIds = sourceIds
-        ? sourceIds.filter((sourceId) => activeSourceIds.includes(sourceId))
-        : subscribedSourceIdsFromRelaySources(activeSourceIds, audioSettings);
-      await updateMediaRelaySubscriptions(roomId, currentUser.id, nextSourceIds, accessToken);
-      lastSubscribedSourceIdsRef.current = nextSourceIds;
-      const socket = socketRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        if (socketRef.current === socket) {
-          socketRef.current = null;
-        }
-        setSocketOpen(false);
-        reconnectRoomSocketRef.current();
-        throw new Error(AUDIO_SIGNALLING_SOCKET_ERROR);
-      }
-      const session = new ServerMediaAudioSession({
-        roomId,
-        userId: currentUser.id,
-        accessToken,
-        socket,
-        iceServers,
-        stream,
-        outputDeviceId: audioDevices.outputDeviceId,
-        userAudio: audioSettings,
-        onError: handleAudioError,
-        onConnectionInterrupted: () => reconnectServerRelayAudioRef.current(),
-        onRemoteTrack: () => setAudioDiagnosticsRefreshKey((key) => key + 1),
-        onRemoteSpeakingChange: setUserSpeaking
-      });
-      session.setMuted(muted);
-      serverAudioSessionRef.current = session;
-      await session.start();
-      localVoiceActivityRef.current?.stop();
-      localVoiceActivityRef.current = new VoiceActivityDetector(stream, (speaking) => {
-        setUserSpeaking(currentUser.id, speaking);
-      });
-      localVoiceActivityRef.current.start();
-      stream = null;
-      clearReconnectRetry();
-      setAudioDiagnosticsRefreshKey((key) => key + 1);
-      setStatus("Server relay audio connected");
-      appliedNoiseRef.current = noise;
-      appliedAudioProcessingRef.current = readAudioProcessingConfig();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Audio connection failed";
-      const waitingForSocket = message === AUDIO_SIGNALLING_SOCKET_ERROR;
-      if (!updateRelay && !waitingForSocket) {
-        audioStartedRef.current = false;
-        setAudioStarted(false);
-      }
-      serverAudioSessionRef.current?.close();
-      serverAudioSessionRef.current = null;
-      if (stream) {
-        for (const track of stream.getAudioTracks()) {
-          track.stop();
-        }
-      }
-      if (cleanupNeeded) {
+      let options: ServerRelayAudioConnectionOptions | null = initialOptions;
+      while (options) {
+        pendingAudioConnectionRef.current = null;
+        const { updateRelay, sourceIds, audioSettings = userAudio } = options;
+        options = null;
+        let stream: MediaStream | null = null;
+        let cleanupNeeded = false;
         try {
-          await closeServerMediaSession(roomId, currentUser.id, accessToken);
-        } catch {
-          // Keep the original startup error visible.
+          audioStartedRef.current = true;
+          setAudioStarted(true);
+          const iceServers = await getIceServers();
+          stream = await openLocalAudioStream();
+          const noise = readNoiseConfig();
+          const audioDevices = readAudioDeviceConfig();
+          const shouldStartRelay = !updateRelay && !relayStartedRef.current;
+          if (shouldStartRelay) {
+            await startMediaRelay(roomId, noise, accessToken);
+            cleanupNeeded = true;
+            serverMediaCleanupNeededRef.current = true;
+            await registerMediaTrack(roomId, currentUser.id, "audio-main", "audio", accessToken);
+            relayStartedRef.current = true;
+          }
+          const activeSourceIds = await refreshRelaySourceIds();
+          const waitingForRelaySources = remoteUsers.some((user) => !activeSourceIds.includes(user.id));
+          if (waitingForRelaySources) {
+            scheduleRelaySourceRefreshRetry();
+          } else {
+            clearRelaySourceRefreshRetry();
+          }
+          const nextSourceIds = sourceIds
+            ? sourceIds.filter((sourceId) => activeSourceIds.includes(sourceId))
+            : subscribedSourceIdsFromRelaySources(activeSourceIds, audioSettings);
+          await updateMediaRelaySubscriptions(roomId, currentUser.id, nextSourceIds, accessToken);
+          lastSubscribedSourceIdsRef.current = nextSourceIds;
+          const socket = socketRef.current;
+          if (!socket || socket.readyState !== WebSocket.OPEN) {
+            if (socketRef.current === socket) {
+              socketRef.current = null;
+            }
+            setSocketOpen(false);
+            reconnectRoomSocketRef.current();
+            throw new Error(AUDIO_SIGNALLING_SOCKET_ERROR);
+          }
+          const session = new ServerMediaAudioSession({
+            roomId,
+            userId: currentUser.id,
+            accessToken,
+            socket,
+            iceServers,
+            stream,
+            outputDeviceId: audioDevices.outputDeviceId,
+            userAudio: audioSettings,
+            onError: handleAudioError,
+            onConnectionInterrupted: () => reconnectServerRelayAudioRef.current(),
+            onRemoteTrack: () => setAudioDiagnosticsRefreshKey((key) => key + 1),
+            onRemoteSpeakingChange: setUserSpeaking
+          });
+          session.setMuted(muted);
+          serverAudioSessionRef.current = session;
+          await session.start();
+          localVoiceActivityRef.current?.stop();
+          localVoiceActivityRef.current = new VoiceActivityDetector(stream, (speaking) => {
+            setUserSpeaking(currentUser.id, speaking);
+          });
+          localVoiceActivityRef.current.start();
+          stream = null;
+          clearReconnectRetry();
+          setAudioDiagnosticsRefreshKey((key) => key + 1);
+          setStatus("Server relay audio connected");
+          appliedNoiseRef.current = noise;
+          appliedAudioProcessingRef.current = readAudioProcessingConfig();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Audio connection failed";
+          const waitingForSocket = message === AUDIO_SIGNALLING_SOCKET_ERROR;
+          if (!updateRelay && !waitingForSocket) {
+            audioStartedRef.current = false;
+            setAudioStarted(false);
+          }
+          serverAudioSessionRef.current?.close();
+          serverAudioSessionRef.current = null;
+          if (stream) {
+            for (const track of stream.getAudioTracks()) {
+              track.stop();
+            }
+          }
+          if (cleanupNeeded) {
+            try {
+              await closeServerMediaSession(roomId, currentUser.id, accessToken);
+            } catch {
+              // Keep the original startup error visible.
+            }
+            serverMediaCleanupNeededRef.current = false;
+            relayStartedRef.current = false;
+            lastSubscribedSourceIdsRef.current = [];
+          }
+          setStatus(message);
         }
-        serverMediaCleanupNeededRef.current = false;
-        relayStartedRef.current = false;
-        lastSubscribedSourceIdsRef.current = [];
+        const queuedOptions = pendingAudioConnectionRef.current;
+        pendingAudioConnectionRef.current = null;
+        if (!queuedOptions || !audioStartedRef.current || socketRef.current?.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        closeAudioSessions();
+        options = queuedOptions;
       }
-      setStatus(message);
+    } finally {
+      audioConnectionInFlightRef.current = false;
     }
   }, [
     accessToken,
+    closeAudioSessions,
     clearReconnectRetry,
     clearRelaySourceRefreshRetry,
     currentUser,
@@ -425,6 +452,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
   useEffect(() => {
     reconnectServerRelayAudioRef.current = () => {
       if (reconnectingAudioRef.current || !audioStartedRef.current) {
+        return;
+      }
+      if (audioConnectionInFlightRef.current) {
+        pendingAudioConnectionRef.current = { updateRelay: true };
         return;
       }
       reconnectingAudioRef.current = true;
@@ -470,8 +501,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
     ) {
       return;
     }
-    closeAudioSessions();
     await updateMediaRelaySettings(roomId, currentUser.id, settings.noise, accessToken);
+    if (audioConnectionInFlightRef.current) {
+      pendingAudioConnectionRef.current = { updateRelay: true };
+      return;
+    }
+    closeAudioSessions();
     await connectServerRelayAudio({ updateRelay: true });
   }
 
@@ -505,12 +540,17 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setUserAudioSettings(userId, settings);
       serverAudioSessionRef.current?.setUserAudioSettings(userId, next);
       if (audioStartedRef.current) {
-        closeAudioSessions();
-        await connectServerRelayAudio({
+        const reconnectOptions = {
           updateRelay: true,
           sourceIds: nextSourceIds,
           audioSettings: nextUserAudio
-        });
+        };
+        if (audioConnectionInFlightRef.current) {
+          pendingAudioConnectionRef.current = reconnectOptions;
+          return;
+        }
+        closeAudioSessions();
+        await connectServerRelayAudio(reconnectOptions);
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to update audio subscription");
@@ -536,6 +576,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
         }
         await updateMediaRelaySubscriptions(roomId, currentUser.id, nextSourceIds, accessToken);
         lastSubscribedSourceIdsRef.current = nextSourceIds;
+        if (audioConnectionInFlightRef.current) {
+          pendingAudioConnectionRef.current = { updateRelay: true, sourceIds: nextSourceIds };
+          return;
+        }
         closeAudioSessions();
         await connectServerRelayAudio({ updateRelay: true, sourceIds: nextSourceIds });
       } catch (error) {
@@ -565,6 +609,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     closeAudioSessions();
     audioStartedRef.current = false;
     relayStartedRef.current = false;
+    audioConnectionInFlightRef.current = false;
+    pendingAudioConnectionRef.current = null;
     setAudioStarted(false);
     if (currentUser && accessToken) {
       if (shouldCloseServerMedia) {

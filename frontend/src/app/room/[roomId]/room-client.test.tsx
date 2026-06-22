@@ -666,6 +666,56 @@ describe("RoomClient", () => {
     expect(screen.getByText("Server relay audio connected")).toBeInTheDocument();
   });
 
+  it("does not overlap server relay reconnects with subscription rebuilds", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    let resolveReconnect!: (answer: {
+      room_id: string;
+      user_id: string;
+      audio_track_id: string;
+      sdp: string;
+      state: "negotiating";
+    }) => void;
+    apiMocks.answerServerMediaOffer.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveReconnect = resolve;
+    }));
+
+    act(() => {
+      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].oniceconnectionstatechange?.();
+    });
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByText("Mute Bob"));
+
+    await waitFor(() => expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenLastCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_c"],
+      "token_a"
+    ));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2);
+    expect(peerConnections[1].close).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveReconnect({
+        room_id: "DEFAULT",
+        user_id: "user_a",
+        audio_track_id: "audio-main",
+        sdp: "server-answer",
+        state: "negotiating"
+      });
+    });
+    await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(3));
+    expect(peerConnections[1].close).toHaveBeenCalledOnce();
+  });
+
   it("unblocks later reconnect attempts when one reconnect fails", async () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
