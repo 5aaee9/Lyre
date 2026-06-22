@@ -28,6 +28,29 @@ async fn webrpc_media_relay_methods_use_auth_and_wrapper_shapes() {
         .unwrap();
     assert_eq!(body_json(start).await["mediaRelay"]["status"], "ACTIVE");
 
+    let participant_request = serde_json::json!({
+        "roomID": "DEFAULT",
+        "userID": user_id,
+    });
+    let participant = app
+        .clone()
+        .oneshot(rpc_post_auth(
+            "RegisterMediaParticipant",
+            participant_request,
+            token,
+        ))
+        .await
+        .unwrap();
+    let participant = body_json(participant).await;
+    assert_eq!(
+        participant["mediaRelay"]["participants"][0]["userID"],
+        user_id
+    );
+    assert!(participant["mediaRelay"]["participants"][0]["tracks"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
     let track = app
         .clone()
         .oneshot(rpc_post_auth(

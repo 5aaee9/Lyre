@@ -117,6 +117,20 @@ pub struct RegisterMediaTrackResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RegisterMediaParticipantRequest {
+    #[serde(rename = "roomID")]
+    pub room_id: String,
+    #[serde(rename = "userID")]
+    pub user_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterMediaParticipantResponse {
+    pub media_relay: MediaRelayRoomStatus,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateMediaRelaySubscriptionsRequest {
     #[serde(rename = "roomID")]
     pub room_id: String,

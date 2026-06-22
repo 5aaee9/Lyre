@@ -14,6 +14,7 @@ type RoomViewProps = {
   audioDiagnosticsEnabled: boolean;
   audioDiagnosticsRefreshKey: number;
   audioStarted: boolean;
+  listenOnly: boolean;
   currentUser: UserProfile | null;
   link: string;
   loadAudioDiagnostics: () => Promise<ServerMediaAudioDiagnostics | null>;
@@ -40,6 +41,7 @@ export function RoomView({
   audioDiagnosticsEnabled,
   audioDiagnosticsRefreshKey,
   audioStarted,
+  listenOnly,
   currentUser,
   link,
   loadAudioDiagnostics,
@@ -89,7 +91,7 @@ export function RoomView({
               <Settings aria-hidden="true" className="size-4" />
               <span>{t("settings")}</span>
             </Button>
-            <Button aria-pressed={muted} disabled={!audioStarted} onClick={onToggleMuted} variant={muted ? "outline" : "default"}>
+            <Button aria-pressed={muted} disabled={!audioStarted || listenOnly} onClick={onToggleMuted} variant={muted ? "outline" : "default"}>
               {muted ? <MicOff aria-hidden="true" className="size-4" /> : <Mic aria-hidden="true" className="size-4" />}
               <span>{muted ? t("unmute") : t("mute")}</span>
             </Button>
@@ -156,7 +158,9 @@ export function RoomView({
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 text-xs text-lyre-muted-foreground">{isCurrentUser ? t("localMicrophone") : t("remoteAudio")}</div>
+                      <div className="mt-0.5 text-xs text-lyre-muted-foreground">
+                        {isCurrentUser ? t(listenOnly && audioStarted ? "listenOnly" : "localMicrophone") : t("remoteAudio")}
+                      </div>
                     </div>
                   </div>
                   {!isCurrentUser ? (
@@ -243,6 +247,7 @@ function RoomStatusBadge({
     connected: t("connected"),
     failedToUpdateAudioSubscription: t("failedToUpdateAudioSubscription"),
     joining: t("joining"),
+    listeningWithoutMicrophone: t("listeningWithoutMicrophone"),
     reconnecting: t("reconnecting"),
     reconnectingAudio: t("reconnectingAudio"),
     serverRelayAudioConnected: t("serverRelayAudioConnected")
@@ -266,6 +271,7 @@ function translateStatus(status: string, labels: {
   connected: string;
   failedToUpdateAudioSubscription: string;
   joining: string;
+  listeningWithoutMicrophone: string;
   reconnecting: string;
   reconnectingAudio: string;
   serverRelayAudioConnected: string;
@@ -279,6 +285,8 @@ function translateStatus(status: string, labels: {
       return labels.reconnecting;
     case "Server relay audio connected":
       return labels.serverRelayAudioConnected;
+    case "Listening without microphone":
+      return labels.listeningWithoutMicrophone;
     case "Reconnecting audio":
       return labels.reconnectingAudio;
     case "Audio connection failed":

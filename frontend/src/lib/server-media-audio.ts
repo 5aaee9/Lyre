@@ -20,6 +20,7 @@ type ServerMediaAudioSessionInput = {
   audioTrackId?: string;
   iceServers: IceServerConfig[];
   stream: MediaStream;
+  listenOnly?: boolean;
   outputDeviceId?: string;
   userAudio?: Record<string, UserAudioSettings>;
   pollIntervalMs?: number;
@@ -136,7 +137,7 @@ export class ServerMediaAudioSession {
 
   constructor(private readonly input: ServerMediaAudioSessionInput) {
     this.audioTrackId = input.audioTrackId ?? DEFAULT_AUDIO_TRACK_ID;
-    this.peer = createPeerConnection(input.iceServers, input.stream);
+    this.peer = createPeerConnection(input.iceServers, input.stream, { receiveOnlyAudio: input.listenOnly });
     this.peer.onicecandidate = (event) => {
       if (event.candidate) {
         void this.sendOrQueueLocalCandidate(event.candidate.toJSON());

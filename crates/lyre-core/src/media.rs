@@ -163,6 +163,20 @@ impl MediaRelayRegistry {
         self.snapshot(room_id)
     }
 
+    pub fn register_participant(
+        &self,
+        room_id: RoomId,
+        user_id: UserId,
+    ) -> Result<MediaRelayRoomStatus, MediaRelayError> {
+        let room = self.rooms.entry(room_id.clone()).or_default();
+        if !room.active {
+            return Err(MediaRelayError::Inactive { room_id });
+        }
+        room.participants.entry(user_id).or_default().clear();
+        drop(room);
+        Ok(self.snapshot(room_id))
+    }
+
     pub fn register_track(
         &self,
         room_id: RoomId,
@@ -240,7 +254,11 @@ impl MediaRelayRegistry {
             });
         }
         for source_user_id in &request.source_user_ids {
-            if !room.participants.contains_key(source_user_id) {
+            if !room
+                .participants
+                .get(source_user_id)
+                .is_some_and(|participant| participant_has_audio_track(participant.value()))
+            {
                 return Err(MediaRelayError::ParticipantNotFound {
                     room_id,
                     user_id: source_user_id.clone(),
@@ -292,7 +310,7 @@ impl MediaRelayRegistry {
             .subscriptions
             .get(user_id)
             .map(|sources| sorted_subscription_ids(sources.value()))
-            .unwrap_or_else(|| sorted_remote_participant_ids(&room.participants, user_id));
+            .unwrap_or_else(|| sorted_remote_audio_source_ids(&room.participants, user_id));
         Ok(MediaRelaySubscriptions {
             room_id: room_id.clone(),
             user_id: user_id.clone(),
@@ -330,6 +348,13 @@ impl MediaRelayRegistry {
                 room_id: room_id.clone(),
                 user_id: source_user_id.clone(),
             });
+        }
+        if !room
+            .participants
+            .get(source_user_id)
+            .is_some_and(|participant| participant_has_audio_track(participant.value()))
+        {
+            return Ok(false);
         }
 
         Ok(room
@@ -456,17 +481,25 @@ fn sorted_participants(
     participants
 }
 
-fn sorted_remote_participant_ids(
+fn sorted_remote_audio_source_ids(
     participants: &DashMap<UserId, DashMap<String, MediaTrackKind>>,
     recipient_user_id: &UserId,
 ) -> Vec<UserId> {
     let mut user_ids = participants
         .iter()
-        .filter(|entry| entry.key() != recipient_user_id)
+        .filter(|entry| {
+            entry.key() != recipient_user_id && participant_has_audio_track(entry.value())
+        })
         .map(|entry| entry.key().clone())
         .collect::<Vec<_>>();
     user_ids.sort();
     user_ids
+}
+
+fn participant_has_audio_track(participant: &DashMap<String, MediaTrackKind>) -> bool {
+    participant
+        .iter()
+        .any(|track| *track.value() == MediaTrackKind::Audio)
 }
 
 fn sorted_subscription_ids(subscriptions: &DashMap<UserId, ()>) -> Vec<UserId> {

@@ -121,6 +121,106 @@ describe("RoomClient", () => {
     );
   });
 
+  it("enters listen-only mode when no microphone is available", async () => {
+    getUserMedia.mockRejectedValueOnce(Object.assign(new Error("Requested device not found"), { name: "NotFoundError" }));
+
+    render(<RoomClient roomId="DEFAULT" />);
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
+    expect(apiMocks.registerMediaParticipant).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
+    expect(apiMocks.registerMediaTrack).not.toHaveBeenCalled();
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_b", "user_c"],
+      "token_a"
+    );
+    expect(peerConnections[0].addTransceiver).toHaveBeenCalledWith("audio", { direction: "recvonly" });
+    expect(voiceActivityMock.instances).toHaveLength(0);
+    expect(screen.getByText("Listening without microphone")).toBeInTheDocument();
+    expect(screen.getByText("Listen only")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mute" })).toBeDisabled();
+  });
+
+  it("does not enter listen-only mode for microphone permission denial", async () => {
+    getUserMedia.mockRejectedValueOnce(Object.assign(new Error("Permission denied"), { name: "NotAllowedError" }));
+
+    render(<RoomClient roomId="DEFAULT" />);
+
+    await waitFor(() => expect(screen.getByText("Permission denied")).toBeInTheDocument());
+    expect(apiMocks.registerMediaParticipant).not.toHaveBeenCalled();
+    expect(apiMocks.registerMediaTrack).not.toHaveBeenCalled();
+    expect(apiMocks.answerServerMediaOffer).not.toHaveBeenCalled();
+  });
+
+  it("ignores relay participants without audio tracks as subscription sources", async () => {
+    apiMocks.getMediaRelay.mockResolvedValue({
+      room_id: "DEFAULT",
+      status: "active",
+      mode: "media_relay",
+      server_side_audio_processing: true,
+      server_side_noise_cancelling: true,
+      noise: defaultNoiseConfig,
+      participants: [
+        { user_id: "user_a", tracks: [{ track_id: "audio-main", kind: "audio" }] },
+        { user_id: "user_b", tracks: [] },
+        { user_id: "user_c", tracks: [{ track_id: "audio-main", kind: "audio" }] }
+      ]
+    });
+
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_c"],
+      "token_a"
+    );
+  });
+
+  it("does not retry relay source refresh for trackless relay participants", async () => {
+    apiMocks.getMediaRelay.mockResolvedValue({
+      room_id: "DEFAULT",
+      status: "active",
+      mode: "media_relay",
+      server_side_audio_processing: true,
+      server_side_noise_cancelling: true,
+      noise: defaultNoiseConfig,
+      participants: [
+        { user_id: "user_a", tracks: [{ track_id: "audio-main", kind: "audio" }] },
+        { user_id: "user_b", tracks: [] },
+        { user_id: "user_c", tracks: [{ track_id: "audio-main", kind: "audio" }] }
+      ]
+    });
+
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
+
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenLastCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_c"],
+      "token_a"
+    );
+    const relayRefreshCalls = apiMocks.getMediaRelay.mock.calls.length;
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+    });
+
+    expect(apiMocks.getMediaRelay).toHaveBeenCalledTimes(relayRefreshCalls);
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenLastCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_c"],
+      "token_a"
+    );
+  });
+
   it("toggles local microphone mute without recreating audio", async () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
@@ -664,6 +764,46 @@ describe("RoomClient", () => {
     expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
     expect(apiMocks.registerMediaTrack).toHaveBeenCalledOnce();
     expect(screen.getByText("Server relay audio connected")).toBeInTheDocument();
+  });
+
+  it("registers an audio track when reconnecting from listen-only to microphone capture", async () => {
+    getUserMedia.mockRejectedValueOnce(Object.assign(new Error("Requested device not found"), { name: "NotFoundError" }));
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    act(() => {
+      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].oniceconnectionstatechange?.();
+    });
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+
+    expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
+    expect(apiMocks.registerMediaParticipant).toHaveBeenCalledOnce();
+    expect(apiMocks.registerMediaTrack).toHaveBeenCalledWith("DEFAULT", "user_a", "audio-main", "audio", "token_a");
+    expect(screen.getByText("Server relay audio connected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mute" })).toBeEnabled();
+  });
+
+  it("registers a listen-only participant when reconnecting from microphone capture without a microphone", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    getUserMedia.mockRejectedValueOnce(Object.assign(new Error("Requested device not found"), { name: "NotFoundError" }));
+
+    act(() => {
+      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].oniceconnectionstatechange?.();
+    });
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+
+    expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
+    expect(apiMocks.registerMediaTrack).toHaveBeenCalledOnce();
+    expect(apiMocks.registerMediaParticipant).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
+    expect(peerConnections[1].addTransceiver).toHaveBeenCalledWith("audio", { direction: "recvonly" });
+    expect(screen.getByText("Listening without microphone")).toBeInTheDocument();
+    expect(screen.getByText("Listen only")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mute" })).toBeDisabled();
   });
 
   it("does not overlap server relay reconnects with subscription rebuilds", async () => {

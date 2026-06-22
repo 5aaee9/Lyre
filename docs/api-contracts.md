@@ -12,9 +12,41 @@
 - `GET /api/rooms/:room_id/media-relay`
 - `POST /api/rooms/:room_id/media-relay/start`
 - `POST /api/rooms/:room_id/media-relay/stop`
+- `POST /api/rooms/:room_id/media-relay/participants`
 - `POST /api/rooms/:room_id/media-relay/tracks`
 - `POST /api/rooms/:room_id/media-relay/subscriptions`
 - `GET /api/rooms/:room_id/ws?user_id=...`
+
+### Media Relay Participants
+
+`POST /api/rooms/:room_id/media-relay/participants` registers one authenticated room user as an active relay participant without publishing any tracks. This is used by clients that join without a usable microphone and should receive room audio in listen-only mode.
+
+The route requires the room bearer token for `user_id`.
+
+Request:
+
+```json
+{
+  "user_id": "listener_user_id"
+}
+```
+
+Response:
+
+```json
+{
+  "room_id": "DEFAULT",
+  "status": "active",
+  "participants": [
+    {
+      "user_id": "listener_user_id",
+      "tracks": []
+    }
+  ]
+}
+```
+
+Registering a participant replaces that user's currently registered relay tracks with an empty track list. Trackless participants can update their own subscriptions and receive remote audio, but they are not audio sources for other listeners.
 
 ### Media Relay Subscriptions
 
@@ -41,7 +73,7 @@ Response:
 }
 ```
 
-The server validates that the media relay is active, that `user_id` is an active relay participant, and that every source user is active in the relay. `source_user_ids` is sorted and deduplicated in the response. An empty list is valid and means the listener receives no remote relay audio. Repeating the same request is idempotent.
+The server validates that the media relay is active, that `user_id` is an active relay participant, and that every source user is an active relay participant with an audio track. `source_user_ids` is sorted and deduplicated in the response. An empty list is valid and means the listener receives no remote relay audio. Repeating the same request is idempotent.
 
 ## WebRPC
 

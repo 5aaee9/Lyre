@@ -2,9 +2,9 @@
 
 ## Current Topology
 
-`GET /api/webrtc/topology` reports the active media topology. The current topology is peer-to-peer mesh WebRTC with TURN relay support for NAT traversal.
+`GET /api/webrtc/topology` reports the active media topology. The current topology is server-relay WebRTC audio with TURN relay support for NAT traversal.
 
-The frontend creates one browser `RTCPeerConnection` per remote room user, reuses one local audio stream, and targets WebRTC offer, answer, and ICE messages with `recipient_id`.
+The frontend creates one browser `RTCPeerConnection` to the server-media endpoint, sends local microphone audio when available, and receives remote room audio from server-managed relay subscriptions.
 
 TURN, including the embedded TURN relay, relays encrypted WebRTC packets and cannot run server-side RNNoise or DeepFilterNet by itself.
 
@@ -16,8 +16,12 @@ The media relay REST endpoints expose the room-scoped state for this path:
 
 - `GET /api/rooms/:room_id/media-relay` reports whether the relay is active, intended noise config, and registered participant tracks.
 - `POST /api/rooms/:room_id/media-relay/start` activates the room relay and records an optional noise config.
+- `POST /api/rooms/:room_id/media-relay/participants` registers a room user as an active relay participant without publishing tracks.
 - `POST /api/rooms/:room_id/media-relay/tracks` registers track metadata while active.
-- `POST /api/rooms/:room_id/media-relay/stop` deactivates the relay and clears tracks.
+- `POST /api/rooms/:room_id/media-relay/subscriptions` stores a listener's complete set of subscribed audio sources.
+- `POST /api/rooms/:room_id/media-relay/stop` deactivates the relay and clears participants, tracks, and subscriptions.
+
+Relay participants are distinct from subscribable audio sources. A participant with no audio tracks represents a listen-only client: it can receive audio through subscriptions, but it is not offered as a source to other listeners. Registering an empty-track participant also clears that user's prior track metadata, so reconnecting from microphone capture into listen-only mode removes stale audio-source state.
 
 `lyre-core` defines a decoded-PCM media runtime boundary. It accepts already-decoded audio frames, requires an active relay and registered audio track without mutating relay state, runs an `AudioFrameProcessor`, and publishes processed PCM to an internal `ProcessedAudioSink`.
 

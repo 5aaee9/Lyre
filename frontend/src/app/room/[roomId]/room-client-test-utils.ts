@@ -41,6 +41,7 @@ const apiMocks = vi.hoisted(() => ({
   getMediaRelay: vi.fn(),
   getIceServers: vi.fn(async () => [{ urls: ["stun:stun.example:3478"], username: null, credential: null }]),
   leaveRoom: vi.fn(),
+  registerMediaParticipant: vi.fn(),
   registerMediaTrack: vi.fn(),
   startMediaRelay: vi.fn(),
   stopMediaRelay: vi.fn(),
@@ -97,6 +98,7 @@ class MockPeerConnection {
     setParameters: vi.fn(async () => undefined)
   };
   addTrack = vi.fn();
+  addTransceiver = vi.fn();
   addIceCandidate = vi.fn();
   close = vi.fn();
   createAnswer = vi.fn(async () => ({ type: "answer", sdp: `local-answer-${this.remoteUserId}` }));
@@ -170,6 +172,7 @@ vi.mock("@/lib/api", async () => {
     leaveRoom: apiMocks.leaveRoom,
     startMediaRelay: apiMocks.startMediaRelay,
     stopMediaRelay: apiMocks.stopMediaRelay,
+    registerMediaParticipant: apiMocks.registerMediaParticipant,
     registerMediaTrack: apiMocks.registerMediaTrack,
     answerServerMediaOffer: apiMocks.answerServerMediaOffer,
     closeServerMediaSession: apiMocks.closeServerMediaSession,
@@ -265,6 +268,8 @@ beforeEach(() => {
   apiMocks.closeServerMediaSession.mockReset();
   apiMocks.closeServerMediaSession.mockResolvedValue({});
   apiMocks.leaveRoom.mockReset();
+  apiMocks.registerMediaParticipant.mockReset();
+  apiMocks.registerMediaParticipant.mockResolvedValue({});
   apiMocks.registerMediaTrack.mockReset();
   apiMocks.registerMediaTrack.mockResolvedValue({});
   apiMocks.startMediaRelay.mockReset();

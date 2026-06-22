@@ -83,6 +83,9 @@ struct RegisterMediaTrackInput
   - trackID: string
   - kind: MediaTrackKind
 
+struct RegisterMediaParticipantInput
+  - userID: string
+
 struct UpdateMediaRelaySubscriptionsInput
   - userID: string
   - sourceUserIDs: []string
@@ -158,6 +161,8 @@ service Lyre
   - StopMediaRelay(roomID: string, userID: string) => (mediaRelay: MediaRelayRoomStatus)
   # Documents POST /api/rooms/{room_id}/media-relay/tracks; REST fetch remains the runtime transport in this increment.
   - RegisterMediaTrack(roomID: string, userID: string, trackID: string, kind: MediaTrackKind) => (mediaRelay: MediaRelayRoomStatus)
+  # Documents POST /api/rooms/{room_id}/media-relay/participants; REST fetch remains the runtime transport in this increment.
+  - RegisterMediaParticipant(roomID: string, userID: string) => (mediaRelay: MediaRelayRoomStatus)
   # Documents POST /api/rooms/{room_id}/media-relay/subscriptions; REST fetch remains the runtime transport in this increment.
   - UpdateMediaRelaySubscriptions(roomID: string, userID: string, sourceUserIDs: []string) => (subscriptions: MediaRelaySubscriptions)
   # Documents POST /api/rooms/{room_id}/server-media/offer; REST fetch remains the runtime transport in this increment.

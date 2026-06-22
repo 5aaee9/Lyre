@@ -162,6 +162,21 @@ pub(crate) async fn register_media_track(
     }))
 }
 
+pub(crate) async fn register_media_participant(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<dto::RegisterMediaParticipantResponse>, WebrpcError> {
+    let request: dto::RegisterMediaParticipantRequest = parse_json(body)?;
+    let room_id = RoomId::parse_boundary(request.room_id)?;
+    let user_id = UserId::from_external(request.user_id);
+    authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let media_relay = state.media_relays.register_participant(room_id, user_id)?;
+    Ok(Json(dto::RegisterMediaParticipantResponse {
+        media_relay: media_relay.into(),
+    }))
+}
+
 pub(crate) async fn update_media_relay_subscriptions(
     State(state): State<AppState>,
     headers: HeaderMap,

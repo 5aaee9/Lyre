@@ -16,7 +16,7 @@ export async function openLocalAudioStream(): Promise<MediaStream> {
   try {
     stream = await navigator.mediaDevices.getUserMedia(localAudioConstraints(audioProcessing, audioDevices.inputDeviceId));
   } catch (error) {
-    if (!audioDevices.inputDeviceId || !isMissingAudioDeviceError(error)) {
+    if (!audioDevices.inputDeviceId || !isMissingAudioInputError(error)) {
       throw error;
     }
     writeAudioDeviceConfig({ ...audioDevices, inputDeviceId: "" });
@@ -43,7 +43,7 @@ function localAudioConstraints(audioProcessing: AudioProcessingConfig, inputDevi
   };
 }
 
-function isMissingAudioDeviceError(error: unknown): boolean {
+export function isMissingAudioInputError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
@@ -58,7 +58,15 @@ function audioConstraint(enabled: boolean): boolean | ConstrainBooleanParameters
   return enabled ? true : { exact: false };
 }
 
-export function createPeerConnection(iceServers: IceServerConfig[], stream: MediaStream): RTCPeerConnection {
+export type PeerConnectionOptions = {
+  receiveOnlyAudio?: boolean;
+};
+
+export function createPeerConnection(
+  iceServers: IceServerConfig[],
+  stream: MediaStream,
+  options: PeerConnectionOptions = {}
+): RTCPeerConnection {
   const connection = new RTCPeerConnection({
     iceServers: iceServers.map((server) => ({
       urls: server.urls,
@@ -66,8 +74,12 @@ export function createPeerConnection(iceServers: IceServerConfig[], stream: Medi
       credential: server.credential ?? undefined
     }))
   });
-  for (const track of stream.getAudioTracks()) {
+  const audioTracks = stream.getAudioTracks();
+  for (const track of audioTracks) {
     connection.addTrack(track, stream);
+  }
+  if (options.receiveOnlyAudio && audioTracks.length === 0) {
+    connection.addTransceiver("audio", { direction: "recvonly" });
   }
   return connection;
 }

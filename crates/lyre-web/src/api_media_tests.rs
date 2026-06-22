@@ -166,6 +166,37 @@ async fn media_relay_register_track_requires_active_relay() {
 }
 
 #[tokio::test]
+async fn media_relay_register_participant_returns_empty_track_listener() {
+    let app = router(AppState::default());
+    let (user_id, access_token) = join_for_test(app.clone(), "Alice").await;
+    app.clone()
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/start",
+            "{}".to_owned(),
+            &access_token,
+        ))
+        .await
+        .unwrap();
+
+    let response = app
+        .oneshot(post_json_with_auth(
+            "/api/rooms/DEFAULT/media-relay/participants",
+            serde_json::json!({ "user_id": user_id }).to_string(),
+            &access_token,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert_eq!(body["participants"][0]["user_id"], user_id);
+    assert!(body["participants"][0]["tracks"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
 async fn media_relay_start_registers_track_and_stop_clears_state() {
     let app = router(AppState::default());
     let (user_id, access_token) = join_for_test(app.clone(), "Alice").await;

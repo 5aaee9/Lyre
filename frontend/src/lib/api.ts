@@ -299,6 +299,19 @@ export async function registerMediaTrack(
   return jsonOrThrow(response, "failed to register media track");
 }
 
+export async function registerMediaParticipant(
+  roomId: string,
+  userId: string,
+  accessToken: string
+): Promise<MediaRelayRoomStatus> {
+  const response = await fetch(`${mediaRelayUrl(roomId)}/participants`, {
+    method: "POST",
+    headers: { ...bearerHeaders(accessToken), "content-type": "application/json" },
+    body: JSON.stringify({ user_id: userId })
+  });
+  return jsonOrThrow(response, "failed to register media participant");
+}
+
 export async function updateMediaRelaySettings(
   roomId: string,
   userId: string,

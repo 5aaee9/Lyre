@@ -20,6 +20,10 @@ pub fn router() -> Router<AppState> {
         .route("/rpc/Lyre/StopMediaRelay", post(stop_media_relay))
         .route("/rpc/Lyre/RegisterMediaTrack", post(register_media_track))
         .route(
+            "/rpc/Lyre/RegisterMediaParticipant",
+            post(register_media_participant),
+        )
+        .route(
             "/rpc/Lyre/UpdateMediaRelaySubscriptions",
             post(update_media_relay_subscriptions),
         )

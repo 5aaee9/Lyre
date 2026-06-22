@@ -127,6 +127,7 @@
 - Client-side noise cancellation can now initialize ONNX Runtime Web for DeepFilterNet and 48 kHz DPDFNet models, caching model files and DPDFNet state manifests with the browser Cache API and using Rust WASM DSP helpers around ONNX inference.
 - Frontend microphone capture now clears a stale saved input device and retries with the browser default microphone when `getUserMedia` reports the selected device is missing.
 - Frontend server-media audio now serializes overlapping reconnect and subscription rebuild requests, avoiding concurrent offers for the same browser relay session while still applying the latest queued subscription change.
+- Frontend room audio now lets clients without a usable microphone join in listen-only mode, registering empty-track relay participants and negotiating receive-only server-media audio.
 
 ## Next
 

@@ -15,6 +15,7 @@ import {
   joinRoom,
   leaveRoom,
   mediaRelayUrl,
+  registerMediaParticipant,
   registerMediaTrack,
   roomUrl,
   serverMediaCandidatesUrl,
@@ -45,6 +46,8 @@ import {
   type CloseServerMediaSessionResponse as WebrpcCloseServerMediaSessionResponse,
   type JoinRoomResponse as WebrpcJoinRoomResponse,
   type MediaRelayRoomStatus as WebrpcMediaRelayRoomStatus,
+  type RegisterMediaParticipantRequest as WebrpcRegisterMediaParticipantRequest,
+  type RegisterMediaParticipantResponse as WebrpcRegisterMediaParticipantResponse,
   type ServerMediaAnswer as WebrpcServerMediaAnswer,
   type ServerMediaIceCandidate as WebrpcServerMediaIceCandidate
 } from "./lyre.gen";
@@ -130,6 +133,17 @@ const generatedMediaRelayContract: WebrpcMediaRelayRoomStatus = {
   participants: [{ userID: "user_a", tracks: [{ trackID: "audio-main", kind: WebrpcMediaTrackKind.AUDIO }] }]
 };
 void generatedMediaRelayContract;
+
+const generatedRegisterMediaParticipantRequestContract: WebrpcRegisterMediaParticipantRequest = {
+  roomID: "DEFAULT",
+  userID: "user_a"
+};
+void generatedRegisterMediaParticipantRequestContract;
+
+const generatedRegisterMediaParticipantResponseContract: WebrpcRegisterMediaParticipantResponse = {
+  mediaRelay: generatedMediaRelayContract
+};
+void generatedRegisterMediaParticipantResponseContract;
 
 const serverMediaAnswerFromRestShape: ServerMediaAnswer = {
   room_id: "DEFAULT",
@@ -346,6 +360,16 @@ describe("api", () => {
     });
   });
 
+  it("serializes media relay participant registration request body", async () => {
+    await registerMediaParticipant("DEFAULT", "user_a", "token_a");
+
+    expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/rooms/DEFAULT/media-relay/participants", {
+      method: "POST",
+      headers: { authorization: "Bearer token_a", "content-type": "application/json" },
+      body: JSON.stringify({ user_id: "user_a" })
+    });
+  });
+
   it("serializes media relay subscription updates", async () => {
     await updateMediaRelaySubscriptions("DEFAULT", "user_a", ["user_b"], "token_a");
 
@@ -416,6 +440,9 @@ describe("api", () => {
     await expect(startMediaRelay("DEFAULT", undefined, "token_a")).rejects.toThrow("failed to start media relay: 503");
     await expect(registerMediaTrack("DEFAULT", "user_a", "audio-main", "audio", "token_a")).rejects.toThrow(
       "failed to register media track: 503"
+    );
+    await expect(registerMediaParticipant("DEFAULT", "user_a", "token_a")).rejects.toThrow(
+      "failed to register media participant: 503"
     );
     await expect(updateMediaRelaySettings("DEFAULT", "user_a", defaultNoiseConfig, "token_a")).rejects.toThrow(
       "failed to update media relay settings: 503"

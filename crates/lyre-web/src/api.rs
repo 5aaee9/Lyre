@@ -15,7 +15,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use lyre_core::{
-    supported_noise_providers, IceServerConfig, JoinRoomRequest, LeaveRoomRequest, RoomId,
+    supported_noise_providers, IceServerConfig, JoinRoomRequest, LeaveRoomRequest, RoomId, UserId,
 };
 use lyre_webrtc::{ServerMediaIceCandidate, ServerMediaSessionKey};
 use serde::{Deserialize, Serialize};
@@ -113,6 +113,10 @@ fn base_router() -> Router<AppState> {
         .route(
             "/api/rooms/{room_id}/media-relay/tracks",
             post(register_media_track),
+        )
+        .route(
+            "/api/rooms/{room_id}/media-relay/participants",
+            post(register_media_participant),
         )
         .route(
             "/api/rooms/{room_id}/media-relay/subscriptions",
@@ -281,6 +285,26 @@ async fn register_media_track(
     let room_id = RoomId::parse_boundary(room_id)?;
     authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     Ok(Json(state.media_relays.register_track(room_id, request)?))
+}
+
+#[derive(Deserialize)]
+struct RegisterMediaParticipantRequest {
+    user_id: UserId,
+}
+
+async fn register_media_participant(
+    State(state): State<AppState>,
+    Path(room_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<RegisterMediaParticipantRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let room_id = RoomId::parse_boundary(room_id)?;
+    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    Ok(Json(
+        state
+            .media_relays
+            .register_participant(room_id, request.user_id)?,
+    ))
 }
 
 async fn update_media_relay_subscriptions(

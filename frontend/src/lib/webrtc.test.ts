@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultNoiseConfig, resetSettingsStoreForTests, useSettingsStore } from "./settings-store";
-import { createAudioPeerConnection, createPeerConnection, openLocalAudioStream } from "./webrtc";
+import { createAudioPeerConnection, createPeerConnection, isMissingAudioInputError, openLocalAudioStream } from "./webrtc";
 
 const clientNoise = vi.hoisted(() => ({
   processLocalAudioStream: vi.fn()
@@ -12,6 +12,7 @@ vi.mock("./client-noise-cancellation", () => ({
 
 describe("webrtc", () => {
   const addTrack = vi.fn();
+  const addTransceiver = vi.fn();
   const peerConstructor = vi.fn();
   const stream = {
     getAudioTracks: () => [{ id: "track" }]
@@ -19,6 +20,7 @@ describe("webrtc", () => {
 
   class MockPeerConnection {
     addTrack = addTrack;
+    addTransceiver = addTransceiver;
 
     constructor(config: RTCConfiguration) {
       peerConstructor(config);
@@ -29,6 +31,7 @@ describe("webrtc", () => {
     localStorage.clear();
     resetSettingsStoreForTests();
     addTrack.mockClear();
+    addTransceiver.mockClear();
     peerConstructor.mockClear();
     clientNoise.processLocalAudioStream.mockReset();
     clientNoise.processLocalAudioStream.mockImplementation(async (input: MediaStream) => input);
@@ -236,6 +239,41 @@ describe("webrtc", () => {
       iceServers: [{ urls: ["stun:stun.example:3478"], username: undefined, credential: undefined }]
     });
     expect(addTrack).toHaveBeenCalledWith({ id: "track" }, stream);
+  });
+
+  it("adds a receive-only audio transceiver for listen-only empty streams", () => {
+    const emptyStream = {
+      getAudioTracks: () => []
+    } as unknown as MediaStream;
+
+    createPeerConnection(
+      [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      emptyStream,
+      { receiveOnlyAudio: true }
+    );
+
+    expect(addTrack).not.toHaveBeenCalled();
+    expect(addTransceiver).toHaveBeenCalledWith("audio", { direction: "recvonly" });
+  });
+
+  it("does not add a receive-only transceiver when local audio tracks exist", () => {
+    createPeerConnection(
+      [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      { receiveOnlyAudio: true }
+    );
+
+    expect(addTrack).toHaveBeenCalledWith({ id: "track" }, stream);
+    expect(addTransceiver).not.toHaveBeenCalled();
+  });
+
+  it("classifies missing microphone errors narrowly", () => {
+    expect(isMissingAudioInputError(Object.assign(new Error("missing"), { name: "NotFoundError" }))).toBe(true);
+    expect(isMissingAudioInputError(Object.assign(new Error("missing"), {
+      name: "OverconstrainedError",
+      constraint: "deviceId"
+    }))).toBe(true);
+    expect(isMissingAudioInputError(Object.assign(new Error("denied"), { name: "NotAllowedError" }))).toBe(false);
   });
 
   it("keeps compatibility helper for one-off audio peer connection", async () => {
