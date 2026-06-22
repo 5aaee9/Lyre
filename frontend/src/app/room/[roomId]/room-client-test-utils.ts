@@ -40,6 +40,7 @@ const apiMocks = vi.hoisted(() => ({
   closeServerMediaSession: vi.fn(),
   getMediaRelay: vi.fn(),
   getIceServers: vi.fn(async () => [{ urls: ["stun:stun.example:3478"], username: null, credential: null }]),
+  joinRoom: vi.fn(),
   leaveRoom: vi.fn(),
   registerMediaParticipant: vi.fn(),
   registerMediaTrack: vi.fn(),
@@ -57,6 +58,7 @@ const createOfferMock = vi.fn(async (peer: MockPeerConnection) => ({
 const navigationMock = vi.hoisted(() => ({
   refresh: vi.fn()
 }));
+let autoOpenSockets = true;
 
 function makeUser(id: string, nickname = id): UserProfile {
   return {
@@ -70,9 +72,10 @@ function makeUser(id: string, nickname = id): UserProfile {
 const users = [makeUser("user_a", "Ada"), makeUser("user_b", "Bob"), makeUser("user_c", "Cam")];
 
 class MockWebSocket {
+  static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
-  readyState = MockWebSocket.OPEN;
+  readyState = autoOpenSockets ? MockWebSocket.OPEN : MockWebSocket.CONNECTING;
   onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
@@ -81,7 +84,9 @@ class MockWebSocket {
 
   constructor() {
     sockets.push(this);
-    setTimeout(() => this.onopen?.(), 0);
+    if (autoOpenSockets) {
+      setTimeout(() => this.onopen?.(), 0);
+    }
   }
 }
 
@@ -162,11 +167,7 @@ vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
-    joinRoom: vi.fn(async () => ({
-      access_token: "token_a",
-      user: users[0],
-      room: { room_id: "DEFAULT", users }
-    })),
+    joinRoom: apiMocks.joinRoom,
     getMediaRelay: apiMocks.getMediaRelay,
     getIceServers: apiMocks.getIceServers,
     leaveRoom: apiMocks.leaveRoom,
@@ -186,6 +187,10 @@ vi.mock("@/lib/voice-activity", () => ({
   VoiceActivityDetector: voiceActivityMock.MockVoiceActivityDetector
 }));
 
+function setAutoOpenSockets(enabled: boolean): void {
+  autoOpenSockets = enabled;
+}
+
 vi.mock("next/navigation", () => ({
   useRouter: () => navigationMock
 }));
@@ -204,6 +209,7 @@ export {
   playAudio,
   removeAudio,
   send,
+  setAutoOpenSockets,
   sockets,
   stopTrack,
   voiceActivityMock,
@@ -224,6 +230,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   resetSettingsStoreForTests();
+  setAutoOpenSockets(true);
   send.mockClear();
   getUserMedia.mockReset();
   writeClipboardText.mockReset();
@@ -244,6 +251,12 @@ beforeEach(() => {
   apiMocks.getIceServers.mockResolvedValue([
     { urls: ["stun:stun.example:3478"], username: null, credential: null }
   ]);
+  apiMocks.joinRoom.mockReset();
+  apiMocks.joinRoom.mockResolvedValue({
+    access_token: "token_a",
+    user: users[0],
+    room: { room_id: "DEFAULT", users }
+  });
   apiMocks.getMediaRelay.mockReset();
   apiMocks.getMediaRelay.mockResolvedValue({
     room_id: "DEFAULT",

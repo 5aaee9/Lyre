@@ -128,6 +128,7 @@
 - Frontend microphone capture now clears a stale saved input device and retries with the browser default microphone when `getUserMedia` reports the selected device is missing.
 - Frontend server-media audio now serializes overlapping reconnect and subscription rebuild requests, avoiding concurrent offers for the same browser relay session while still applying the latest queued subscription change.
 - Frontend room audio now lets clients without a usable microphone join in listen-only mode, registering empty-track relay participants and negotiating receive-only server-media audio.
+- Frontend room clients now recover from API restarts that invalidate browser-stored room sessions by clearing stale credentials, rejoining, and reconnecting signalling plus server-relay audio.
 
 ## Next
 

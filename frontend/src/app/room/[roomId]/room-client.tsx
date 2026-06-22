@@ -89,6 +89,10 @@ const SOCKET_RECONNECT_RETRY_MS = 1_000;
 const AUDIO_SIGNALLING_SOCKET_ERROR = "Audio signalling websocket is not connected";
 const DEFAULT_USER_AUDIO_SETTINGS: UserAudioSettings = { muted: false, volumePercent: 100 };
 
+function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof Error && error.message.endsWith(": 401");
+}
+
 export function RoomClient({ roomId }: { roomId: string }) {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -124,6 +128,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const appliedNoiseRef = useRef(readNoiseConfig());
   const appliedAudioProcessingRef = useRef(readAudioProcessingConfig());
   const [relaySourceRefreshTick, setRelaySourceRefreshTick] = useState(0);
+  const mountedRef = useRef(false);
+  const roomSessionRef = useRef<RoomSession | null>(null);
+  const sessionRecoveryRef = useRef<Promise<void> | null>(null);
+  const recoverExpiredSessionRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const link = useMemo(() => shareRoomUrl(roomId), [roomId]);
   const remoteUsers = useMemo(
     () => (room?.users ?? []).filter((user) => user.id !== currentUser?.id),
@@ -226,16 +234,42 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     let intentionalClose = false;
 
-    function connectSocket(session: RoomSession) {
+    async function joinFreshRoom(): Promise<{ session: RoomSession; room: RoomSnapshot }> {
+      const response = await joinRoom(roomId, { nickname: readNickname(), noise: readNoiseConfig() });
+      return {
+        session: { roomId, user: response.user, accessToken: response.access_token },
+        room: response.room
+      };
+    }
+
+    function applyRoomSession(session: RoomSession, roomSnapshot?: RoomSnapshot) {
+      roomSessionRef.current = session;
+      if (roomSnapshot) {
+        setRoom(roomSnapshot);
+      }
+      sessionStorage.setItem("lyre.roomSession", JSON.stringify(session));
+    }
+
+    function connectSocket(session: RoomSession, recoverOnPreOpenClose: boolean) {
+      roomSessionRef.current = session;
+      let opened = false;
       const socket = createRoomSocket(roomId, session.user.id, session.accessToken);
       socketRef.current = socket;
       socket.onopen = () => {
         if (cancelled || socketRef.current !== socket) {
           return;
         }
+        opened = true;
         setStatus("Connected");
         setSocketOpen(true);
         if (audioStartedRef.current && !serverAudioSessionRef.current) {
@@ -262,39 +296,88 @@ export function RoomClient({ roomId }: { roomId: string }) {
         }
         socketRef.current = null;
         setSocketOpen(false);
+        if (!opened && recoverOnPreOpenClose) {
+          void recoverExpiredSession();
+          return;
+        }
         closeAudioSessions();
         setStatus("Reconnecting");
         reconnectRoomSocketRef.current();
       };
     }
 
-    async function enterRoom() {
-      let session = readRoomSession(roomId);
-      if (!session) {
-        const response = await joinRoom(roomId, { nickname: readNickname(), noise: readNoiseConfig() });
-        session = { roomId, user: response.user, accessToken: response.access_token };
-        setRoom(response.room);
-        sessionStorage.setItem("lyre.roomSession", JSON.stringify(session));
+    async function recoverExpiredSession() {
+      if (sessionRecoveryRef.current) {
+        return sessionRecoveryRef.current;
       }
+      const recovery = (async () => {
+        clearSocketReconnectRetry();
+        closeAudioSessions();
+        const socket = socketRef.current;
+        socketRef.current = null;
+        socket?.close();
+        setSocketOpen(false);
+        audioStartedRef.current = false;
+        listenOnlyRef.current = false;
+        relayStartedRef.current = false;
+        serverMediaCleanupNeededRef.current = false;
+        lastSubscribedSourceIdsRef.current = [];
+        setAudioStarted(false);
+        setListenOnly(false);
+        clearRoomSession();
+        const { session, room } = await joinFreshRoom();
+        if (cancelled) {
+          return;
+        }
+        applyRoomSession(session, room);
+        setCurrentUser(session.user);
+        setAccessToken(session.accessToken);
+        connectSocket(session, false);
+      })().finally(() => {
+        sessionRecoveryRef.current = null;
+      });
+      sessionRecoveryRef.current = recovery;
+      return recovery;
+    }
+
+    async function enterRoom() {
+      const storedSession = readRoomSession(roomId);
+      if (storedSession) {
+        applyRoomSession(storedSession);
+        if (cancelled) {
+          return;
+        }
+        setCurrentUser(storedSession.user);
+        setAccessToken(storedSession.accessToken);
+        connectSocket(storedSession, true);
+        return;
+      }
+      const { session, room } = await joinFreshRoom();
       if (cancelled) {
         return;
       }
+      applyRoomSession(session, room);
       setCurrentUser(session.user);
       setAccessToken(session.accessToken);
-      reconnectRoomSocketRef.current = () => {
-        if (socketReconnectRetryRef.current !== null) {
-          return;
-        }
-        socketReconnectRetryRef.current = window.setTimeout(() => {
-          socketReconnectRetryRef.current = null;
-          if (!cancelled) {
-            connectSocket(session);
-          }
-        }, SOCKET_RECONNECT_RETRY_MS);
-      };
-      connectSocket(session);
+      connectSocket(session, false);
     }
 
+    recoverExpiredSessionRef.current = recoverExpiredSession;
+    reconnectRoomSocketRef.current = () => {
+      if (socketReconnectRetryRef.current !== null) {
+        return;
+      }
+      socketReconnectRetryRef.current = window.setTimeout(() => {
+        socketReconnectRetryRef.current = null;
+        if (cancelled) {
+          return;
+        }
+        const nextSession = roomSessionRef.current;
+        if (nextSession) {
+          connectSocket(nextSession, true);
+        }
+      }, SOCKET_RECONNECT_RETRY_MS);
+    };
     void enterRoom();
 
     return () => {
@@ -307,6 +390,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
       audioConnectionInFlightRef.current = false;
       pendingAudioConnectionRef.current = null;
       reconnectingAudioRef.current = false;
+      roomSessionRef.current = null;
+      sessionRecoveryRef.current = null;
+      recoverExpiredSessionRef.current = () => Promise.resolve();
       reconnectRoomSocketRef.current = () => undefined;
       clearReconnectRetry();
       clearSocketReconnectRetry();
@@ -433,6 +519,26 @@ export function RoomClient({ roomId }: { roomId: string }) {
           appliedNoiseRef.current = noise;
           appliedAudioProcessingRef.current = readAudioProcessingConfig();
         } catch (error) {
+          if (isUnauthorizedError(error)) {
+            if (!mountedRef.current) {
+              return;
+            }
+            closeAudioSessions();
+            audioStartedRef.current = false;
+            listenOnlyRef.current = false;
+            relayStartedRef.current = false;
+            serverMediaCleanupNeededRef.current = false;
+            lastSubscribedSourceIdsRef.current = [];
+            setAudioStarted(false);
+            setListenOnly(false);
+            if (stream) {
+              for (const track of stream.getAudioTracks()) {
+                track.stop();
+              }
+            }
+            void recoverExpiredSessionRef.current();
+            return;
+          }
           const message = error instanceof Error ? error.message : "Audio connection failed";
           const waitingForSocket = message === AUDIO_SIGNALLING_SOCKET_ERROR;
           if (!waitingForSocket) {

@@ -14,6 +14,7 @@ import {
   peerConnections,
   peerStatsReports,
   send,
+  setAutoOpenSockets,
   sockets,
   stopTrack,
   voiceActivityMock,
@@ -738,6 +739,8 @@ describe("RoomClient", () => {
     await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
     expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
 
+    apiMocks.joinRoom.mockClear();
+
     act(() => {
       sockets[0].onclose?.();
     });
@@ -745,7 +748,54 @@ describe("RoomClient", () => {
     expect(screen.getByText("Reconnecting")).toBeInTheDocument();
     await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2_000 });
     await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
+    expect(apiMocks.joinRoom).not.toHaveBeenCalled();
     expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
+  });
+
+  it("rejoins when a stored room session websocket closes before opening", async () => {
+    sessionStorage.setItem(
+      "lyre.roomSession",
+      JSON.stringify({ roomId: "DEFAULT", accessToken: "stale_token", user: makeUser("stale_user") })
+    );
+    setAutoOpenSockets(false);
+
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(sockets).toHaveLength(1));
+
+    act(() => {
+      sockets[0].readyState = WebSocket.CLOSED;
+      sockets[0].onclose?.();
+    });
+
+    await waitFor(() => expect(apiMocks.joinRoom).toHaveBeenCalledOnce(), { timeout: 2_000 });
+    await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2_000 });
+
+    act(() => {
+      sockets[1].readyState = WebSocket.OPEN;
+      sockets[1].onopen?.();
+    });
+
+    await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
+    expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
+  });
+
+  it("rejoins when stored access token is rejected during media relay startup", async () => {
+    sessionStorage.setItem(
+      "lyre.roomSession",
+      JSON.stringify({ roomId: "DEFAULT", accessToken: "stale_token", user: makeUser("user_a", "Ada") })
+    );
+    apiMocks.startMediaRelay
+      .mockRejectedValueOnce(new Error("failed to start media relay: 401"))
+      .mockResolvedValue({});
+
+    render(<RoomClient roomId="DEFAULT" />);
+
+    await waitFor(() => expect(apiMocks.joinRoom).toHaveBeenCalledOnce(), { timeout: 2_000 });
+    await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
+    expect(sessionStorage.getItem("lyre.roomSession")).toContain("token_a");
+    expect(apiMocks.startMediaRelay).toHaveBeenNthCalledWith(1, "DEFAULT", defaultNoiseConfig, "stale_token");
+    expect(apiMocks.startMediaRelay).toHaveBeenNthCalledWith(2, "DEFAULT", defaultNoiseConfig, "token_a");
+    expect(apiMocks.registerMediaTrack).toHaveBeenCalledWith("DEFAULT", "user_a", "audio-main", "audio", "token_a");
   });
 
   it("reconnects local audio when ICE is interrupted without restarting relay registration", async () => {
