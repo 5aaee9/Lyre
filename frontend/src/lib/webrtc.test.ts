@@ -143,6 +143,75 @@ describe("webrtc", () => {
     });
   });
 
+  it("retries with the default microphone when the stored input device is missing", async () => {
+    useSettingsStore.getState().setAudioDevices({
+      inputDeviceId: "missing-mic",
+      outputDeviceId: "speaker-a"
+    });
+    const getUserMedia = vi.mocked(navigator.mediaDevices.getUserMedia);
+    getUserMedia
+      .mockRejectedValueOnce(Object.assign(new Error("Requested device not found"), { name: "NotFoundError" }))
+      .mockResolvedValueOnce(stream);
+
+    await expect(openLocalAudioStream()).resolves.toBe(stream);
+
+    expect(getUserMedia).toHaveBeenNthCalledWith(1, {
+      audio: {
+        deviceId: { exact: "missing-mic" },
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true
+      }
+    });
+    expect(getUserMedia).toHaveBeenNthCalledWith(2, {
+      audio: {
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true
+      }
+    });
+    expect(useSettingsStore.getState().audioDevices).toEqual({
+      inputDeviceId: "",
+      outputDeviceId: "speaker-a"
+    });
+  });
+
+  it("retries with the default microphone when the exact input device constraint cannot be satisfied", async () => {
+    useSettingsStore.getState().setAudioDevices({
+      inputDeviceId: "missing-mic",
+      outputDeviceId: "speaker-a"
+    });
+    const getUserMedia = vi.mocked(navigator.mediaDevices.getUserMedia);
+    getUserMedia
+      .mockRejectedValueOnce(Object.assign(new Error("Requested device not found"), {
+        constraint: "deviceId",
+        name: "OverconstrainedError"
+      }))
+      .mockResolvedValueOnce(stream);
+
+    await expect(openLocalAudioStream()).resolves.toBe(stream);
+
+    expect(getUserMedia).toHaveBeenNthCalledWith(1, {
+      audio: {
+        deviceId: { exact: "missing-mic" },
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true
+      }
+    });
+    expect(getUserMedia).toHaveBeenNthCalledWith(2, {
+      audio: {
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true
+      }
+    });
+    expect(useSettingsStore.getState().audioDevices).toEqual({
+      inputDeviceId: "",
+      outputDeviceId: "speaker-a"
+    });
+  });
+
   it("omits the microphone device constraint when default input is selected", async () => {
     useSettingsStore.getState().setAudioDevices({
       inputDeviceId: "",
