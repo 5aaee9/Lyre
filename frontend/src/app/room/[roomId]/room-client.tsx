@@ -44,6 +44,8 @@ type ServerRelayAudioConnectionOptions = {
 type RelayParticipantRefresh = {
   participantIds: string[];
   sourceIds: string[];
+  currentUserRegistered: boolean;
+  currentUserHasAudioTrack: boolean;
 };
 
 function isStoredRoomSession(input: unknown, roomId: string): input is RoomSession {
@@ -148,9 +150,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   const refreshRelaySourceIds = useCallback(async (): Promise<RelayParticipantRefresh> => {
     if (!currentUser) {
-      return { participantIds: [], sourceIds: [] };
+      return {
+        participantIds: [],
+        sourceIds: [],
+        currentUserRegistered: false,
+        currentUserHasAudioTrack: false
+      };
     }
     const status = await getMediaRelay(roomId);
+    const currentUserRegistered = status.participants
+      .some((participant) => participant.user_id === currentUser.id);
+    const currentUserHasAudioTrack = status.participants
+      .some((participant) =>
+        participant.user_id === currentUser.id &&
+        participant.tracks.some((track) => track.kind === "audio")
+      );
     const participantIds = status.participants
       .map((participant) => participant.user_id)
       .filter((userId) => userId !== currentUser.id);
@@ -159,7 +173,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       .map((participant) => participant.user_id)
       .filter((userId) => userId !== currentUser.id);
     setRelaySourceIds((current) => arraysEqual(current, sourceIds) ? current : sourceIds);
-    return { participantIds, sourceIds };
+    return { participantIds, sourceIds, currentUserRegistered, currentUserHasAudioTrack };
   }, [currentUser, roomId]);
 
   const subscribedSourceIdsFromRelaySources = useCallback((
@@ -448,12 +462,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
           const noise = readNoiseConfig();
           const audioDevices = readAudioDeviceConfig();
           const shouldStartRelay = !updateRelay && !relayStartedRef.current;
-          const shouldRegisterLocalMedia = shouldStartRelay || listenOnlyRef.current !== listenOnlySession;
           if (shouldStartRelay) {
             await startMediaRelay(roomId, noise, accessToken);
             cleanupNeeded = true;
             serverMediaCleanupNeededRef.current = true;
           }
+          const localMediaModeChanged = listenOnlyRef.current !== listenOnlySession;
+          let activeRelayParticipants: RelayParticipantRefresh | null = null;
+          if (!shouldStartRelay && !localMediaModeChanged) {
+            activeRelayParticipants = await refreshRelaySourceIds();
+          }
+          const shouldRegisterLocalMedia = shouldStartRelay ||
+            localMediaModeChanged ||
+            (listenOnlySession && !activeRelayParticipants?.currentUserRegistered) ||
+            (!listenOnlySession && !activeRelayParticipants?.currentUserHasAudioTrack);
           if (shouldRegisterLocalMedia) {
             if (listenOnlySession) {
               await registerMediaParticipant(roomId, currentUser.id, accessToken);
@@ -462,7 +484,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             }
             relayStartedRef.current = true;
           }
-          const activeRelayParticipants = await refreshRelaySourceIds();
+          activeRelayParticipants ??= await refreshRelaySourceIds();
           const waitingForRelaySources = remoteUsers.some((user) => !activeRelayParticipants.participantIds.includes(user.id));
           if (waitingForRelaySources) {
             scheduleRelaySourceRefreshRetry();

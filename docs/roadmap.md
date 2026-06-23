@@ -129,6 +129,7 @@
 - Frontend server-media audio now serializes overlapping reconnect and subscription rebuild requests, avoiding concurrent offers for the same browser relay session while still applying the latest queued subscription change.
 - Frontend room audio now lets clients without a usable microphone join in listen-only mode, registering empty-track relay participants and negotiating receive-only server-media audio.
 - Frontend room clients now recover from API restarts that invalidate browser-stored room sessions by clearing stale credentials, rejoining, and reconnecting signalling plus server-relay audio.
+- Frontend server-media reconnects now repair missing local relay participant or audio-track registration before renegotiating, so clients remain audible after relay state loss.
 
 ## Next
 

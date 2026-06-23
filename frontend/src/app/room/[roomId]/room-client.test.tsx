@@ -816,6 +816,106 @@ describe("RoomClient", () => {
     expect(screen.getByText("Server relay audio connected")).toBeInTheDocument();
   });
 
+  it("re-registers local audio when reconnecting after relay state loses the current track", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    apiMocks.getMediaRelay.mockReset();
+    apiMocks.getMediaRelay
+      .mockResolvedValueOnce({
+        room_id: "DEFAULT",
+        status: "active",
+        mode: "media_relay",
+        server_side_audio_processing: true,
+        server_side_noise_cancelling: true,
+        noise: defaultNoiseConfig,
+        participants: ["user_b", "user_c"].map((userId) => ({
+          user_id: userId,
+          tracks: [{ track_id: "audio-main", kind: "audio" }]
+        }))
+      })
+      .mockResolvedValue({
+        room_id: "DEFAULT",
+        status: "active",
+        mode: "media_relay",
+        server_side_audio_processing: true,
+        server_side_noise_cancelling: true,
+        noise: defaultNoiseConfig,
+        participants: ["user_a", "user_b", "user_c"].map((userId) => ({
+          user_id: userId,
+          tracks: [{ track_id: "audio-main", kind: "audio" }]
+        }))
+      });
+    apiMocks.registerMediaTrack.mockClear();
+
+    act(() => {
+      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].oniceconnectionstatechange?.();
+    });
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+
+    expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
+    expect(apiMocks.registerMediaTrack).toHaveBeenCalledWith("DEFAULT", "user_a", "audio-main", "audio", "token_a");
+    expect(apiMocks.registerMediaTrack.mock.invocationCallOrder[0]).toBeLessThan(
+      apiMocks.updateMediaRelaySubscriptions.mock.invocationCallOrder.at(-1) ?? 0
+    );
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenLastCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_b", "user_c"],
+      "token_a"
+    );
+  });
+
+  it("re-registers listen-only participation when reconnecting after relay state loses the current participant", async () => {
+    getUserMedia.mockRejectedValue(Object.assign(new Error("Requested device not found"), { name: "NotFoundError" }));
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    apiMocks.getMediaRelay.mockReset();
+    apiMocks.getMediaRelay
+      .mockResolvedValueOnce({
+        room_id: "DEFAULT",
+        status: "active",
+        mode: "media_relay",
+        server_side_audio_processing: true,
+        server_side_noise_cancelling: true,
+        noise: defaultNoiseConfig,
+        participants: ["user_b", "user_c"].map((userId) => ({
+          user_id: userId,
+          tracks: [{ track_id: "audio-main", kind: "audio" }]
+        }))
+      })
+      .mockResolvedValue({
+        room_id: "DEFAULT",
+        status: "active",
+        mode: "media_relay",
+        server_side_audio_processing: true,
+        server_side_noise_cancelling: true,
+        noise: defaultNoiseConfig,
+        participants: [
+          { user_id: "user_a", tracks: [] },
+          ...["user_b", "user_c"].map((userId) => ({
+            user_id: userId,
+            tracks: [{ track_id: "audio-main", kind: "audio" }]
+          }))
+        ]
+      });
+    apiMocks.registerMediaParticipant.mockClear();
+
+    act(() => {
+      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].oniceconnectionstatechange?.();
+    });
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+
+    expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
+    expect(apiMocks.registerMediaParticipant).toHaveBeenCalledWith("DEFAULT", "user_a", "token_a");
+    expect(apiMocks.registerMediaParticipant.mock.invocationCallOrder[0]).toBeLessThan(
+      apiMocks.updateMediaRelaySubscriptions.mock.invocationCallOrder.at(-1) ?? 0
+    );
+  });
+
   it("registers an audio track when reconnecting from listen-only to microphone capture", async () => {
     getUserMedia.mockRejectedValueOnce(Object.assign(new Error("Requested device not found"), { name: "NotFoundError" }));
     render(<RoomClient roomId="DEFAULT" />);
