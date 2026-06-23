@@ -40,7 +40,7 @@ fn register(
 }
 
 #[test]
-fn fanout_excludes_source_and_sorts_audio_recipients() {
+fn fanout_excludes_source_and_sorts_recipients() {
     let relays = Arc::new(MediaRelayRegistry::new());
     let fanout = ProcessedAudioEgressFanout::new(Arc::clone(&relays));
     let room_id = RoomId::default_room();
@@ -81,7 +81,7 @@ fn fanout_excludes_source_and_sorts_audio_recipients() {
             .iter()
             .map(|frame| frame.recipient_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["user_a", "user_c"]
+        vec!["user_a", "user_b", "user_c"]
     );
     assert!(frames.iter().all(|egress| egress.frame.sequence == 7));
 }
@@ -127,7 +127,7 @@ fn fanout_sends_each_recipient_once_when_they_have_multiple_audio_tracks() {
 }
 
 #[test]
-fn fanout_excludes_video_only_participants() {
+fn fanout_includes_video_only_listeners() {
     let relays = Arc::new(MediaRelayRegistry::new());
     let fanout = ProcessedAudioEgressFanout::new(Arc::clone(&relays));
     let room_id = RoomId::default_room();
@@ -149,7 +149,37 @@ fn fanout_excludes_video_only_participants() {
         ))
         .unwrap();
 
-    assert!(frames.is_empty());
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].recipient_id.as_str(), "video");
+}
+
+#[test]
+fn fanout_includes_trackless_listen_only_participants() {
+    let relays = Arc::new(MediaRelayRegistry::new());
+    let fanout = ProcessedAudioEgressFanout::new(Arc::clone(&relays));
+    let room_id = RoomId::default_room();
+    relays.start(room_id.clone(), StartMediaRelayRequest::default());
+    register(
+        &relays,
+        &room_id,
+        "source",
+        "audio-main",
+        MediaTrackKind::Audio,
+    );
+    relays
+        .register_participant(room_id.clone(), UserId::from_external("listener"))
+        .unwrap();
+
+    let frames = fanout
+        .fanout(&frame(
+            room_id,
+            UserId::from_external("source"),
+            "audio-main",
+        ))
+        .unwrap();
+
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].recipient_id.as_str(), "listener");
 }
 
 #[test]

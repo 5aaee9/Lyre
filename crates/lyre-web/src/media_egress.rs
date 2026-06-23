@@ -45,13 +45,6 @@ impl ProcessedAudioEgressFanout {
             )? {
                 continue;
             }
-            if !participant
-                .tracks
-                .iter()
-                .any(|track| track.kind == MediaTrackKind::Audio)
-            {
-                continue;
-            }
             frames.push(ProcessedAudioEgressFrame {
                 recipient_id: participant.user_id,
                 frame: frame.clone(),
