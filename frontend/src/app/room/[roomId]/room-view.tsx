@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import { LogOut, Mic, MicOff, Radio, Settings, Share2, Users, Volume2, VolumeX } from "lucide-react";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
-import type { RoomSnapshot, UserProfile } from "@/lib/api";
+import type { MediaRelayParticipant, RoomSnapshot, UserProfile } from "@/lib/api";
 import type { SettingsSnapshot, UserAudioSettings } from "@/lib/settings-store";
 import type { ServerMediaAudioDiagnostics } from "@/lib/server-media-audio";
 import { RoomAudioDiagnostics } from "./room-audio-diagnostics";
@@ -24,6 +24,7 @@ type RoomViewProps = {
   onSaveSettings: (settings: SettingsSnapshot) => void | Promise<void>;
   onSettingsOpenChange: (open: boolean) => void;
   onToggleMuted: () => void;
+  relayParticipants: MediaRelayParticipant[];
   relaySourceIds: string[];
   room: RoomSnapshot | null;
   roomId: string;
@@ -51,6 +52,7 @@ export function RoomView({
   onSaveSettings,
   onSettingsOpenChange,
   onToggleMuted,
+  relayParticipants,
   relaySourceIds,
   room,
   roomId,
@@ -220,9 +222,12 @@ export function RoomView({
           </div>
           {audioDiagnosticsEnabled ? (
             <RoomAudioDiagnostics
+              currentUserId={currentUser?.id ?? null}
               loadDiagnostics={loadAudioDiagnostics}
+              relayParticipants={relayParticipants}
               relaySourceIds={relaySourceIds}
               refreshKey={audioDiagnosticsRefreshKey}
+              roomUserIds={users.map((user) => user.id)}
               subscribedSourceIds={subscribedSourceIds}
             />
           ) : null}

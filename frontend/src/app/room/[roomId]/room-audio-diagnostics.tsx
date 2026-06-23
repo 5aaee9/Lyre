@@ -4,11 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Check, Copy, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { MediaRelayParticipant } from "@/lib/api";
 import type { ServerMediaAudioDiagnostics } from "@/lib/server-media-audio";
 
 type RoomAudioDiagnosticsProps = {
+  currentUserId: string | null;
+  relayParticipants: MediaRelayParticipant[];
   relaySourceIds: string[];
   refreshKey: number;
+  roomUserIds: string[];
   subscribedSourceIds: string[];
   loadDiagnostics: () => Promise<ServerMediaAudioDiagnostics | null>;
 };
@@ -16,8 +20,11 @@ type RoomAudioDiagnosticsProps = {
 const REFRESH_INTERVAL_MS = 1_000;
 
 export function RoomAudioDiagnostics({
+  currentUserId,
+  relayParticipants,
   relaySourceIds,
   refreshKey,
+  roomUserIds,
   subscribedSourceIds,
   loadDiagnostics
 }: RoomAudioDiagnosticsProps) {
@@ -42,13 +49,49 @@ export function RoomAudioDiagnostics({
 
   const copyDiagnostics = useCallback(async () => {
     try {
+      const copiedRelayParticipants = relayParticipants.map((participant) => {
+        const tracks = participant.tracks.map((track) => ({
+          trackId: track.track_id,
+          kind: track.kind
+        }));
+        return {
+          userId: participant.user_id,
+          trackIds: tracks.map((track) => track.trackId),
+          audioTrackIds: tracks.filter((track) => track.kind === "audio").map((track) => track.trackId),
+          tracks
+        };
+      });
+      const currentUserRelay = currentUserId === null
+        ? null
+        : copiedRelayParticipants.find((participant) => participant.userId === currentUserId) ?? {
+          userId: currentUserId,
+          trackIds: [],
+          audioTrackIds: [],
+          tracks: []
+        };
       const diagnosticsJson = JSON.stringify({
         schema: "lyre.audioDiagnostics",
         version: 1,
         capturedAt: new Date().toISOString(),
         error,
+        roomUserIds,
+        roomRemoteUserIds: currentUserId === null
+          ? roomUserIds
+          : roomUserIds.filter((userId) => userId !== currentUserId),
+        relayParticipantIds: copiedRelayParticipants.map((participant) => participant.userId),
+        relayAudioSourceIds: copiedRelayParticipants
+          .filter((participant) => participant.audioTrackIds.length > 0)
+          .map((participant) => participant.userId),
         relaySourceIds,
         subscribedSourceIds,
+        currentUserRelay: currentUserRelay === null
+          ? null
+          : {
+            ...currentUserRelay,
+            registered: copiedRelayParticipants.some((participant) => participant.userId === currentUserRelay.userId),
+            hasAudioTrack: currentUserRelay.audioTrackIds.length > 0
+          },
+        relayParticipants: copiedRelayParticipants,
         diagnostics
       }, null, 2);
       await navigator.clipboard.writeText(diagnosticsJson);
@@ -56,7 +99,7 @@ export function RoomAudioDiagnostics({
     } catch (caught) {
       setError(caught instanceof Error ? `${t("copyFailed")}: ${caught.message}` : t("copyFailed"));
     }
-  }, [diagnostics, error, relaySourceIds, subscribedSourceIds, t]);
+  }, [currentUserId, diagnostics, error, relayParticipants, relaySourceIds, roomUserIds, subscribedSourceIds, t]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void refresh(), 0);

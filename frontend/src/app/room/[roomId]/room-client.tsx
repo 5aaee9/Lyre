@@ -14,6 +14,7 @@ import {
   startMediaRelay,
   updateMediaRelaySettings,
   updateMediaRelaySubscriptions,
+  type MediaRelayParticipant,
   type RoomSnapshot,
   type UserProfile
 } from "@/lib/api";
@@ -105,6 +106,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [muted, setMuted] = useState(false);
   const [socketOpen, setSocketOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [relayParticipants, setRelayParticipants] = useState<MediaRelayParticipant[]>([]);
   const [relaySourceIds, setRelaySourceIds] = useState<string[]>([]);
   const [audioDiagnosticsRefreshKey, setAudioDiagnosticsRefreshKey] = useState(0);
   const [speakingUserIds, setSpeakingUserIds] = useState<Set<string>>(() => new Set());
@@ -150,6 +152,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   const refreshRelaySourceIds = useCallback(async (): Promise<RelayParticipantRefresh> => {
     if (!currentUser) {
+      setRelayParticipants([]);
       return {
         participantIds: [],
         sourceIds: [],
@@ -158,6 +161,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       };
     }
     const status = await getMediaRelay(roomId);
+    setRelayParticipants(status.participants);
     const currentUserRegistered = status.participants
       .some((participant) => participant.user_id === currentUser.id);
     const currentUserHasAudioTrack = status.participants
@@ -816,6 +820,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       onSettingsOpenChange={setSettingsOpen}
       onToggleMuted={toggleMuted}
       relaySourceIds={relaySourceIds}
+      relayParticipants={relayParticipants}
       room={room}
       roomId={roomId}
       settingsOpen={settingsOpen}

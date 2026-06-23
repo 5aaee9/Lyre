@@ -520,8 +520,39 @@ describe("RoomClient", () => {
       schema: "lyre.audioDiagnostics",
       version: 1,
       error: null,
+      roomUserIds: ["user_a", "user_b", "user_c"],
+      roomRemoteUserIds: ["user_b", "user_c"],
+      relayParticipantIds: ["user_a", "user_b", "user_c"],
+      relayAudioSourceIds: ["user_a", "user_b", "user_c"],
       relaySourceIds: ["user_b", "user_c"],
       subscribedSourceIds: ["user_b", "user_c"],
+      currentUserRelay: {
+        userId: "user_a",
+        registered: true,
+        hasAudioTrack: true,
+        trackIds: ["audio-main"],
+        audioTrackIds: ["audio-main"]
+      },
+      relayParticipants: [
+        {
+          userId: "user_a",
+          trackIds: ["audio-main"],
+          audioTrackIds: ["audio-main"],
+          tracks: [{ trackId: "audio-main", kind: "audio" }]
+        },
+        {
+          userId: "user_b",
+          trackIds: ["audio-main"],
+          audioTrackIds: ["audio-main"],
+          tracks: [{ trackId: "audio-main", kind: "audio" }]
+        },
+        {
+          userId: "user_c",
+          trackIds: ["audio-main"],
+          audioTrackIds: ["audio-main"],
+          tracks: [{ trackId: "audio-main", kind: "audio" }]
+        }
+      ],
       diagnostics: {
         connectionState: "connected",
         stats: {

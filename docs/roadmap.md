@@ -78,6 +78,7 @@
 - Server-media Opus ingress now uses libopus for decoded browser RTP as well, keeping inbound and outbound codec behavior on the same implementation family.
 - Nix `lyre-api` packaging now carries libopus and GCC runtime libraries in the runtime closure so the libopus-backed WebRTC codec path starts without host library dependencies.
 - DPDFNet server-side noise cancellation provider wired through ONNX Runtime with streaming STFT/ISTFT, model metadata state initialization, configurable model directory, and per-user DPDFNet model selection.
+- Frontend audio diagnostics JSON now includes room users, full relay participants, relay audio sources, and current-user relay registration state for production voice relay debugging.
 - DPDFNet 16 kHz ONNX models now resample 48 kHz server PCM down before inference and back up after inference, so non-48 kHz DPDFNet selections are effective in the WebRTC relay path.
 - DeepFilterNet server-side noise cancellation now uses the DeepFilterNet3 ONNX `enc.onnx`, `erb_dec.onnx`, and `df_dec.onnx` pipeline with configurable model directory and ONNX Runtime thread counts.
 - Frontend server noise cancelling controls now live under Settings with provider-specific DPDFNet model selection, and Room no longer shows peer noise cancelling provider details.
