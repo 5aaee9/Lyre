@@ -49,6 +49,7 @@
 - Configurable API CORS allowed origins through `serve --cors-allowed-origin` and `LYRE_CORS_ALLOWED_ORIGINS`.
 - Concise README with detailed setup, configuration, API, media, development, and deployment documentation split under `docs/`.
 - Nix flake packaging for the Rust API binary with crane, fenix, flake-utils, and a Rust development shell.
+- Nix packaging now includes fixed-output DeepFilterNet3 and DPDFNet ONNX model derivations, unset-only API wrapper defaults for model paths, and a DynamicUser-based NixOS module with `envFile` support.
 - GitHub Actions CI for Nix flake check, API package build, clippy, rustfmt, and Hestia-backed Nix cache maintenance.
 - Clap help text for Lyre commands, subcommands, and serve options.
 - Server-media WebRTC now advertises a reachable host ICE address instead of loopback-only candidates.

@@ -86,6 +86,25 @@ fn parses_dpdfnet_model_dir_cli_arg() {
 }
 
 #[test]
+fn dpdfnet_model_dir_env_enables_config() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let _model_dir = EnvVarGuard::set("LYRE_DPDFNET_MODEL_DIR", "/env/dpdfnet");
+
+    let cli = Cli::try_parse_from(["lyre", "serve"]).unwrap();
+
+    match cli.command {
+        Commands::Serve(args) => {
+            let runtime = args.effective_noise_model_runtime().unwrap();
+            assert_eq!(
+                runtime.dpdfnet.model_dir,
+                std::path::PathBuf::from("/env/dpdfnet")
+            );
+        }
+        Commands::Config(_) => panic!("expected serve"),
+    }
+}
+
+#[test]
 fn parses_dpdfnet_thread_cli_args() {
     let _guard = ENV_LOCK.lock().unwrap();
     let cli = Cli::try_parse_from([

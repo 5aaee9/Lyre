@@ -66,6 +66,15 @@ Runtime parameters:
 
 The local `deepfilternet/` model directory is ignored by git so downloaded ONNX artifacts stay out of the source tree. Invalid runtime thread counts fail startup instead of falling back silently.
 
+The Nix `lyre-api` package sets `LYRE_DEEPFILTERNET_MODEL_DIR` and `LYRE_DPDFNET_MODEL_DIR` to packaged store paths when those variables are unset. Explicit CLI flags or environment variables still override those defaults.
+
+The packaged model directories are:
+
+- `${lyre-noise-models}/share/lyre/models/deepfilternet/onnx`
+- `${lyre-noise-models}/share/lyre/models/dpdfnet/onnx`
+
+The DPDFNet model directory must contain one ONNX file per supported server-side model, for example `dpdfnet2_48khz_hr.onnx` for the default DPDFNet settings.
+
 ## Client-Side Noise Models
 
 When browser-side noise cancellation is enabled, the frontend uses the same Rust WASM DSP crate as the server-side implementation boundary and runs ONNX inference with `onnxruntime-web`'s WebAssembly backend.
