@@ -46,6 +46,7 @@
     "relay": "中继",
     "remoteAudio": "远端音频",
     "remoteMuted": "已静音",
+    "resumeAudio": "恢复音频",
     "serverRelayAudio": "服务器中继音频",
     "serverRelayAudioConnected": "服务器中继音频已连接",
     "session": "会话",

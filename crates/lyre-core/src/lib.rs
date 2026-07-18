@@ -10,6 +10,8 @@ pub mod webrtc;
 mod media_tests;
 #[cfg(test)]
 mod room_aggregate_tests;
+#[cfg(test)]
+mod room_tests;
 
 pub use ids::{RoomId, RoomIdError, UserId, DEFAULT_ROOM_ID};
 pub use media::{
@@ -25,8 +27,9 @@ pub use media_runtime::{
 pub use noise::{supported_noise_providers, DpdfNetConfig, NoiseCancellationConfig, NoiseProvider};
 pub use room::{
     JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, LeaveRoomResponse, PersistedRoom,
-    PersistedRoomRegistry, PersistedRoomRegistryError, PersistedRoomUser, RoomAccessError,
-    RoomAccessToken, RoomRegistry, RoomRegistryAggregate, RoomSnapshot, UserProfile,
+    PersistedRoomRegistry, PersistedRoomRegistryError, PersistedRoomUser,
+    PersistedWebSocketAdmission, RoomAccessError, RoomAccessToken, RoomRegistry,
+    RoomRegistryAggregate, RoomSnapshot, UserProfile,
 };
 pub use webrtc::{
     current_media_topology, default_ice_servers, generate_turn_rest_credentials,

@@ -5,7 +5,7 @@
 - Rust workspace with `lyre-core`, `lyre-noise-cancelling`, `lyre-web`, and `lyre-app`.
 - In-memory room registry with default room, auto-created valid rooms, user profiles, and noise settings.
 - Axum REST API for health, room snapshot, join, leave, and noise providers.
-- WebSocket signalling contract for WebRTC offer, answer, ICE candidate, presence, snapshots, and errors.
+- WebSocket signalling contract for server-media ICE exchange plus server-owned presence, snapshots, and errors.
 - Clap CLI for serving the API and printing default config.
 - Next.js frontend with room entry, shareable room route, settings, local storage, and user-triggered audio connection.
 - Frontend noise settings for provider, intensity, and voice activity threshold.
@@ -103,7 +103,7 @@
 - Processed server-media egress now treats missing peers and not-yet-negotiated sources as transient readiness states, avoiding per-frame warn churn during connection and renegotiation windows.
 - Frontend default server noise cancelling now starts with DPDFNet using the `dpdfnet2_48khz_hr` model for new settings snapshots.
 - Server-media runtime pumps now close terminal WebRTC peers and sessions instead of keeping failed peer drivers active.
-- Frontend room signalling WebSockets now reconnect automatically with the stored room session, while backend WebSocket disconnect cleanup preserves room membership and active server-media state for reconnecting users.
+- Frontend room signalling WebSockets now reconnect automatically; backend socket disconnects are authoritative leaves, and stale browser sessions recover by rejoining before reconnecting server-relay audio.
 - Frontend server-media candidate polling now treats a closed signalling WebSocket as a reconnect trigger, clearing stale socket errors after relay audio reconnects.
 - Room leave cleanup now stops room-scoped processed/raw WebRTC egress pumps when the last relay participant leaves, preventing empty rooms from continuing audio fanout work.
 - Terminal server-media peer failure now closes only the failed audio session while preserving room membership and relay participant state, so settings changes and media reconnects do not require rejoining the room.
@@ -133,6 +133,14 @@
 - Frontend room audio now lets clients without a usable microphone join in listen-only mode, registering empty-track relay participants and negotiating receive-only server-media audio.
 - Frontend room clients now recover from API restarts that invalidate browser-stored room sessions by clearing stale credentials, rejoining, and reconnecting signalling plus server-relay audio.
 - Frontend server-media reconnects now repair missing local relay participant or audio-track registration before renegotiating, so clients remain audible after relay state loss.
+- Server-media WebRTC now honors negotiated dynamic Opus payload types, gives each relayed source a distinct SSRC and canonical MID/MSID track identity, and verifies multi-source audio through real remote RTP receivers.
+- Long-lived media state now bounds packet, PCM, and decode-error diagnostics while removing empty rooms, relays, sessions, runtime tasks, processor caches, and per-recipient workers across explicit leave, WebSocket Close/EOF, media close, terminal peer failure, and room stop paths.
+- Invalid or failed server-media offers now explicitly close their temporary WebRTC peer connections before returning the original negotiation error, preventing native sockets and task state from surviving rejected SDP.
+- All authenticated media relay mutations now serialize with room media teardown and revalidate room access after acquiring the lifecycle lock, preventing queued stale-token requests from recreating relays, participants, tracks, subscriptions, settings, sessions, or ICE state after leave.
+- Room signalling now uses bounded per-peer queues, retains slow connections without blocking healthy peers, suppresses further presence events after a presence drop, and sends an authoritative room snapshot after the finite old queue drains; client-forged server and legacy peer-mesh payloads remain rejected.
+- Pending room joins now use a persisted 30-second WebSocket admission lease with a global 4096-entry cap; successful admission and leave cancel it, startup restores or prunes it, and persistence failures retain it for retry instead of leaking room membership.
+- Client ONNX noise processing now keeps at most one inference in flight, uses startup deadlines and a sticky live-raw fallback after late or failed inference, and explicitly frees Worklet WASM buffers, workers, ports, tracks, media nodes, peer sessions, and audio contexts even when individual cleanup steps fail.
+- Browser playback-block recovery now retries both Web Audio and remote media elements from an explicit localized room action, clearing playback diagnostics after recovery.
 
 ## Next
 
@@ -141,3 +149,4 @@
 - Track browser support for Web Audio speaker output selection, since selected speakers depend on `AudioContext.setSinkId`.
 - Add production Helm values for TLS, real hostnames, secrets, persistence, and scaling policy.
 - Add production-grade database/session management if anonymous JSON persistence stops being sufficient.
+- Add a long-running multi-client voice soak test that records API/browser RSS, queue depth, RTP continuity, and reconnect success across participant and noise-provider churn.

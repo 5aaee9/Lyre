@@ -46,6 +46,7 @@
     "relay": "Relay",
     "remoteAudio": "Remote audio",
     "remoteMuted": "Muted",
+    "resumeAudio": "Resume audio",
     "serverRelayAudio": "Server relay audio",
     "serverRelayAudioConnected": "Server relay audio connected",
     "session": "Session",

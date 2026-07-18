@@ -1,122 +1,18 @@
+mod helpers;
+mod types;
+
 use crate::{NoiseCancellationConfig, RoomId, UserId};
 use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MediaRelayMode {
-    MediaRelay,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MediaRelayStatus {
-    Inactive,
-    Active,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MediaTrackKind {
-    Audio,
-    Video,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MediaRelayTrack {
-    pub track_id: String,
-    pub kind: MediaTrackKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MediaRelayParticipant {
-    pub user_id: UserId,
-    pub tracks: Vec<MediaRelayTrack>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MediaRelayRoomStatus {
-    pub room_id: RoomId,
-    pub status: MediaRelayStatus,
-    pub mode: MediaRelayMode,
-    pub server_side_audio_processing: bool,
-    pub server_side_noise_cancelling: bool,
-    pub noise: NoiseCancellationConfig,
-    pub participants: Vec<MediaRelayParticipant>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MediaRelayRegistryAggregate {
-    pub active_rooms: usize,
-    pub participants: usize,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct StartMediaRelayRequest {
-    pub noise: Option<NoiseCancellationConfig>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StopMediaRelayRequest {
-    pub user_id: UserId,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RegisterMediaTrackRequest {
-    pub user_id: UserId,
-    pub track_id: String,
-    pub kind: MediaTrackKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UpdateMediaRelaySettingsRequest {
-    pub user_id: UserId,
-    pub noise: NoiseCancellationConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UpdateMediaRelaySubscriptionsRequest {
-    pub user_id: UserId,
-    pub source_user_ids: Vec<UserId>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MediaRelaySubscriptions {
-    pub room_id: RoomId,
-    pub user_id: UserId,
-    pub source_user_ids: Vec<UserId>,
-}
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum MediaRelayError {
-    #[error("media relay is not active for room `{room_id}`")]
-    Inactive { room_id: RoomId },
-    #[error("media relay participant `{user_id}` is not registered in room `{room_id}`")]
-    ParticipantNotFound { room_id: RoomId, user_id: UserId },
-    #[error("media relay track `{track_id}` is not registered for participant `{user_id}` in room `{room_id}`")]
-    TrackNotFound {
-        room_id: RoomId,
-        user_id: UserId,
-        track_id: String,
-    },
-    #[error("media relay track `{track_id}` for participant `{user_id}` in room `{room_id}` is `{kind:?}`, not audio")]
-    UnsupportedTrackKind {
-        room_id: RoomId,
-        user_id: UserId,
-        track_id: String,
-        kind: MediaTrackKind,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MediaRelayTrackLookup {
-    pub room_id: RoomId,
-    pub user_id: UserId,
-    pub track_id: String,
-    pub kind: MediaTrackKind,
-    pub noise: NoiseCancellationConfig,
-}
+use helpers::{
+    inactive_status, participant_has_audio_track, sorted_participants,
+    sorted_remote_audio_source_ids, sorted_subscription_ids, sorted_unique_remote_user_ids,
+};
+pub use types::{
+    MediaRelayError, MediaRelayMode, MediaRelayParticipant, MediaRelayRegistryAggregate,
+    MediaRelayRoomStatus, MediaRelayStatus, MediaRelaySubscriptions, MediaRelayTrack,
+    MediaRelayTrackLookup, MediaTrackKind, RegisterMediaTrackRequest, StartMediaRelayRequest,
+    StopMediaRelayRequest, UpdateMediaRelaySettingsRequest, UpdateMediaRelaySubscriptionsRequest,
+};
 
 #[derive(Debug, Clone, Default)]
 struct MediaRelayRoomState {
@@ -137,7 +33,6 @@ impl MediaRelayRegistry {
     }
 
     pub fn status(&self, room_id: RoomId) -> MediaRelayRoomStatus {
-        self.rooms.entry(room_id.clone()).or_default();
         self.snapshot(room_id)
     }
 
@@ -154,12 +49,7 @@ impl MediaRelayRegistry {
     }
 
     pub fn stop(&self, room_id: RoomId, _request: StopMediaRelayRequest) -> MediaRelayRoomStatus {
-        let mut room = self.rooms.entry(room_id.clone()).or_default();
-        room.active = false;
-        room.noise = NoiseCancellationConfig::default();
-        room.participants.clear();
-        room.subscriptions.clear();
-        drop(room);
+        self.rooms.remove(&room_id);
         self.snapshot(room_id)
     }
 
@@ -168,7 +58,9 @@ impl MediaRelayRegistry {
         room_id: RoomId,
         user_id: UserId,
     ) -> Result<MediaRelayRoomStatus, MediaRelayError> {
-        let room = self.rooms.entry(room_id.clone()).or_default();
+        let Some(room) = self.rooms.get(&room_id) else {
+            return Err(MediaRelayError::Inactive { room_id });
+        };
         if !room.active {
             return Err(MediaRelayError::Inactive { room_id });
         }
@@ -182,14 +74,16 @@ impl MediaRelayRegistry {
         room_id: RoomId,
         request: RegisterMediaTrackRequest,
     ) -> Result<MediaRelayRoomStatus, MediaRelayError> {
-        let room = self.rooms.entry(room_id.clone()).or_default();
+        let Some(room) = self.rooms.get(&room_id) else {
+            return Err(MediaRelayError::Inactive { room_id });
+        };
         if !room.active {
             return Err(MediaRelayError::Inactive { room_id });
         }
-        room.participants
-            .entry(request.user_id)
-            .or_default()
-            .insert(request.track_id, request.kind);
+        let tracks = room.participants.entry(request.user_id).or_default();
+        tracks.retain(|track_id, kind| track_id == &request.track_id || *kind != request.kind);
+        tracks.insert(request.track_id, request.kind);
+        drop(tracks);
         drop(room);
         Ok(self.snapshot(room_id))
     }
@@ -453,82 +347,5 @@ impl MediaRelayRegistry {
             noise: room.noise.clone(),
             participants: sorted_participants(&room.participants),
         }
-    }
-}
-
-fn sorted_participants(
-    participants: &DashMap<UserId, DashMap<String, MediaTrackKind>>,
-) -> Vec<MediaRelayParticipant> {
-    let mut participants = participants
-        .iter()
-        .map(|entry| {
-            let mut tracks = entry
-                .value()
-                .iter()
-                .map(|track| MediaRelayTrack {
-                    track_id: track.key().clone(),
-                    kind: *track.value(),
-                })
-                .collect::<Vec<_>>();
-            tracks.sort_by(|left, right| left.track_id.cmp(&right.track_id));
-            MediaRelayParticipant {
-                user_id: entry.key().clone(),
-                tracks,
-            }
-        })
-        .collect::<Vec<_>>();
-    participants.sort_by(|left, right| left.user_id.cmp(&right.user_id));
-    participants
-}
-
-fn sorted_remote_audio_source_ids(
-    participants: &DashMap<UserId, DashMap<String, MediaTrackKind>>,
-    recipient_user_id: &UserId,
-) -> Vec<UserId> {
-    let mut user_ids = participants
-        .iter()
-        .filter(|entry| {
-            entry.key() != recipient_user_id && participant_has_audio_track(entry.value())
-        })
-        .map(|entry| entry.key().clone())
-        .collect::<Vec<_>>();
-    user_ids.sort();
-    user_ids
-}
-
-fn participant_has_audio_track(participant: &DashMap<String, MediaTrackKind>) -> bool {
-    participant
-        .iter()
-        .any(|track| *track.value() == MediaTrackKind::Audio)
-}
-
-fn sorted_subscription_ids(subscriptions: &DashMap<UserId, ()>) -> Vec<UserId> {
-    let mut source_user_ids = subscriptions
-        .iter()
-        .map(|entry| entry.key().clone())
-        .collect::<Vec<_>>();
-    source_user_ids.sort();
-    source_user_ids
-}
-
-fn sorted_unique_remote_user_ids(
-    mut source_user_ids: Vec<UserId>,
-    recipient_user_id: &UserId,
-) -> Vec<UserId> {
-    source_user_ids.retain(|source_user_id| source_user_id != recipient_user_id);
-    source_user_ids.sort();
-    source_user_ids.dedup();
-    source_user_ids
-}
-
-fn inactive_status(room_id: RoomId) -> MediaRelayRoomStatus {
-    MediaRelayRoomStatus {
-        room_id,
-        status: MediaRelayStatus::Inactive,
-        mode: MediaRelayMode::MediaRelay,
-        server_side_audio_processing: false,
-        server_side_noise_cancelling: false,
-        noise: NoiseCancellationConfig::default(),
-        participants: Vec::new(),
     }
 }

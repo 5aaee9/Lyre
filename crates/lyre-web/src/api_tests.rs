@@ -6,7 +6,11 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use lyre_core::IceServerConfig;
-use std::sync::{Arc, Mutex};
+use std::{
+    convert::Infallible,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tower::ServiceExt;
 
 #[derive(Debug)]
@@ -156,6 +160,83 @@ async fn room_routes_join_snapshot_and_leave() {
         .await
         .unwrap();
     assert_eq!(body_json(leave).await["users"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn explicit_rest_leave_revokes_live_socket() {
+    let state = AppState::default();
+    let app = router(state.clone());
+    let leaving = join_for_test(app.clone(), "Alice").await;
+    let observer = join_for_test(app.clone(), "Bob").await;
+    let room_id = lyre_core::RoomId::default_room();
+    let leaving_user_id = lyre_core::UserId::from_external(&leaving.user_id);
+    let observer_user_id = lyre_core::UserId::from_external(&observer.user_id);
+    let (observer_tx, mut observer_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    state.peers.connect(
+        &state.registry,
+        room_id.clone(),
+        observer_user_id.clone(),
+        observer_tx,
+    );
+    let (snapshot_sent_tx, snapshot_sent_rx) = tokio::sync::oneshot::channel();
+    let sink = Box::pin(futures_util::sink::unfold(
+        Some(snapshot_sent_tx),
+        |mut snapshot_sent, _message| async move {
+            if let Some(snapshot_sent) = snapshot_sent.take() {
+                let _ = snapshot_sent.send(());
+            }
+            Ok::<_, Infallible>(snapshot_sent)
+        },
+    ));
+    let stream = futures_util::stream::pending::<Result<axum::extract::ws::Message, Infallible>>();
+    let handler = tokio::spawn(crate::api::handle_socket_io(
+        state.clone(),
+        room_id.clone(),
+        leaving_user_id.clone(),
+        sink,
+        stream,
+    ));
+    snapshot_sent_rx.await.unwrap();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/rooms/DEFAULT/leave")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", leaving.access_token))
+                .body(Body::from(format!(
+                    r#"{{"user_id":"{}"}}"#,
+                    leaving.user_id
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    tokio::time::timeout(Duration::from_secs(1), handler)
+        .await
+        .expect("explicit REST leave should revoke and finish the live websocket")
+        .unwrap();
+    assert_eq!(
+        state
+            .peers
+            .forward(crate::signalling::SignalMessage::new(
+                room_id,
+                observer_user_id,
+                Some(leaving_user_id.clone()),
+                crate::signalling::SignalPayload::Offer { sdp: "sdp".into() },
+            ))
+            .delivered,
+        0
+    );
+    assert!(matches!(
+        observer_rx.recv().await.unwrap().payload,
+        crate::signalling::SignalPayload::UserLeft { user_id }
+            if user_id == leaving_user_id
+    ));
 }
 
 #[tokio::test]

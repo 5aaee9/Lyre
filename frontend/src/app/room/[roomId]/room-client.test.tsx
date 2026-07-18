@@ -13,6 +13,7 @@ import {
   makeUser,
   peerConnections,
   peerStatsReports,
+  playAudio,
   send,
   setAutoOpenSockets,
   sockets,
@@ -120,6 +121,28 @@ describe("RoomClient", () => {
       ["user_b", "user_c"],
       "token_a"
     );
+    expect(peerConnections[0].addTransceiver).toHaveBeenCalledOnce();
+  });
+
+  it("lets the user resume browser-blocked remote playback", async () => {
+    playAudio.mockRejectedValueOnce(Object.assign(new Error("Playback requires a user gesture"), {
+      name: "NotAllowedError"
+    }));
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+
+    act(() => {
+      peerConnections[0].ontrack?.({
+        track: { id: "lyre-user:user_b:audio", enabled: true, readyState: "live" },
+        streams: []
+      } as unknown as RTCTrackEvent);
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resume audio" }));
+
+    await waitFor(() => expect(playAudio).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Resume audio" })).not.toBeInTheDocument());
+    expect(screen.getByText("Server relay audio connected")).toBeInTheDocument();
   });
 
   it("enters listen-only mode when no microphone is available", async () => {

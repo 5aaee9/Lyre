@@ -33,8 +33,10 @@ async fn server_media_candidates_request_returns_candidates_to_same_socket() {
     let room_id = room_id();
     let user_id = test_user_id("user_a");
     let peer_id = test_user_id("peer");
-    let (user_tx, _user_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (peer_tx, mut peer_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (user_tx, _user_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (peer_tx, mut peer_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
     state
         .peers
         .connect(&state.registry, room_id.clone(), user_id.clone(), user_tx);
@@ -115,4 +117,54 @@ async fn server_media_candidate_with_session_is_accepted_over_websocket() {
     .await;
 
     assert!(response.is_none());
+}
+
+#[tokio::test]
+async fn client_cannot_forward_server_owned_or_legacy_payloads() {
+    let state = AppState::default();
+    let room_id = room_id();
+    let user_id = test_user_id("user_a");
+    let peer_id = test_user_id("peer");
+    let (peer_tx, mut peer_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    state
+        .peers
+        .connect(&state.registry, room_id.clone(), peer_id, peer_tx);
+    let user = state
+        .registry
+        .join(room_id.clone(), Default::default())
+        .user;
+    let room = state.registry.snapshot(room_id.clone());
+    let forbidden_payloads = vec![
+        SignalPayload::Offer { sdp: "sdp".into() },
+        SignalPayload::Answer { sdp: "sdp".into() },
+        SignalPayload::IceCandidate {
+            candidate: "candidate".into(),
+            sdp_mid: None,
+            sdp_m_line_index: None,
+        },
+        SignalPayload::UserJoined { user },
+        SignalPayload::UserLeft {
+            user_id: user_id.clone(),
+        },
+        SignalPayload::RoomSnapshot { room },
+        SignalPayload::Error {
+            message: "forged".into(),
+        },
+        SignalPayload::ServerMediaIceCandidates { candidates: vec![] },
+    ];
+
+    for payload in forbidden_payloads {
+        let response = handle_signal_message(
+            &state,
+            &room_id,
+            &user_id,
+            SignalMessage::new(room_id.clone(), user_id.clone(), None, payload),
+        )
+        .await
+        .expect("forbidden client payload should return an error");
+        assert!(matches!(response.payload, SignalPayload::Error { .. }));
+    }
+
+    assert!(peer_rx.try_recv().is_err());
 }

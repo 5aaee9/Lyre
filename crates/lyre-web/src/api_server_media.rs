@@ -63,14 +63,17 @@ async fn answer_server_media_offer(
     Json(request): Json<ServerMediaOfferRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    let access_token = authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     let answer = state
-        .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
-            room_id: room_id.clone(),
-            user_id: request.user_id,
-            audio_track_id: request.audio_track_id,
-            sdp: request.sdp,
-        })
+        .answer_authorized_server_media_offer_with_subscriptions(
+            ServerMediaOffer {
+                room_id: room_id.clone(),
+                user_id: request.user_id,
+                audio_track_id: request.audio_track_id,
+                sdp: request.sdp,
+            },
+            &access_token,
+        )
         .await?;
     tracing::info!(
         room_id = %room_id,
@@ -88,7 +91,7 @@ async fn add_server_media_ice_candidate(
     Json(request): Json<ServerMediaCandidateRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    let access_token = authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     let candidate = ServerMediaIceCandidate {
         room_id,
         user_id: request.user_id,
@@ -99,7 +102,7 @@ async fn add_server_media_ice_candidate(
     };
     let summary = ServerMediaIceCandidateSummary::from_candidate(&candidate);
     state
-        .add_server_media_ice_candidate(candidate.clone())
+        .add_authorized_server_media_ice_candidate(candidate.clone(), &access_token)
         .await?;
     tracing::info!(
         room_id = %candidate.room_id,
@@ -141,9 +144,10 @@ async fn close_server_media_session(
     Json(request): Json<CloseServerMediaSessionRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
-    Ok(Json(state.close_server_media_session_for_user(
-        room_id,
-        request.user_id,
-    )?))
+    let access_token = authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    Ok(Json(
+        state
+            .close_authorized_server_media_session_for_user(room_id, request.user_id, &access_token)
+            .await?,
+    ))
 }

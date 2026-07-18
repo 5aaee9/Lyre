@@ -117,7 +117,9 @@ describe("webrtc", () => {
   });
 
   it("keeps raw microphone stream when client noise cancellation cannot initialize", async () => {
-    clientNoise.processLocalAudioStream.mockRejectedValue(new Error("missing wasm"));
+    const error = new Error("missing wasm");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    clientNoise.processLocalAudioStream.mockRejectedValue(error);
     useSettingsStore.getState().setAudioProcessing({
       echoCancellation: true,
       autoGainControl: true,
@@ -126,6 +128,8 @@ describe("webrtc", () => {
     });
 
     await expect(openLocalAudioStream()).resolves.toBe(stream);
+    expect(consoleError).toHaveBeenCalledWith("Client noise cancellation initialization failed", error);
+    consoleError.mockRestore();
   });
 
   it("uses the stored microphone device when opening local audio", async () => {
@@ -265,6 +269,19 @@ describe("webrtc", () => {
 
     expect(addTrack).toHaveBeenCalledWith({ id: "track" }, stream);
     expect(addTransceiver).not.toHaveBeenCalled();
+  });
+
+  it("offers one audio media section for every subscribed remote source", () => {
+    createPeerConnection(
+      [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      { remoteAudioSourceCount: 3 }
+    );
+
+    expect(addTrack).toHaveBeenCalledWith({ id: "track" }, stream);
+    expect(addTransceiver).toHaveBeenCalledTimes(2);
+    expect(addTransceiver).toHaveBeenNthCalledWith(1, "audio", { direction: "recvonly" });
+    expect(addTransceiver).toHaveBeenNthCalledWith(2, "audio", { direction: "recvonly" });
   });
 
   it("classifies missing microphone errors narrowly", () => {

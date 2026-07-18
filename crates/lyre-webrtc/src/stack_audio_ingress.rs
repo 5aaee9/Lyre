@@ -1,10 +1,9 @@
 use tracing::warn;
 
 use crate::{
-    egress::SERVER_MEDIA_EGRESS_PAYLOAD_TYPE, media_ingress::MediaIngressRecorder,
-    ServerMediaDecodeError, ServerMediaDecodeFailure, ServerMediaJitterBuffer,
-    ServerMediaJitterBufferOutput, ServerMediaOpusDecoder, ServerMediaPcmConcealer,
-    ServerMediaRtpPacket,
+    media_ingress::MediaIngressRecorder, ServerMediaDecodeError, ServerMediaDecodeFailure,
+    ServerMediaJitterBuffer, ServerMediaJitterBufferOutput, ServerMediaOpusDecoder,
+    ServerMediaPcmConcealer, ServerMediaRtpPacket,
 };
 
 pub(crate) const CONCEALMENT_UNAVAILABLE_ERROR: &str =
@@ -15,11 +14,12 @@ pub(crate) fn handle_audio_rtp_packet(
     decoder: &mut ServerMediaOpusDecoder,
     jitter_buffer: &mut ServerMediaJitterBuffer,
     concealer: &mut ServerMediaPcmConcealer,
+    negotiated_codec_is_opus: bool,
     packet: ServerMediaRtpPacket,
 ) {
     media_ingress.record_rtp_packet(packet.clone());
 
-    if packet.payload_type != SERVER_MEDIA_EGRESS_PAYLOAD_TYPE {
+    if !negotiated_codec_is_opus {
         record_non_opus_payload(media_ingress, packet);
         return;
     }
@@ -120,6 +120,7 @@ mod tests {
             &mut decoder,
             &mut jitter_buffer,
             &mut concealer,
+            false,
             packet(13),
         );
 

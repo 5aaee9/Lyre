@@ -1,7 +1,7 @@
 use crate::{
     MediaRelayError, MediaRelayRegistry, MediaTrackKind, NoiseCancellationConfig, RoomId, UserId,
 };
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AudioFrame {
@@ -30,6 +30,10 @@ pub struct ProcessedAudioFrame {
 
 pub trait AudioFrameProcessor: Send + Sync + 'static {
     fn process(&self, frame: &AudioFrame, noise: &NoiseCancellationConfig) -> Vec<f32>;
+
+    fn release_source(&self, _room_id: &RoomId, _user_id: &UserId) {}
+
+    fn clear_room(&self, _room_id: &RoomId) {}
 }
 
 #[derive(Debug, Default)]
@@ -50,6 +54,7 @@ pub struct MediaRuntime<P, S> {
     relays: Arc<MediaRelayRegistry>,
     processor: P,
     sink: S,
+    lifecycle: RwLock<()>,
 }
 
 impl<P, S> MediaRuntime<P, S>
@@ -62,10 +67,19 @@ where
             relays,
             processor,
             sink,
+            lifecycle: RwLock::new(()),
         }
     }
 
     pub fn process_frame(&self, frame: AudioFrame) -> Result<(), MediaRelayError> {
+        let _lifecycle = self
+            .lifecycle
+            .read()
+            .expect("media runtime lifecycle lock poisoned");
+        self.process_frame_locked(frame)
+    }
+
+    fn process_frame_locked(&self, frame: AudioFrame) -> Result<(), MediaRelayError> {
         let lookup = self
             .relays
             .require_track(&frame.room_id, &frame.user_id, &frame.track_id)?;
@@ -91,7 +105,43 @@ where
         });
         Ok(())
     }
+
+    pub fn process_frames<I>(&self, frames: I) -> Result<usize, MediaRelayError>
+    where
+        I: IntoIterator<Item = AudioFrame>,
+    {
+        let _lifecycle = self
+            .lifecycle
+            .read()
+            .expect("media runtime lifecycle lock poisoned");
+        let mut processed = 0;
+        for frame in frames {
+            self.process_frame_locked(frame)?;
+            processed += 1;
+        }
+        Ok(processed)
+    }
+
+    pub fn release_source(&self, room_id: &RoomId, user_id: &UserId) {
+        let _lifecycle = self
+            .lifecycle
+            .write()
+            .expect("media runtime lifecycle lock poisoned");
+        self.processor.release_source(room_id, user_id);
+    }
+
+    pub fn clear_room(&self, room_id: &RoomId) {
+        let _lifecycle = self
+            .lifecycle
+            .write()
+            .expect("media runtime lifecycle lock poisoned");
+        self.processor.clear_room(room_id);
+    }
 }
+
+#[cfg(test)]
+#[path = "media_runtime_lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 #[cfg(test)]
 mod tests {
@@ -129,6 +179,29 @@ mod tests {
         fn process(&self, frame: &AudioFrame, noise: &NoiseCancellationConfig) -> Vec<f32> {
             self.noise.lock().unwrap().push(noise.clone());
             frame.samples.iter().map(|sample| sample * 2.0).collect()
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct LifecycleRecordingProcessor {
+        released_sources: Arc<Mutex<Vec<(RoomId, UserId)>>>,
+        cleared_rooms: Arc<Mutex<Vec<RoomId>>>,
+    }
+
+    impl AudioFrameProcessor for LifecycleRecordingProcessor {
+        fn process(&self, frame: &AudioFrame, _noise: &NoiseCancellationConfig) -> Vec<f32> {
+            frame.samples.clone()
+        }
+
+        fn release_source(&self, room_id: &RoomId, user_id: &UserId) {
+            self.released_sources
+                .lock()
+                .unwrap()
+                .push((room_id.clone(), user_id.clone()));
+        }
+
+        fn clear_room(&self, room_id: &RoomId) {
+            self.cleared_rooms.lock().unwrap().push(room_id.clone());
         }
     }
 
@@ -290,5 +363,25 @@ mod tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn delegates_processor_resource_lifecycle() {
+        let relays = Arc::new(MediaRelayRegistry::new());
+        let processor = LifecycleRecordingProcessor::default();
+        let released_sources = Arc::clone(&processor.released_sources);
+        let cleared_rooms = Arc::clone(&processor.cleared_rooms);
+        let runtime = MediaRuntime::new(relays, processor, RecordingSink::new());
+        let room_id = RoomId::default_room();
+        let user_id = UserId::from_external("user_01");
+
+        runtime.release_source(&room_id, &user_id);
+        runtime.clear_room(&room_id);
+
+        assert_eq!(
+            *released_sources.lock().unwrap(),
+            vec![(room_id.clone(), user_id)]
+        );
+        assert_eq!(*cleared_rooms.lock().unwrap(), vec![room_id]);
     }
 }

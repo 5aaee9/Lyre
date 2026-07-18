@@ -210,12 +210,13 @@ fn encoded_opus_payload() -> Vec<u8> {
     payload
 }
 
-fn test_rtp_packet(payload: Vec<u8>) -> rtc::rtp::Packet {
+fn test_rtp_packet(index: u16, payload: Vec<u8>) -> rtc::rtp::Packet {
     rtc::rtp::Packet {
         header: rtc::rtp::Header {
             version: 2,
-            sequence_number: 42,
-            timestamp: 1234,
+            sequence_number: 42_u16.wrapping_add(index),
+            timestamp: 1234_u32
+                .wrapping_add(u32::from(index) * SERVER_MEDIA_OPUS_FRAME_SIZE as u32),
             marker: true,
             payload_type: 111,
             ssrc: 1234,
@@ -275,7 +276,7 @@ async fn answer_remote_offer_records_audio_track_rtp_packet_and_pcm_frame() {
 
     let payload = encoded_opus_payload();
     for _ in 0..100 {
-        let _ = track.write_rtp(test_rtp_packet(payload.clone())).await;
+        let _ = track.write_rtp(test_rtp_packet(0, payload.clone())).await;
         let packets = server.received_rtp_packets();
         let frames = server.drain_pcm_frames();
         if packets.iter().any(|packet| {
@@ -306,7 +307,7 @@ async fn answer_remote_offer_records_audio_track_rtp_packet_and_pcm_frame() {
 }
 
 #[tokio::test]
-async fn answer_remote_offer_records_decode_failure_for_malformed_audio_rtp() {
+async fn answer_remote_offer_bounds_malformed_audio_decode_failure_history() {
     use std::time::Duration;
 
     let server = WebRtcStack::new().create_peer_connection().await.unwrap();
@@ -339,15 +340,25 @@ async fn answer_remote_offer_records_decode_failure_for_malformed_audio_rtp() {
 
     assert!(wait_for_connected(&mut connected_rx).await);
 
+    for index in 0..129 {
+        track
+            .write_rtp(test_rtp_packet(index, Vec::new()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
     for _ in 0..100 {
-        let _ = track.write_rtp(test_rtp_packet(Vec::new())).await;
-        let failures = server.drain_decode_failures();
-        if failures.iter().any(|failure| {
-            failure.track_id == "audio"
-                && failure.sequence_number == 42
-                && failure.rtp_timestamp == 1234
-                && failure.error == "Input packet empty"
-        }) {
+        let packets = server.received_rtp_packets();
+        if packets.len() == 128 && packets.last().map(|packet| packet.sequence_number) == Some(170)
+        {
+            let failures = server.drain_decode_failures();
+            assert_eq!(failures.len(), 128);
+            assert_eq!(failures.first().unwrap().sequence_number, 43);
+            assert_eq!(failures.last().unwrap().sequence_number, 170);
+            assert!(failures.iter().all(|failure| {
+                failure.track_id == "audio" && failure.error == "Input packet empty"
+            }));
             assert!(server.drain_pcm_frames().is_empty());
             assert!(server.drain_decode_failures().is_empty());
             return;
@@ -355,5 +366,5 @@ async fn answer_remote_offer_records_decode_failure_for_malformed_audio_rtp() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
-    panic!("server did not record the malformed Opus RTP decode failure");
+    panic!("server did not receive all malformed Opus RTP packets");
 }

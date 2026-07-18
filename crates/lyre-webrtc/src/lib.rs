@@ -14,6 +14,8 @@ mod stack_audio_ingress;
 pub mod test_support;
 
 #[cfg(test)]
+mod dynamic_payload_tests;
+#[cfg(test)]
 mod negotiation_tests;
 #[cfg(test)]
 mod stack_egress_tests;

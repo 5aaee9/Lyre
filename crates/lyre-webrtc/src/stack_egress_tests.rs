@@ -1,5 +1,5 @@
 use crate::{
-    ServerMediaAnswer, ServerMediaEgressError, ServerMediaIceCandidate,
+    ServerMediaAnswer, ServerMediaEgressError, ServerMediaEgressRtpPacket, ServerMediaIceCandidate,
     ServerMediaIceCandidateInit, ServerMediaProcessedAudioFrame, ServerMediaSessionState,
     WebRtcPeerConnectionHandle, WebRtcStack, SERVER_MEDIA_OPUS_FRAME_SIZE,
 };
@@ -25,7 +25,91 @@ async fn wait_for_local_candidates(
 }
 
 #[tokio::test]
-async fn processed_audio_frame_writes_server_egress_rtp() {
+async fn two_negotiated_sources_reach_remote_peer_with_distinct_ssrcs() {
+    let first_source = UserId::from_external("source-a");
+    let second_source = UserId::from_external("source-b");
+    let server = WebRtcStack::new()
+        .create_peer_connection_for_sources(&[first_source.clone(), second_source.clone()])
+        .await
+        .unwrap();
+    let offer =
+        crate::test_support::server_media_offer_with_valid_opus_sender_and_remote_source_count(2)
+            .await;
+    let answer_sdp = server
+        .answer_remote_offer(offer.offer_sdp.clone())
+        .await
+        .unwrap();
+    assert_eq!(answer_sdp.matches("\nm=audio ").count(), 2);
+    assert!(answer_sdp.contains("a=msid:lyre-user:source-a:audio lyre-user:source-a:audio"));
+    assert!(answer_sdp.contains("a=msid:lyre-user:source-b:audio lyre-user:source-b:audio"));
+    let answer = ServerMediaAnswer {
+        room_id: RoomId::default_room(),
+        user_id: UserId::from_external("listener"),
+        audio_track_id: "audio-main".to_owned(),
+        sdp: answer_sdp,
+        state: ServerMediaSessionState::Negotiating,
+    };
+    for candidate in offer.remote_candidates().await {
+        server.add_remote_ice_candidate(candidate).await.unwrap();
+    }
+    let connected = offer
+        .accept_answer(
+            &answer,
+            wait_for_local_candidates(&server)
+                .await
+                .into_iter()
+                .map(|candidate| ServerMediaIceCandidate {
+                    room_id: answer.room_id.clone(),
+                    user_id: answer.user_id.clone(),
+                    candidate: candidate.candidate,
+                    sdp_mid: candidate.sdp_mid,
+                    sdp_mline_index: candidate.sdp_mline_index,
+                    username_fragment: candidate.username_fragment,
+                })
+                .collect(),
+        )
+        .await;
+
+    for (source, sequence_number, timestamp) in
+        [(&first_source, 10, 9_600), (&second_source, 11, 10_560)]
+    {
+        server
+            .send_opus_rtp_packet(
+                source,
+                ServerMediaEgressRtpPacket {
+                    sequence_number,
+                    timestamp,
+                    payload_type: 111,
+                    payload: vec![0x01, 0x02, 0x03],
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    for _ in 0..100 {
+        let packets = connected.received_remote_rtp_packets();
+        if packets.len() == 2 {
+            let sequence_numbers = packets
+                .iter()
+                .map(|packet| packet.header.sequence_number)
+                .collect::<std::collections::BTreeSet<_>>();
+            let ssrcs = packets
+                .iter()
+                .map(|packet| packet.header.ssrc)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(sequence_numbers, [10, 11].into_iter().collect());
+            assert_eq!(ssrcs.len(), 2);
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("remote peer did not receive both negotiated sources");
+}
+
+#[tokio::test]
+async fn processed_audio_frame_reaches_remote_peer_without_retaining_packet_history() {
     let source_user_id = UserId::from_external("source");
     let server = WebRtcStack::new()
         .create_peer_connection_for_sources(std::slice::from_ref(&source_user_id))
@@ -47,7 +131,7 @@ async fn processed_audio_frame_writes_server_egress_rtp() {
     for candidate in offer.remote_candidates().await {
         server.add_remote_ice_candidate(candidate).await.unwrap();
     }
-    let _connected = offer
+    let connected = offer
         .accept_answer(
             &answer,
             wait_for_local_candidates(&server)
@@ -80,12 +164,20 @@ async fn processed_audio_frame_writes_server_egress_rtp() {
         .unwrap();
 
     assert_eq!(sent, 1);
-    let packets = server.sent_egress_rtp_packets_for_test();
-    assert_eq!(packets.len(), 1);
-    assert_eq!(packets[0].sequence_number, 0);
-    assert_eq!(packets[0].timestamp, 0);
-    assert_eq!(packets[0].payload_type, 111);
-    assert!(!packets[0].payload.is_empty());
+    for _ in 0..100 {
+        let packets = connected.received_remote_rtp_packets();
+        if let Some(packet) = packets.first() {
+            assert_eq!(packet.header.sequence_number, 0);
+            assert_eq!(packet.header.timestamp, 0);
+            assert_eq!(packet.header.payload_type, 111);
+            assert!(!packet.payload.is_empty());
+            assert!(server.sent_egress_rtp_packets_for_test().is_empty());
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("remote peer did not receive processed audio RTP");
 }
 
 #[tokio::test]

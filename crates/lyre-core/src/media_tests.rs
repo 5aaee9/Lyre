@@ -9,13 +9,15 @@ use crate::{
 #[test]
 fn default_status_is_inactive() {
     let registry = MediaRelayRegistry::new();
-    let status = registry.status(RoomId::default_room());
+    let room_id = RoomId::default_room();
+    let status = registry.status(room_id.clone());
 
     assert_eq!(status.status, MediaRelayStatus::Inactive);
     assert_eq!(status.mode, MediaRelayMode::MediaRelay);
     assert!(!status.server_side_audio_processing);
     assert!(!status.server_side_noise_cancelling);
     assert!(status.participants.is_empty());
+    assert!(!registry.contains_room(&room_id));
 }
 
 #[test]
@@ -139,8 +141,11 @@ fn registering_track_requires_active_relay() {
                 kind: MediaTrackKind::Audio,
             },
         ),
-        Err(MediaRelayError::Inactive { room_id })
+        Err(MediaRelayError::Inactive {
+            room_id: room_id.clone(),
+        })
     );
+    assert!(!registry.contains_room(&room_id));
 }
 
 #[test]
@@ -250,6 +255,43 @@ fn active_relay_tracks_are_stable_and_replace_same_track() {
     assert_eq!(status.participants[1].user_id.as_str(), "user_b");
     assert_eq!(status.participants[0].tracks[0].track_id, "audio-main");
     assert_eq!(status.participants[0].tracks[0].kind, MediaTrackKind::Video);
+}
+
+#[test]
+fn registering_a_new_track_replaces_the_previous_track_of_the_same_kind() {
+    let registry = MediaRelayRegistry::new();
+    let room_id = RoomId::default_room();
+    let user_id = UserId::from_external("user_a");
+    registry.start(room_id.clone(), StartMediaRelayRequest::default());
+
+    for track_id in ["audio-old", "audio-current"] {
+        registry
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: user_id.clone(),
+                    track_id: track_id.to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+    }
+
+    let participant = registry
+        .active_participants(&room_id)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(participant.tracks.len(), 1);
+    assert_eq!(participant.tracks[0].track_id, "audio-current");
+    assert_eq!(
+        registry.require_track(&room_id, &user_id, "audio-old"),
+        Err(MediaRelayError::TrackNotFound {
+            room_id,
+            user_id,
+            track_id: "audio-old".to_owned(),
+        })
+    );
 }
 
 #[test]
@@ -435,6 +477,7 @@ fn stop_clears_participants() {
 
     assert_eq!(status.status, MediaRelayStatus::Inactive);
     assert!(status.participants.is_empty());
+    assert!(!registry.contains_room(&RoomId::default_room()));
 }
 
 #[test]
@@ -445,8 +488,11 @@ fn registering_participant_requires_active_relay() {
 
     assert_eq!(
         registry.register_participant(room_id.clone(), user_id.clone()),
-        Err(MediaRelayError::Inactive { room_id })
+        Err(MediaRelayError::Inactive {
+            room_id: room_id.clone(),
+        })
     );
+    assert!(!registry.contains_room(&room_id));
 }
 
 #[test]

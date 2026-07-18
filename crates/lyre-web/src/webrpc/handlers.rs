@@ -55,6 +55,7 @@ pub(crate) async fn leave_room(
     authorize_room_user(&state, &room_id, &user_id, &headers)?;
     let response = state.leave_room_persisted(&room_id, &user_id).await?;
     if response.removed {
+        state.peers.remove_peer(&room_id, &user_id);
         state.peers.user_left(&room_id, &user_id);
     }
     Ok(Json(dto::LeaveRoomResponse {
@@ -113,13 +114,16 @@ pub(crate) async fn start_media_relay(
 ) -> Result<Json<dto::StartMediaRelayResponse>, WebrpcError> {
     let request: dto::StartMediaRelayRequest = parse_json(body)?;
     let room_id = RoomId::parse_boundary(request.room_id)?;
-    authorize_room_member(&state, &room_id, &headers)?;
-    let media_relay = state.start_media_relay(
-        room_id,
-        lyre_core::StartMediaRelayRequest {
-            noise: request.noise.map(Into::into),
-        },
-    );
+    let access_token = authorize_room_member(&state, &room_id, &headers)?;
+    let media_relay = state
+        .start_authorized_media_relay(
+            room_id,
+            lyre_core::StartMediaRelayRequest {
+                noise: request.noise.map(Into::into),
+            },
+            &access_token,
+        )
+        .await?;
     Ok(Json(dto::StartMediaRelayResponse {
         media_relay: media_relay.into(),
     }))
@@ -133,8 +137,14 @@ pub(crate) async fn stop_media_relay(
     let request: dto::StopMediaRelayRequest = parse_json(body)?;
     let room_id = RoomId::parse_boundary(request.room_id)?;
     let user_id = UserId::from_external(request.user_id);
-    authorize_room_user(&state, &room_id, &user_id, &headers)?;
-    let media_relay = state.stop_media_relay(room_id, lyre_core::StopMediaRelayRequest { user_id });
+    let access_token = authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let media_relay = state
+        .stop_authorized_media_relay(
+            room_id,
+            lyre_core::StopMediaRelayRequest { user_id },
+            &access_token,
+        )
+        .await?;
     Ok(Json(dto::StopMediaRelayResponse {
         media_relay: media_relay.into(),
     }))
@@ -148,15 +158,18 @@ pub(crate) async fn register_media_track(
     let request: dto::RegisterMediaTrackRequest = parse_json(body)?;
     let room_id = RoomId::parse_boundary(request.room_id)?;
     let user_id = UserId::from_external(request.user_id);
-    authorize_room_user(&state, &room_id, &user_id, &headers)?;
-    let media_relay = state.media_relays.register_track(
-        room_id,
-        lyre_core::RegisterMediaTrackRequest {
-            user_id,
-            track_id: request.track_id,
-            kind: request.kind.into(),
-        },
-    )?;
+    let access_token = authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let media_relay = state
+        .register_authorized_media_track(
+            room_id,
+            lyre_core::RegisterMediaTrackRequest {
+                user_id,
+                track_id: request.track_id,
+                kind: request.kind.into(),
+            },
+            &access_token,
+        )
+        .await?;
     Ok(Json(dto::RegisterMediaTrackResponse {
         media_relay: media_relay.into(),
     }))
@@ -170,8 +183,10 @@ pub(crate) async fn register_media_participant(
     let request: dto::RegisterMediaParticipantRequest = parse_json(body)?;
     let room_id = RoomId::parse_boundary(request.room_id)?;
     let user_id = UserId::from_external(request.user_id);
-    authorize_room_user(&state, &room_id, &user_id, &headers)?;
-    let media_relay = state.media_relays.register_participant(room_id, user_id)?;
+    let access_token = authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let media_relay = state
+        .register_authorized_media_participant(room_id, user_id, &access_token)
+        .await?;
     Ok(Json(dto::RegisterMediaParticipantResponse {
         media_relay: media_relay.into(),
     }))
@@ -185,18 +200,21 @@ pub(crate) async fn update_media_relay_subscriptions(
     let request: dto::UpdateMediaRelaySubscriptionsRequest = parse_json(body)?;
     let room_id = RoomId::parse_boundary(request.room_id)?;
     let user_id = UserId::from_external(request.user_id);
-    authorize_room_user(&state, &room_id, &user_id, &headers)?;
-    let subscriptions = state.media_relays.update_subscriptions(
-        room_id,
-        lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
-            user_id,
-            source_user_ids: request
-                .source_user_ids
-                .into_iter()
-                .map(UserId::from_external)
-                .collect(),
-        },
-    )?;
+    let access_token = authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let subscriptions = state
+        .update_authorized_media_relay_subscriptions(
+            room_id,
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id,
+                source_user_ids: request
+                    .source_user_ids
+                    .into_iter()
+                    .map(UserId::from_external)
+                    .collect(),
+            },
+            &access_token,
+        )
+        .await?;
     Ok(Json(dto::UpdateMediaRelaySubscriptionsResponse {
         subscriptions: subscriptions.into(),
     }))
@@ -210,14 +228,17 @@ pub(crate) async fn answer_server_media_offer(
     let request: dto::AnswerServerMediaOfferRequest = parse_json(body)?;
     let room_id = RoomId::parse_boundary(request.room_id)?;
     let user_id = UserId::from_external(request.user_id);
-    authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let access_token = authorize_room_user(&state, &room_id, &user_id, &headers)?;
     let answer = state
-        .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
-            room_id,
-            user_id,
-            audio_track_id: request.audio_track_id,
-            sdp: request.sdp,
-        })
+        .answer_authorized_server_media_offer_with_subscriptions(
+            ServerMediaOffer {
+                room_id,
+                user_id,
+                audio_track_id: request.audio_track_id,
+                sdp: request.sdp,
+            },
+            &access_token,
+        )
         .await?;
     Ok(Json(dto::AnswerServerMediaOfferResponse {
         answer: answer.into(),
@@ -232,7 +253,7 @@ pub(crate) async fn add_server_media_ice_candidate(
     let request: dto::AddServerMediaIceCandidateRequest = parse_json(body)?;
     let room_id = RoomId::parse_boundary(request.room_id)?;
     let user_id = UserId::from_external(request.user_id);
-    authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let access_token = authorize_room_user(&state, &room_id, &user_id, &headers)?;
     let candidate = ServerMediaIceCandidate {
         room_id,
         user_id,
@@ -242,7 +263,7 @@ pub(crate) async fn add_server_media_ice_candidate(
         username_fragment: request.username_fragment,
     };
     state
-        .add_server_media_ice_candidate(candidate.clone())
+        .add_authorized_server_media_ice_candidate(candidate.clone(), &access_token)
         .await?;
     Ok(Json(dto::AddServerMediaIceCandidateResponse {
         accepted: candidate.into(),
@@ -276,8 +297,10 @@ pub(crate) async fn close_server_media_session(
     let request: dto::CloseServerMediaSessionRequest = parse_json(body)?;
     let room_id = RoomId::parse_boundary(request.room_id)?;
     let user_id = UserId::from_external(request.user_id);
-    authorize_room_user(&state, &room_id, &user_id, &headers)?;
-    let closed = state.close_server_media_session_for_user(room_id, user_id)?;
+    let access_token = authorize_room_user(&state, &room_id, &user_id, &headers)?;
+    let closed = state
+        .close_authorized_server_media_session_for_user(room_id, user_id, &access_token)
+        .await?;
     Ok(Json(dto::CloseServerMediaSessionResponse {
         closed: closed.into(),
     }))

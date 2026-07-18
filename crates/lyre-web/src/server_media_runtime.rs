@@ -33,7 +33,15 @@ fn process_pcm_frame_as_track(
     track_id: String,
     frame: ServerMediaPcmFrame,
 ) -> Result<(), MediaRelayError> {
-    runtime.process_frame(AudioFrame {
+    runtime.process_frame(audio_frame_as_track(key, track_id, frame))
+}
+
+fn audio_frame_as_track(
+    key: &ServerMediaSessionKey,
+    track_id: String,
+    frame: ServerMediaPcmFrame,
+) -> AudioFrame {
+    AudioFrame {
         room_id: key.room_id.clone(),
         user_id: key.user_id.clone(),
         track_id,
@@ -42,7 +50,7 @@ fn process_pcm_frame_as_track(
         sequence: u64::from(frame.sequence_number),
         rtp_timestamp: Some(frame.rtp_timestamp),
         samples: frame.samples,
-    })
+    }
 }
 
 pub fn process_pcm_frame_batch(
@@ -50,12 +58,10 @@ pub fn process_pcm_frame_batch(
     key: &ServerMediaSessionKey,
     frames: Vec<ServerMediaPcmFrame>,
 ) -> Result<usize, MediaRelayError> {
-    let mut processed = 0;
-    for frame in frames {
-        process_pcm_frame(runtime, key, frame)?;
-        processed += 1;
-    }
-    Ok(processed)
+    runtime.process_frames(frames.into_iter().map(|frame| {
+        let track_id = frame.track_id.clone();
+        audio_frame_as_track(key, track_id, frame)
+    }))
 }
 
 pub fn process_pcm_frames(
@@ -75,10 +81,9 @@ pub fn process_pcm_frames(
         .session_status(key)
         .expect("server media peer connection exists without session")
         .audio_track_id;
-    let mut processed = 0;
-    for frame in frames {
-        process_pcm_frame_as_track(runtime, key, track_id.clone(), frame)?;
-        processed += 1;
-    }
-    Ok(processed)
+    runtime.process_frames(
+        frames
+            .into_iter()
+            .map(|frame| audio_frame_as_track(key, track_id.clone(), frame)),
+    )
 }

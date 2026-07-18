@@ -8,8 +8,8 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use lyre_core::{
-    PersistedRoom, PersistedRoomRegistry, PersistedRoomUser, RoomAccessToken, RoomId, UserId,
-    UserProfile,
+    PersistedRoom, PersistedRoomRegistry, PersistedRoomUser, PersistedWebSocketAdmission,
+    RoomAccessToken, RoomId, UserId, UserProfile,
 };
 use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
 use std::{
@@ -45,6 +45,7 @@ fn persisted_user(user_id: &str, token: &str) -> PersistedRoomUser {
             noise: Default::default(),
         },
         access_token: RoomAccessToken::from_external(token),
+        websocket_admission: PersistedWebSocketAdmission::Confirmed,
     }
 }
 

@@ -2,6 +2,10 @@ use dashmap::DashMap;
 use lyre_core::{RoomId, RoomRegistry, RoomSnapshot, UserId, UserProfile};
 use lyre_webrtc::ServerMediaIceCandidate;
 use serde::{Deserialize, Serialize};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +75,13 @@ impl SignalPayload {
             Self::RoomSnapshot { .. } => SignalKind::RoomSnapshot,
             Self::Error { .. } => SignalKind::Error,
         }
+    }
+
+    fn requires_room_snapshot_after_drop(&self) -> bool {
+        matches!(
+            self,
+            Self::UserJoined { .. } | Self::UserLeft { .. } | Self::RoomSnapshot { .. }
+        )
     }
 }
 
@@ -149,7 +160,8 @@ pub fn route_signal_message(
         .unwrap_or(SignalRoute::BroadcastExceptSender))
 }
 
-pub type PeerSender = mpsc::UnboundedSender<SignalMessage>;
+pub type PeerSender = mpsc::Sender<SignalMessage>;
+pub(crate) const SIGNAL_CHANNEL_CAPACITY: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignalDelivery {
@@ -158,7 +170,34 @@ pub struct SignalDelivery {
 
 #[derive(Debug, Default)]
 pub struct PeerHub {
-    peers: DashMap<RoomId, DashMap<UserId, PeerSender>>,
+    peers: DashMap<RoomId, DashMap<UserId, ConnectedPeer>>,
+}
+
+#[derive(Debug, Clone)]
+struct ConnectedPeer {
+    sender: PeerSender,
+    room_snapshot_pending: Arc<AtomicBool>,
+}
+
+impl ConnectedPeer {
+    fn new(sender: PeerSender) -> Self {
+        Self {
+            sender,
+            room_snapshot_pending: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn mark_room_snapshot_pending(&self) {
+        self.room_snapshot_pending.store(true, Ordering::Release);
+    }
+
+    fn is_room_snapshot_pending(&self) -> bool {
+        self.room_snapshot_pending.load(Ordering::Acquire)
+    }
+
+    fn take_room_snapshot_pending(&self) -> bool {
+        self.room_snapshot_pending.swap(false, Ordering::AcqRel)
+    }
 }
 
 impl PeerHub {
@@ -174,7 +213,10 @@ impl PeerHub {
         tx: PeerSender,
     ) -> RoomSnapshot {
         let snapshot = registry.snapshot(room_id.clone());
-        self.peers.entry(room_id).or_default().insert(user_id, tx);
+        self.peers
+            .entry(room_id)
+            .or_default()
+            .insert(user_id, ConnectedPeer::new(tx));
         snapshot
     }
 
@@ -187,16 +229,20 @@ impl PeerHub {
         if let Some(room) = self.peers.get(room_id) {
             room.remove(user_id);
         }
+        self.remove_empty_room(room_id);
     }
 
     pub fn remove_peer_sender(&self, room_id: &RoomId, user_id: &UserId, tx: &PeerSender) -> bool {
-        self.peers
+        let removed = self
+            .peers
             .get(room_id)
             .and_then(|room| {
-                room.remove_if(user_id, |_, current| current.same_channel(tx))
+                room.remove_if(user_id, |_, current| current.sender.same_channel(tx))
                     .map(|_| ())
             })
-            .is_some()
+            .is_some();
+        self.remove_empty_room(room_id);
+        removed
     }
 
     pub fn user_joined(&self, room_id: &RoomId, user: UserProfile) -> SignalDelivery {
@@ -232,18 +278,49 @@ impl PeerHub {
         self.broadcast_except(&room_id, &sender_id, message)
     }
 
+    pub(crate) fn take_room_snapshot_pending(
+        &self,
+        room_id: &RoomId,
+        user_id: &UserId,
+        sender: &PeerSender,
+    ) -> bool {
+        self.peers
+            .get(room_id)
+            .and_then(|room| room.get(user_id).map(|peer| peer.clone()))
+            .filter(|peer| peer.sender.same_channel(sender))
+            .is_some_and(|peer| peer.take_room_snapshot_pending())
+    }
+
     fn send_to(
         &self,
         room_id: &RoomId,
         user_id: &UserId,
         message: SignalMessage,
     ) -> SignalDelivery {
-        let delivered = self
+        let peer = self
             .peers
             .get(room_id)
-            .and_then(|room| room.get(user_id).map(|sender| sender.send(message).is_ok()))
-            .unwrap_or(false) as usize;
-        SignalDelivery { delivered }
+            .and_then(|room| room.get(user_id).map(|peer| peer.clone()));
+        let Some(peer) = peer else {
+            return SignalDelivery { delivered: 0 };
+        };
+        let requires_snapshot = message.payload.requires_room_snapshot_after_drop();
+        if requires_snapshot && peer.is_room_snapshot_pending() {
+            return SignalDelivery { delivered: 0 };
+        }
+        match peer.sender.try_send(message) {
+            Ok(()) => SignalDelivery { delivered: 1 },
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                if requires_snapshot {
+                    peer.mark_room_snapshot_pending();
+                }
+                SignalDelivery { delivered: 0 }
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                self.remove_peer_sender(room_id, user_id, &peer.sender);
+                SignalDelivery { delivered: 0 }
+            }
+        }
     }
 
     fn broadcast_except(
@@ -252,16 +329,38 @@ impl PeerHub {
         sender_id: &UserId,
         message: SignalMessage,
     ) -> SignalDelivery {
-        let delivered = self
+        let recipients = self
             .peers
             .get(room_id)
             .map(|room| {
                 room.iter()
                     .filter(|entry| entry.key() != sender_id)
-                    .filter(|entry| entry.value().send(message.clone()).is_ok())
-                    .count()
+                    .map(|entry| (entry.key().clone(), entry.value().clone()))
+                    .collect::<Vec<_>>()
             })
-            .unwrap_or(0);
+            .unwrap_or_default();
+        let mut delivered = 0;
+        let requires_snapshot = message.payload.requires_room_snapshot_after_drop();
+        for (user_id, peer) in recipients {
+            if requires_snapshot && peer.is_room_snapshot_pending() {
+                continue;
+            }
+            match peer.sender.try_send(message.clone()) {
+                Ok(()) => delivered += 1,
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    if requires_snapshot {
+                        peer.mark_room_snapshot_pending();
+                    }
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    self.remove_peer_sender(room_id, &user_id, &peer.sender);
+                }
+            }
+        }
         SignalDelivery { delivered }
+    }
+
+    fn remove_empty_room(&self, room_id: &RoomId) {
+        self.peers.remove_if(room_id, |_, room| room.is_empty());
     }
 }

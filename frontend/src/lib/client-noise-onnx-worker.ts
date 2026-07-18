@@ -85,6 +85,7 @@ async function processPortMessage(port: MessagePort, message: ProcessMessage): P
     );
   } catch (error) {
     port.postMessage({
+      id: message.id,
       type: "error",
       message: error instanceof Error ? error.message : "ONNX noise runtime failed"
     });

@@ -1,12 +1,10 @@
 use crate::api::AppState;
 use lyre_core::{
-    MediaTrackKind, NoiseCancellationConfig, NoiseProvider, RegisterMediaTrackRequest, RoomId,
-    StartMediaRelayRequest, StopMediaRelayRequest, UserId,
+    AudioFrame, MediaTrackKind, NoiseCancellationConfig, NoiseProvider, RegisterMediaTrackRequest,
+    RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
-use lyre_webrtc::{
-    ServerMediaIceCandidate, ServerMediaOffer, ServerMediaSessionKey, ServerMediaSessionState,
-    WebRtcStack,
-};
+use lyre_noise_cancelling::{RNNOISE_CHANNELS, RNNOISE_FRAME_SIZE, RNNOISE_SAMPLE_RATE_HZ};
+use lyre_webrtc::{ServerMediaIceCandidate, ServerMediaOffer, ServerMediaSessionKey, WebRtcStack};
 use tokio::time::{timeout, Duration};
 
 async fn offer_sdp() -> String {
@@ -69,22 +67,26 @@ async fn room_close_and_media_relay_stop_cancel_runtime_pumps() {
 
     answer_offer(&state, "audio-main").await;
     assert_eq!(state.server_media_runtime_pump_count(), 1);
-    state.close_server_media_sessions_for_room(&RoomId::default_room());
+    state
+        .close_server_media_sessions_for_room(&RoomId::default_room())
+        .await;
     assert_eq!(state.server_media_runtime_pump_count(), 0);
 
     answer_offer(&state, "audio-main").await;
     assert_eq!(state.server_media_runtime_pump_count(), 1);
-    state.stop_media_relay(
-        key.room_id,
-        StopMediaRelayRequest {
-            user_id: key.user_id,
-        },
-    );
+    state
+        .stop_media_relay(
+            key.room_id,
+            StopMediaRelayRequest {
+                user_id: key.user_id,
+            },
+        )
+        .await;
     assert_eq!(state.server_media_runtime_pump_count(), 0);
 }
 
 #[tokio::test]
-async fn terminal_peer_failure_closes_session_and_runtime_pump() {
+async fn terminal_peer_failure_removes_session_and_runtime_pump() {
     let state = AppState::default();
     let key = key();
 
@@ -96,10 +98,7 @@ async fn terminal_peer_failure_closes_session_and_runtime_pump() {
         if state.server_media_runtime_pump_count() == 0 {
             assert_eq!(state.server_media_peer_connection_count(), 0);
             assert!(state.active_server_media_sessions().is_empty());
-            assert_eq!(
-                state.server_media_sessions()[0].state,
-                ServerMediaSessionState::Closed
-            );
+            assert!(state.server_media_sessions().is_empty());
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -174,6 +173,70 @@ async fn terminal_peer_failure_keeps_room_membership_and_relay_state() {
     }
 
     panic!("terminal peer failure did not close only server-media runtime state");
+}
+
+#[tokio::test]
+async fn terminal_peer_failure_releases_noise_processor_state() {
+    let state = AppState::default();
+    let key = key();
+    state.start_media_relay(
+        key.room_id.clone(),
+        StartMediaRelayRequest {
+            noise: Some(NoiseCancellationConfig {
+                provider: NoiseProvider::Rnnoise,
+                ..NoiseCancellationConfig::default()
+            }),
+        },
+    );
+    state
+        .media_relays
+        .register_track(
+            key.room_id.clone(),
+            RegisterMediaTrackRequest {
+                user_id: key.user_id.clone(),
+                track_id: "audio-main".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
+    let mut processed = state.subscribe_processed_media_frames(&key.room_id);
+    let frame = |sequence| AudioFrame {
+        room_id: key.room_id.clone(),
+        user_id: key.user_id.clone(),
+        track_id: "audio-main".to_owned(),
+        sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
+        channels: RNNOISE_CHANNELS,
+        sequence,
+        rtp_timestamp: None,
+        samples: (0..RNNOISE_FRAME_SIZE)
+            .map(|index| ((index as f32) / 24.0).sin() * 0.1)
+            .collect(),
+    };
+    state.process_media_frame(frame(1)).unwrap();
+    let first = processed.recv().await.unwrap();
+    state.process_media_frame(frame(2)).unwrap();
+    let continued = processed.recv().await.unwrap();
+    assert_ne!(continued.samples, first.samples);
+
+    answer_offer(&state, "audio-main").await;
+    state
+        .server_media_peer_connection_for_test(&key)
+        .unwrap()
+        .close()
+        .await
+        .unwrap();
+    for _ in 0..100 {
+        if state.server_media_runtime_pump_count() == 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(state.server_media_runtime_pump_count(), 0);
+
+    state.process_media_frame(frame(3)).unwrap();
+    let after_terminal_close = processed.recv().await.unwrap();
+
+    assert_eq!(after_terminal_close.samples, first.samples);
 }
 
 #[tokio::test]

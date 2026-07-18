@@ -114,10 +114,18 @@ impl ServerMediaNegotiator {
             .create_peer_connection_for_sources(&subscribed_source_user_ids)
             .await
             .map_err(|source| ServerMediaNegotiationError::WebRtc { source })?;
-        let answer_sdp = peer_connection
-            .answer_remote_offer(offer.sdp)
-            .await
-            .map_err(|source| ServerMediaNegotiationError::WebRtc { source })?;
+        let answer_sdp = match peer_connection.answer_remote_offer(offer.sdp).await {
+            Ok(answer_sdp) => answer_sdp,
+            Err(source) => {
+                if let Err(close_error) = peer_connection.close().await {
+                    tracing::warn!(
+                        error = format_args!("{close_error:#}"),
+                        "failed to close temporary server media peer connection"
+                    );
+                }
+                return Err(ServerMediaNegotiationError::WebRtc { source });
+            }
+        };
 
         let key = ServerMediaSessionKey {
             room_id: offer.room_id.clone(),

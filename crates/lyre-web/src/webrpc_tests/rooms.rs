@@ -5,7 +5,8 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn webrpc_join_get_and_leave_use_generated_client_shape() {
-    let app = router(AppState::default());
+    let state = AppState::default();
+    let app = router(state.clone());
 
     let join = app
         .clone()
@@ -60,6 +61,15 @@ async fn webrpc_join_get_and_leave_use_generated_client_shape() {
     assert_eq!(error["name"], "WebrpcEndpoint");
     assert!(error.get("error").is_none());
 
+    let (socket_tx, mut socket_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    state.peers.connect(
+        &state.registry,
+        lyre_core::RoomId::default_room(),
+        lyre_core::UserId::from_external(user_id),
+        socket_tx,
+    );
+
     let leave = app
         .oneshot(rpc_post_auth(
             "LeaveRoom",
@@ -76,6 +86,10 @@ async fn webrpc_join_get_and_leave_use_generated_client_shape() {
             .len(),
         0
     );
+    assert!(matches!(
+        socket_rx.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+    ));
 }
 
 #[tokio::test]

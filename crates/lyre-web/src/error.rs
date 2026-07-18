@@ -12,6 +12,7 @@ pub enum ApiError {
     Persistence(anyhow::Error),
     ServerMediaNegotiation(ServerMediaNegotiationError),
     TurnRestCredentials(TurnRestCredentialsError),
+    PendingWebSocketAdmissionsFull,
     Unauthorized,
 }
 
@@ -65,6 +66,10 @@ impl IntoResponse for ApiError {
             Self::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 "room access token is invalid".to_owned(),
+            ),
+            Self::PendingWebSocketAdmissionsFull => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too many pending websocket admissions".to_owned(),
             ),
             Self::ServerMediaNegotiation(error) => {
                 let status = match &error {

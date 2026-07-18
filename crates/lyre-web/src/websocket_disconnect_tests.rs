@@ -1,14 +1,16 @@
 use crate::{api::AppState, state_persistence::RoomStatePersistence};
 use lyre_core::{
     MediaTrackKind, PersistedRoom, PersistedRoomRegistry, PersistedRoomUser,
-    RegisterMediaTrackRequest, RoomAccessToken, RoomId, StartMediaRelayRequest, UserId,
-    UserProfile,
+    PersistedWebSocketAdmission, RegisterMediaTrackRequest, RoomAccessToken, RoomId,
+    StartMediaRelayRequest, UserId, UserProfile,
 };
 use lyre_noise_cancelling::DeepFilterNetRuntimeConfig;
 use lyre_webrtc::{ServerMediaOffer, WebRtcStack};
 use std::{
+    convert::Infallible,
     path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -33,6 +35,7 @@ fn persisted_user(user_id: &str, token: &str) -> PersistedRoomUser {
             noise: Default::default(),
         },
         access_token: RoomAccessToken::from_external(token),
+        websocket_admission: PersistedWebSocketAdmission::Confirmed,
     }
 }
 
@@ -42,7 +45,150 @@ async fn offer_sdp() -> String {
 }
 
 #[tokio::test]
-async fn websocket_disconnect_removes_socket_without_leaving_room() {
+async fn websocket_close_frame_runs_cleanup_without_peer_traffic() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let leaving = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap();
+    let staying = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap()
+        .user;
+    let (staying_tx, mut staying_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    state.peers.connect(
+        &state.registry,
+        room_id.clone(),
+        staying.id.clone(),
+        staying_tx,
+    );
+
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        crate::api::handle_socket_io(
+            state.clone(),
+            room_id.clone(),
+            leaving.user.id.clone(),
+            futures_util::sink::drain(),
+            futures_util::stream::iter([Ok::<_, Infallible>(axum::extract::ws::Message::Close(
+                None,
+            ))]),
+        ),
+    )
+    .await
+    .expect("websocket close should finish the handler");
+
+    assert!(state
+        .registry
+        .validate_access_token(&room_id, &leaving.user.id, &leaving.access_token)
+        .is_err());
+    let snapshot = state.registry.snapshot(room_id.clone());
+    assert_eq!(snapshot.users, vec![staying]);
+    assert!(matches!(
+        staying_rx.recv().await.unwrap().payload,
+        crate::signalling::SignalPayload::UserLeft { user_id }
+            if user_id == leaving.user.id
+    ));
+    assert_eq!(crate::metrics::snapshot(&state).leaves, 1);
+}
+
+#[tokio::test]
+async fn websocket_eof_runs_cleanup_without_peer_traffic() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let leaving = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap();
+
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        crate::api::handle_socket_io(
+            state.clone(),
+            room_id.clone(),
+            leaving.user.id.clone(),
+            futures_util::sink::drain(),
+            futures_util::stream::empty::<Result<axum::extract::ws::Message, Infallible>>(),
+        ),
+    )
+    .await
+    .expect("websocket EOF should finish the handler");
+
+    assert!(state
+        .registry
+        .validate_access_token(&room_id, &leaving.user.id, &leaving.access_token)
+        .is_err());
+    assert!(state.registry.snapshot(room_id).users.is_empty());
+    assert_eq!(crate::metrics::snapshot(&state).leaves, 1);
+}
+
+#[tokio::test]
+async fn replaced_socket_teardown_keeps_new_socket_and_membership() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let joined = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap();
+    let (snapshot_sent_tx, snapshot_sent_rx) = tokio::sync::oneshot::channel();
+    let sink = Box::pin(futures_util::sink::unfold(
+        Some(snapshot_sent_tx),
+        |mut snapshot_sent, _message| async move {
+            if let Some(snapshot_sent) = snapshot_sent.take() {
+                let _ = snapshot_sent.send(());
+            }
+            Ok::<_, Infallible>(snapshot_sent)
+        },
+    ));
+    let stream = futures_util::stream::pending::<Result<axum::extract::ws::Message, Infallible>>();
+    let handler = tokio::spawn(crate::api::handle_socket_io(
+        state.clone(),
+        room_id.clone(),
+        joined.user.id.clone(),
+        sink,
+        stream,
+    ));
+    snapshot_sent_rx.await.unwrap();
+
+    let (replacement_tx, mut replacement_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    state.peers.connect(
+        &state.registry,
+        room_id.clone(),
+        joined.user.id.clone(),
+        replacement_tx,
+    );
+    tokio::time::timeout(Duration::from_secs(1), handler)
+        .await
+        .expect("replacing a websocket should revoke and finish the old handler")
+        .unwrap();
+
+    assert!(state
+        .registry
+        .validate_access_token(&room_id, &joined.user.id, &joined.access_token)
+        .is_ok());
+    assert_eq!(state.registry.snapshot(room_id.clone()).users.len(), 1);
+    assert_eq!(crate::metrics::snapshot(&state).leaves, 0);
+    assert_eq!(
+        state
+            .peers
+            .forward(crate::signalling::SignalMessage::new(
+                room_id,
+                UserId::from_external("peer"),
+                Some(joined.user.id),
+                crate::signalling::SignalPayload::Offer { sdp: "sdp".into() },
+            ))
+            .delivered,
+        1
+    );
+    replacement_rx.recv().await.unwrap();
+}
+
+#[tokio::test]
+async fn removing_peer_only_does_not_change_room_membership() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let leaving = state
@@ -55,8 +201,10 @@ async fn websocket_disconnect_removes_socket_without_leaving_room() {
         .await
         .unwrap()
         .user;
-    let (leaving_tx, _leaving_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (staying_tx, mut staying_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (leaving_tx, _leaving_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (staying_tx, mut staying_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
     state.peers.connect(
         &state.registry,
         room_id.clone(),
@@ -82,7 +230,7 @@ async fn websocket_disconnect_removes_socket_without_leaving_room() {
 }
 
 #[tokio::test]
-async fn websocket_disconnect_after_rest_leave_only_removes_socket() {
+async fn removing_peer_after_persisted_leave_does_not_duplicate_leave() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let leaving = state
@@ -95,8 +243,10 @@ async fn websocket_disconnect_after_rest_leave_only_removes_socket() {
         .await
         .unwrap()
         .user;
-    let (leaving_tx, _leaving_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (staying_tx, mut staying_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (leaving_tx, _leaving_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (staying_tx, mut staying_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
     state.peers.connect(
         &state.registry,
         room_id.clone(),
@@ -123,7 +273,7 @@ async fn websocket_disconnect_after_rest_leave_only_removes_socket() {
 }
 
 #[tokio::test]
-async fn websocket_disconnect_keeps_departed_user_server_media_state_for_reconnect() {
+async fn websocket_disconnect_closes_departed_user_server_media_state() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let leaving = state
@@ -162,21 +312,15 @@ async fn websocket_disconnect_keeps_departed_user_server_media_state_for_reconne
         .await
         .unwrap();
 
-    state.peers.remove_peer(&room_id, &leaving.id);
+    state.disconnect_room_socket(&room_id, &leaving.id).await;
 
     let relay = state.media_relays.status(room_id);
-    assert_eq!(relay.participants.len(), 2);
-    assert!(relay
-        .participants
-        .iter()
-        .any(|participant| participant.user_id == leaving.id));
-    assert!(relay
-        .participants
-        .iter()
-        .any(|participant| participant.user_id == staying.id));
-    assert!(!state.active_server_media_sessions().is_empty());
-    assert_eq!(state.server_media_runtime_pump_count(), 1);
-    assert_eq!(state.server_media_peer_connection_count(), 1);
+    assert_eq!(relay.participants.len(), 1);
+    assert_eq!(relay.participants[0].user_id, staying.id);
+    assert!(state.active_server_media_sessions().is_empty());
+    assert_eq!(state.server_media_runtime_pump_count(), 0);
+    assert_eq!(state.server_media_peer_connection_count(), 0);
+    assert_eq!(crate::metrics::snapshot(&state).leaves, 1);
 }
 
 #[tokio::test]
@@ -202,12 +346,12 @@ async fn websocket_disconnect_updates_persisted_room_state() {
     .unwrap();
 
     state
-        .peers
-        .remove_peer(&RoomId::default_room(), &UserId::from_external("user_a"));
+        .disconnect_room_socket(&RoomId::default_room(), &UserId::from_external("user_a"))
+        .await;
 
     let file = std::fs::read_to_string(&path).unwrap();
-    assert!(file.contains("user_a"));
-    assert!(file.contains("token_a"));
+    assert!(!file.contains("user_a"));
+    assert!(!file.contains("token_a"));
     let _ = std::fs::remove_file(path);
 }
 
@@ -239,8 +383,10 @@ async fn websocket_disconnect_persistence_failure_rolls_back_without_broadcast()
         )))
         .await;
     let room_id = RoomId::default_room();
-    let (leaving_tx, _leaving_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (peer_tx, mut peer_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (leaving_tx, _leaving_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (peer_tx, mut peer_rx) =
+        tokio::sync::mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
     state.peers.connect(
         &state.registry,
         room_id.clone(),
@@ -255,8 +401,8 @@ async fn websocket_disconnect_persistence_failure_rolls_back_without_broadcast()
     );
 
     state
-        .peers
-        .remove_peer(&room_id, &UserId::from_external("user_a"));
+        .disconnect_room_socket(&room_id, &UserId::from_external("user_a"))
+        .await;
 
     assert!(state
         .registry
@@ -276,7 +422,7 @@ async fn websocket_disconnect_persistence_failure_rolls_back_without_broadcast()
     assert_eq!(delivered.delivered, 0);
     let metrics = crate::metrics::snapshot(&state);
     assert_eq!(metrics.leaves, 0);
-    assert_eq!(metrics.persistence_failures, 0);
+    assert_eq!(metrics.persistence_failures, 1);
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(bad_path);
 }

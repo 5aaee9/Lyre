@@ -115,7 +115,7 @@ async fn metrics_track_join_and_leave_counts() {
         .await
         .unwrap();
     let body = response_text(after_leave).await;
-    assert_eq!(metric_value(&body, "lyre_rooms_total"), 1);
+    assert_eq!(metric_value(&body, "lyre_rooms_total"), 0);
     assert_eq!(metric_value(&body, "lyre_users_total"), 0);
     assert_eq!(metric_value(&body, "lyre_room_joins_total"), 1);
     assert_eq!(metric_value(&body, "lyre_room_leaves_total"), 1);

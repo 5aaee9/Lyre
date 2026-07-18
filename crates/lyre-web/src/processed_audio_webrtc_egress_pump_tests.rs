@@ -7,9 +7,10 @@ use crate::{
     },
 };
 use async_trait::async_trait;
+use lyre_core::media::UpdateMediaRelaySubscriptionsRequest;
 use lyre_core::{
-    AudioFrame, MediaTrackKind, NoiseCancellationConfig, NoiseProvider, RegisterMediaTrackRequest,
-    RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
+    AudioFrame, MediaRelayStatus, MediaTrackKind, NoiseCancellationConfig, NoiseProvider,
+    RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest, StopMediaRelayRequest, UserId,
 };
 use lyre_webrtc::{
     test_support::encoded_opus_payload_for_test, ServerMediaConnectionStateSnapshot,
@@ -17,7 +18,10 @@ use lyre_webrtc::{
     ServerMediaOpusDecoder, ServerMediaProcessedAudioFrame, ServerMediaRtpPacket,
     ServerMediaSessionKey, ServerMediaSessionRegistry, WebRtcStack,
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::Notify;
 
 fn egress_pump() -> ProcessedAudioWebRtcEgressPump {
@@ -43,6 +47,44 @@ struct BlockingSender {
 struct FailingPeerSender {
     attempts: Mutex<Vec<u64>>,
     notify: Notify,
+}
+
+#[derive(Debug)]
+struct RecipientLifecycleSender {
+    removed_user_id: UserId,
+    deliveries: Mutex<Vec<(UserId, u64)>>,
+    blocked_send_started: Notify,
+    blocked_send_cancelled: Notify,
+}
+
+#[derive(Debug)]
+struct ReadinessFailingSender {
+    attempted_source_user_ids: Mutex<Vec<UserId>>,
+}
+
+struct NotifyOnDrop<'a>(&'a Notify);
+
+#[derive(Clone)]
+struct CapturedWriter(Arc<Mutex<Vec<u8>>>);
+
+impl Write for CapturedWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .expect("captured log lock must not be poisoned")
+            .extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for NotifyOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.notify_waiters();
+    }
 }
 
 #[async_trait]
@@ -113,6 +155,61 @@ impl ProcessedAudioWebRtcEgressSender for BlockingSender {
     }
 }
 
+#[async_trait]
+impl ProcessedAudioWebRtcEgressSender for RecipientLifecycleSender {
+    async fn send_processed_audio_frame(
+        &self,
+        key: &ServerMediaSessionKey,
+        _source_user_id: &UserId,
+        frame: ServerMediaProcessedAudioFrame,
+    ) -> Result<usize, ServerMediaEgressError> {
+        self.deliveries
+            .lock()
+            .expect("test sender deliveries lock must not be poisoned")
+            .push((key.user_id.clone(), frame.sequence));
+        if key.user_id == self.removed_user_id {
+            let _notify_when_cancelled = NotifyOnDrop(&self.blocked_send_cancelled);
+            self.blocked_send_started.notify_waiters();
+            std::future::pending::<()>().await;
+            unreachable!("test sender intentionally never completes");
+        }
+        Ok(1)
+    }
+
+    fn connection_state(
+        &self,
+        _key: &ServerMediaSessionKey,
+    ) -> Option<ServerMediaConnectionStateSnapshot> {
+        None
+    }
+}
+
+#[async_trait]
+impl ProcessedAudioWebRtcEgressSender for ReadinessFailingSender {
+    async fn send_processed_audio_frame(
+        &self,
+        key: &ServerMediaSessionKey,
+        source_user_id: &UserId,
+        _frame: ServerMediaProcessedAudioFrame,
+    ) -> Result<usize, ServerMediaEgressError> {
+        self.attempted_source_user_ids
+            .lock()
+            .expect("test sender source lock must not be poisoned")
+            .push(source_user_id.clone());
+        Err(ServerMediaEgressError::PeerMissing {
+            room_id: key.room_id.clone(),
+            user_id: key.user_id.clone(),
+        })
+    }
+
+    fn connection_state(
+        &self,
+        _key: &ServerMediaSessionKey,
+    ) -> Option<ServerMediaConnectionStateSnapshot> {
+        None
+    }
+}
+
 fn relay_context() -> (
     Arc<lyre_core::MediaRelayRegistry>,
     Arc<WebMediaRuntime>,
@@ -139,6 +236,256 @@ fn relay_context() -> (
 }
 
 #[tokio::test]
+async fn departed_source_can_log_empty_fanout_again_after_rejoining() {
+    let logs = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let writer = CapturedWriter(Arc::clone(&logs));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_ansi(false)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let relays = Arc::new(lyre_core::MediaRelayRegistry::new());
+    let room_id = RoomId::default_room();
+    let source_user_id = UserId::from_external("source");
+    relays.start(room_id.clone(), StartMediaRelayRequest::default());
+    relays
+        .register_track(
+            room_id.clone(),
+            RegisterMediaTrackRequest {
+                user_id: source_user_id.clone(),
+                track_id: "audio-main".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
+    let runtime = Arc::new(WebMediaRuntime::new(Arc::clone(&relays)));
+    let fanout = Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&relays)));
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = Arc::new(ServerMediaNegotiator::new(WebRtcStack::new(), sessions));
+    let pump = ProcessedAudioWebRtcEgressPump::new(Arc::clone(&runtime), fanout, negotiator);
+    pump.start(room_id.clone());
+
+    runtime
+        .process_frame(audio_frame(room_id.clone(), source_user_id.clone()))
+        .unwrap();
+    wait_for_log_count(&logs, "processed audio WebRTC egress has no recipients", 1).await;
+
+    relays
+        .remove_participant(room_id.clone(), &source_user_id)
+        .unwrap();
+    pump.remove_recipient(&room_id, &source_user_id);
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    relays
+        .register_track(
+            room_id.clone(),
+            RegisterMediaTrackRequest {
+                user_id: source_user_id.clone(),
+                track_id: "audio-main".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
+    runtime
+        .process_frame(audio_frame(room_id.clone(), source_user_id))
+        .unwrap();
+
+    wait_for_log_count(&logs, "processed audio WebRTC egress has no recipients", 2).await;
+    pump.stop_and_wait_for_test(&room_id).await;
+}
+
+async fn wait_for_log_count(logs: &Arc<Mutex<Vec<u8>>>, message: &str, expected: usize) {
+    for _ in 0..100 {
+        let count = String::from_utf8(
+            logs.lock()
+                .expect("captured log lock must not be poisoned")
+                .clone(),
+        )
+        .expect("captured logs must be UTF-8")
+        .matches(message)
+        .count();
+        if count >= expected {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("expected at least {expected} occurrences of {message:?}");
+}
+
+fn many_source_relay_context(
+    source_count: usize,
+) -> (
+    Arc<lyre_core::MediaRelayRegistry>,
+    Arc<WebMediaRuntime>,
+    Arc<ProcessedAudioEgressFanout>,
+    Vec<UserId>,
+) {
+    let relays = Arc::new(lyre_core::MediaRelayRegistry::new());
+    let room_id = RoomId::default_room();
+    let recipient_user_id = UserId::from_external("recipient");
+    relays.start(room_id.clone(), StartMediaRelayRequest::default());
+    relays
+        .register_track(
+            room_id.clone(),
+            RegisterMediaTrackRequest {
+                user_id: recipient_user_id.clone(),
+                track_id: "audio-main".to_owned(),
+                kind: MediaTrackKind::Audio,
+            },
+        )
+        .unwrap();
+    let source_user_ids = (0..source_count)
+        .map(|index| UserId::from_external(format!("source-{index}")))
+        .collect::<Vec<_>>();
+    for source_user_id in &source_user_ids {
+        relays
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: source_user_id.clone(),
+                    track_id: "audio-main".to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+        relays
+            .update_subscriptions(
+                room_id.clone(),
+                UpdateMediaRelaySubscriptionsRequest {
+                    user_id: source_user_id.clone(),
+                    source_user_ids: Vec::new(),
+                },
+            )
+            .unwrap();
+    }
+    relays
+        .update_subscriptions(
+            room_id,
+            UpdateMediaRelaySubscriptionsRequest {
+                user_id: recipient_user_id,
+                source_user_ids: source_user_ids.clone(),
+            },
+        )
+        .unwrap();
+    let runtime = Arc::new(WebMediaRuntime::new(Arc::clone(&relays)));
+    let fanout = Arc::new(ProcessedAudioEgressFanout::new(Arc::clone(&relays)));
+    (relays, runtime, fanout, source_user_ids)
+}
+
+#[tokio::test]
+async fn recipient_worker_logs_send_start_once_for_many_sources() {
+    let logs = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let writer = CapturedWriter(Arc::clone(&logs));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_ansi(false)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let (_relays, runtime, fanout, source_user_ids) = many_source_relay_context(8);
+    let sender = Arc::new(BlockingSender {
+        blocked_user_id: UserId::from_external("unused"),
+        blocked_sequences: Mutex::new(Vec::new()),
+        fast_sequences: Mutex::new(Vec::new()),
+        fast_rtp_timestamps: Mutex::new(Vec::new()),
+        fast_source_user_ids: Mutex::new(Vec::new()),
+        notify: Notify::new(),
+    });
+    let pump =
+        ProcessedAudioWebRtcEgressPump::new(Arc::clone(&runtime), fanout, Arc::clone(&sender));
+    let room_id = RoomId::default_room();
+    pump.start(room_id.clone());
+
+    for (index, source_user_id) in source_user_ids.into_iter().enumerate() {
+        runtime
+            .process_frame(AudioFrame {
+                sequence: index as u64,
+                ..audio_frame(room_id.clone(), source_user_id)
+            })
+            .unwrap();
+        for _ in 0..100 {
+            if sender
+                .fast_source_user_ids
+                .lock()
+                .expect("test sender source lock must not be poisoned")
+                .len()
+                > index
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    pump.stop_and_wait_for_test(&room_id).await;
+    let output = String::from_utf8(
+        logs.lock()
+            .expect("captured log lock must not be poisoned")
+            .clone(),
+    )
+    .expect("captured logs must be UTF-8");
+    assert_eq!(
+        output
+            .matches("processed audio WebRTC egress send started")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn recipient_worker_logs_each_readiness_failure_kind_once_for_many_sources() {
+    let logs = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let writer = CapturedWriter(Arc::clone(&logs));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let (_relays, runtime, fanout, source_user_ids) = many_source_relay_context(8);
+    let sender = Arc::new(ReadinessFailingSender {
+        attempted_source_user_ids: Mutex::new(Vec::new()),
+    });
+    let pump =
+        ProcessedAudioWebRtcEgressPump::new(Arc::clone(&runtime), fanout, Arc::clone(&sender));
+    let room_id = RoomId::default_room();
+    pump.start(room_id.clone());
+
+    for (index, source_user_id) in source_user_ids.into_iter().enumerate() {
+        runtime
+            .process_frame(AudioFrame {
+                sequence: index as u64,
+                ..audio_frame(room_id.clone(), source_user_id)
+            })
+            .unwrap();
+        for _ in 0..100 {
+            if sender
+                .attempted_source_user_ids
+                .lock()
+                .expect("test sender source lock must not be poisoned")
+                .len()
+                > index
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    pump.stop_and_wait_for_test(&room_id).await;
+    let output = String::from_utf8(
+        logs.lock()
+            .expect("captured log lock must not be poisoned")
+            .clone(),
+    )
+    .expect("captured logs must be UTF-8");
+    assert_eq!(
+        output
+            .matches("processed audio WebRTC egress peer is not ready")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn app_state_start_and_stop_manage_egress_pump() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
@@ -148,12 +495,14 @@ async fn app_state_start_and_stop_manage_egress_pump() {
     state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
     assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 1);
 
-    state.stop_media_relay(
-        room_id,
-        StopMediaRelayRequest {
-            user_id: UserId::from_external("user_01"),
-        },
-    );
+    state
+        .stop_media_relay(
+            room_id,
+            StopMediaRelayRequest {
+                user_id: UserId::from_external("user_01"),
+            },
+        )
+        .await;
     assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 0);
 }
 
@@ -187,6 +536,42 @@ async fn leaving_last_participant_stops_processed_egress_pump() {
 }
 
 #[tokio::test]
+async fn leaving_last_participant_removes_relay_and_clears_processed_room_resources() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let user = state
+        .join_room_persisted(room_id.clone(), Default::default())
+        .await
+        .unwrap()
+        .user;
+
+    start_relay_with_provider(&state, &room_id, NoiseProvider::Rnnoise);
+    let mut processed_frames = state.subscribe_processed_media_frames(&room_id);
+
+    state
+        .leave_room_persisted(&room_id, &user.id)
+        .await
+        .unwrap();
+
+    assert!(!state.media_relays.contains_room(&room_id));
+    assert_eq!(
+        state.media_relays.status(room_id.clone()).status,
+        MediaRelayStatus::Inactive
+    );
+    assert_eq!(state.processed_audio_webrtc_egress_pump_count(), 0);
+    assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 0);
+    assert_eq!(state.server_media_runtime_pump_count(), 0);
+    assert!(matches!(
+        tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            processed_frames.recv()
+        )
+        .await,
+        Ok(Err(tokio::sync::broadcast::error::RecvError::Closed))
+    ));
+}
+
+#[tokio::test]
 async fn leaving_last_participant_stops_raw_opus_egress_pump() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
@@ -214,7 +599,7 @@ async fn close_server_media_sessions_stops_egress_pump() {
 
     state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
     assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 1);
-    state.close_server_media_sessions_for_room(&room_id);
+    state.close_server_media_sessions_for_room(&room_id).await;
     assert_eq!(state.raw_opus_webrtc_egress_pump_count(), 0);
 }
 
@@ -285,6 +670,28 @@ async fn egress_pump_stop_waits_for_cancelled_task_to_exit_for_tests() {
 }
 
 #[tokio::test]
+async fn closing_processed_audio_room_removes_finished_egress_pump_task() {
+    let (_relays, runtime, fanout) = relay_context();
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = Arc::new(ServerMediaNegotiator::new(WebRtcStack::new(), sessions));
+    let pump = ProcessedAudioWebRtcEgressPump::new(Arc::clone(&runtime), fanout, negotiator);
+    let room_id = RoomId::default_room();
+
+    pump.start(room_id.clone());
+    assert_eq!(pump.task_count(), 1);
+    runtime.clear_room(&room_id);
+
+    for _ in 0..100 {
+        if pump.task_count() == 0 {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    panic!("finished processed-audio egress pump task remained registered");
+}
+
+#[tokio::test]
 async fn recipient_send_backpressure_does_not_block_other_recipients() {
     let (_relays, runtime, fanout) = relay_context();
     let sender = Arc::new(BlockingSender {
@@ -328,6 +735,87 @@ async fn recipient_send_backpressure_does_not_block_other_recipients() {
 
     pump.stop_and_wait_for_test(&room_id).await;
     panic!("recipient egress backpressure blocked other recipients");
+}
+
+#[tokio::test]
+async fn removing_recipient_cancels_its_worker_while_other_recipient_keeps_receiving() {
+    let (relays, runtime, fanout) = relay_context();
+    let removed_user_id = UserId::from_external("blocked");
+    let fast_user_id = UserId::from_external("fast");
+    let sender = Arc::new(RecipientLifecycleSender {
+        removed_user_id: removed_user_id.clone(),
+        deliveries: Mutex::new(Vec::new()),
+        blocked_send_started: Notify::new(),
+        blocked_send_cancelled: Notify::new(),
+    });
+    let pump =
+        ProcessedAudioWebRtcEgressPump::new(Arc::clone(&runtime), fanout, Arc::clone(&sender));
+    let room_id = RoomId::default_room();
+    pump.start(room_id.clone());
+
+    let blocked_send_started = sender.blocked_send_started.notified();
+    runtime.process_frame(sequenced_audio_frame(1)).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(1), blocked_send_started)
+        .await
+        .expect("removed recipient send must start");
+    for _ in 0..100 {
+        if sender
+            .deliveries
+            .lock()
+            .expect("test sender deliveries lock must not be poisoned")
+            .contains(&(fast_user_id.clone(), 1))
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    relays
+        .remove_participant(room_id.clone(), &removed_user_id)
+        .unwrap();
+    let blocked_send_cancelled = sender.blocked_send_cancelled.notified();
+    pump.remove_recipient(&room_id, &removed_user_id);
+    tokio::time::timeout(std::time::Duration::from_secs(1), blocked_send_cancelled)
+        .await
+        .expect("removed recipient worker must cancel its in-flight send");
+
+    runtime.process_frame(sequenced_audio_frame(2)).unwrap();
+    for _ in 0..100 {
+        if sender
+            .deliveries
+            .lock()
+            .expect("test sender deliveries lock must not be poisoned")
+            .contains(&(fast_user_id.clone(), 2))
+        {
+            pump.stop_and_wait_for_test(&room_id).await;
+            let deliveries = sender
+                .deliveries
+                .lock()
+                .expect("test sender deliveries lock must not be poisoned")
+                .clone();
+            assert_eq!(
+                deliveries
+                    .iter()
+                    .filter(|(user_id, _)| user_id == &removed_user_id)
+                    .map(|(_, sequence)| *sequence)
+                    .collect::<Vec<_>>(),
+                vec![1]
+            );
+            assert_eq!(
+                deliveries
+                    .iter()
+                    .filter(|(user_id, _)| user_id == &fast_user_id)
+                    .map(|(_, sequence)| *sequence)
+                    .collect::<Vec<_>>(),
+                vec![1, 2]
+            );
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    pump.stop_and_wait_for_test(&room_id).await;
+    panic!("remaining recipient stopped receiving after peer removal");
 }
 
 #[tokio::test]
@@ -476,24 +964,6 @@ fn start_relay_with_provider(state: &AppState, room_id: &RoomId, provider: Noise
     );
 }
 
-async fn answer_offer(state: &AppState, room_id: &RoomId, user_id: &str) -> ServerMediaSessionKey {
-    let offerer = WebRtcStack::new().create_peer_connection().await.unwrap();
-    let key = ServerMediaSessionKey {
-        room_id: room_id.clone(),
-        user_id: UserId::from_external(user_id),
-    };
-    state
-        .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
-            room_id: key.room_id.clone(),
-            user_id: key.user_id.clone(),
-            audio_track_id: "audio-main".to_owned(),
-            sdp: offerer.create_local_offer_for_test().await.unwrap(),
-        })
-        .await
-        .unwrap();
-    key
-}
-
 async fn connect_test_offer(
     state: &AppState,
     room_id: &RoomId,
@@ -504,6 +974,45 @@ async fn connect_test_offer(
         user_id: UserId::from_external(user_id),
     };
     let offer = lyre_webrtc::test_support::server_media_offer_with_valid_opus_sender().await;
+    let answer = state
+        .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
+            room_id: key.room_id.clone(),
+            user_id: key.user_id.clone(),
+            audio_track_id: "audio-main".to_owned(),
+            sdp: offer.offer_sdp.clone(),
+        })
+        .await
+        .unwrap();
+    for candidate in offer.remote_candidates().await {
+        state
+            .add_server_media_ice_candidate(ServerMediaIceCandidate {
+                room_id: key.room_id.clone(),
+                user_id: key.user_id.clone(),
+                candidate: candidate.candidate,
+                sdp_mid: candidate.sdp_mid,
+                sdp_mline_index: candidate.sdp_mline_index,
+                username_fragment: candidate.username_fragment,
+            })
+            .await
+            .unwrap();
+    }
+    offer
+        .accept_answer(&answer, state.server_media_ice_candidates(&key))
+        .await
+}
+
+async fn connect_test_offer_with_opus_payload_type(
+    state: &AppState,
+    room_id: &RoomId,
+    user_id: &str,
+    payload_type: u8,
+) -> lyre_webrtc::test_support::ServerMediaConnectedOffer {
+    let key = ServerMediaSessionKey {
+        room_id: room_id.clone(),
+        user_id: UserId::from_external(user_id),
+    };
+    let offer =
+        lyre_webrtc::test_support::server_media_offer_with_opus_payload_type(payload_type).await;
     let answer = state
         .answer_server_media_offer_with_subscriptions(ServerMediaOffer {
             room_id: key.room_id.clone(),
@@ -567,8 +1076,8 @@ async fn processed_audio_frame_is_sent_to_recipient_server_media_peer() {
             },
         )
         .unwrap();
-    let source_key = answer_offer(&state, &room_id, "source").await;
-    let recipient_key = answer_offer(&state, &room_id, "recipient").await;
+    let source = connect_test_offer(&state, &room_id, "source").await;
+    let recipient = connect_test_offer(&state, &room_id, "recipient").await;
 
     state
         .process_media_frame(audio_frame(
@@ -577,19 +1086,13 @@ async fn processed_audio_frame_is_sent_to_recipient_server_media_peer() {
         ))
         .unwrap();
 
-    for _ in 0..100 {
-        let recipient = state
-            .server_media_peer_connection_for_test(&recipient_key)
-            .unwrap();
-        if !recipient.sent_egress_rtp_packets_for_test().is_empty() {
-            let source = state
-                .server_media_peer_connection_for_test(&source_key)
-                .unwrap();
-            assert!(source.sent_egress_rtp_packets_for_test().is_empty());
-            assert_eq!(
-                recipient.sent_egress_rtp_packets_for_test()[0].payload_type,
-                111
-            );
+    for _ in 0..150 {
+        let packets = recipient.received_remote_rtp_packets();
+        if let Some(packet) = packets.first() {
+            assert!(source.received_remote_rtp_packets().is_empty());
+            assert_eq!(packet.header.payload_type, 111);
+            assert!(!packet.payload.is_empty());
+            assert!(decoded_peak_from_rtp_payload(&packet.payload) > 0.0);
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -668,6 +1171,41 @@ async fn server_relay_off_noise_forwards_opus_payload_without_transcoding() {
 }
 
 #[tokio::test]
+async fn server_relay_off_noise_normalizes_source_dynamic_payload_type_for_recipient() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    state.start_media_relay(room_id.clone(), StartMediaRelayRequest::default());
+    register_audio_track(&state, &room_id, "source");
+    register_audio_track(&state, &room_id, "recipient");
+    state
+        .media_relays
+        .update_subscriptions(
+            room_id.clone(),
+            lyre_core::media::UpdateMediaRelaySubscriptionsRequest {
+                user_id: UserId::from_external("recipient"),
+                source_user_ids: vec![UserId::from_external("source")],
+            },
+        )
+        .unwrap();
+    let source = connect_test_offer_with_opus_payload_type(&state, &room_id, "source", 109).await;
+    let recipient =
+        connect_test_offer_with_opus_payload_type(&state, &room_id, "recipient", 109).await;
+
+    source.send_valid_opus_packets(1).await;
+
+    for _ in 0..150 {
+        if let Some(packet) = recipient.received_remote_rtp_packets().first() {
+            assert_eq!(packet.header.payload_type, 109);
+            assert_eq!(packet.payload, encoded_opus_payload_for_test());
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    panic!("raw relay dropped source RTP negotiated with dynamic Opus payload type 109");
+}
+
+#[tokio::test]
 async fn server_relay_off_noise_excludes_unsubscribed_raw_opus_recipient() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
@@ -735,21 +1273,15 @@ async fn server_relay_off_noise_does_not_replay_history_when_one_recipient_is_mi
             .unwrap();
     }
     let source = connect_test_offer(&state, &room_id, "source").await;
-    let subscribed_key = ServerMediaSessionKey {
-        room_id: room_id.clone(),
-        user_id: UserId::from_external("subscribed"),
-    };
-    let _subscribed = connect_test_offer(&state, &room_id, "subscribed").await;
+    let subscribed = connect_test_offer(&state, &room_id, "subscribed").await;
 
     source.send_valid_opus_packets(1).await;
 
     for _ in 0..150 {
-        let subscribed = state
-            .server_media_peer_connection_for_test(&subscribed_key)
-            .unwrap();
-        if !subscribed.sent_egress_rtp_packets_for_test().is_empty() {
+        if !subscribed.received_remote_rtp_packets().is_empty() {
             tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-            assert_eq!(subscribed.sent_egress_rtp_packets_for_test().len(), 1);
+            assert_eq!(subscribed.received_remote_rtp_packets().len(), 1);
+            assert!(source.received_remote_rtp_packets().is_empty());
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;

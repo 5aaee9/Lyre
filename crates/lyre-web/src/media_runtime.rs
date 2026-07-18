@@ -84,11 +84,23 @@ impl WebMediaRuntime {
         self.runtime.process_frame(frame)
     }
 
+    pub fn process_frames<I>(&self, frames: I) -> Result<usize, MediaRelayError>
+    where
+        I: IntoIterator<Item = AudioFrame>,
+    {
+        self.runtime.process_frames(frames)
+    }
+
     pub fn subscribe(&self, room_id: &RoomId) -> broadcast::Receiver<ProcessedAudioFrame> {
         self.sink.subscribe(room_id)
     }
 
+    pub fn release_source(&self, room_id: &RoomId, user_id: &lyre_core::UserId) {
+        self.runtime.release_source(room_id, user_id);
+    }
+
     pub fn clear_room(&self, room_id: &RoomId) {
+        self.runtime.clear_room(room_id);
         self.sink.clear_room(room_id);
     }
 
@@ -102,5 +114,87 @@ impl fmt::Debug for WebMediaRuntime {
         formatter
             .debug_struct("WebMediaRuntime")
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lyre_core::{
+        MediaTrackKind, NoiseCancellationConfig, RegisterMediaTrackRequest, StartMediaRelayRequest,
+        UserId,
+    };
+    use lyre_noise_cancelling::{RNNOISE_CHANNELS, RNNOISE_FRAME_SIZE, RNNOISE_SAMPLE_RATE_HZ};
+
+    fn setup_runtime() -> (WebMediaRuntime, RoomId, UserId) {
+        let relays = Arc::new(MediaRelayRegistry::new());
+        let room_id = RoomId::default_room();
+        let user_id = UserId::from_external("user_01");
+        relays.start(
+            room_id.clone(),
+            StartMediaRelayRequest {
+                noise: Some(NoiseCancellationConfig {
+                    provider: NoiseProvider::Rnnoise,
+                    ..NoiseCancellationConfig::default()
+                }),
+            },
+        );
+        relays
+            .register_track(
+                room_id.clone(),
+                RegisterMediaTrackRequest {
+                    user_id: user_id.clone(),
+                    track_id: "audio-main".to_owned(),
+                    kind: MediaTrackKind::Audio,
+                },
+            )
+            .unwrap();
+        (WebMediaRuntime::new(relays), room_id, user_id)
+    }
+
+    fn frame(room_id: &RoomId, user_id: &UserId) -> AudioFrame {
+        AudioFrame {
+            room_id: room_id.clone(),
+            user_id: user_id.clone(),
+            track_id: "audio-main".to_owned(),
+            sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
+            channels: RNNOISE_CHANNELS,
+            sequence: 1,
+            rtp_timestamp: None,
+            samples: (0..RNNOISE_FRAME_SIZE)
+                .map(|index| ((index as f32) / 24.0).sin() * 0.1)
+                .collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn releasing_a_source_resets_its_noise_processor_state() {
+        let (runtime, room_id, user_id) = setup_runtime();
+        let mut output = runtime.subscribe(&room_id);
+        let frame = frame(&room_id, &user_id);
+
+        runtime.process_frame(frame.clone()).unwrap();
+        let first = output.recv().await.unwrap();
+        runtime.release_source(&room_id, &user_id);
+        runtime.process_frame(frame).unwrap();
+        let after_release = output.recv().await.unwrap();
+
+        assert_eq!(after_release.samples, first.samples);
+    }
+
+    #[tokio::test]
+    async fn clearing_a_room_resets_its_noise_processor_state() {
+        let (runtime, room_id, user_id) = setup_runtime();
+        let mut output = runtime.subscribe(&room_id);
+        let frame = frame(&room_id, &user_id);
+
+        runtime.process_frame(frame.clone()).unwrap();
+        let first = output.recv().await.unwrap();
+        runtime.clear_room(&room_id);
+        let mut output = runtime.subscribe(&room_id);
+        runtime.process_frame(frame).unwrap();
+        let after_clear = output.recv().await.unwrap();
+
+        assert_eq!(after_clear.samples, first.samples);
     }
 }

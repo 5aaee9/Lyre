@@ -103,6 +103,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [status, setStatus] = useState("Joining");
   const [audioStarted, setAudioStarted] = useState(false);
   const [listenOnly, setListenOnly] = useState(false);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [muted, setMuted] = useState(false);
   const [socketOpen, setSocketOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -206,6 +207,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     localVoiceActivityRef.current = null;
     serverAudioSessionRef.current?.close();
     serverAudioSessionRef.current = null;
+    setPlaybackBlocked(false);
     clearSpeaking();
   }, [clearSpeaking]);
 
@@ -517,9 +519,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
             iceServers,
             stream,
             listenOnly: listenOnlySession,
+            subscribedSourceIds: nextSourceIds,
             outputDeviceId: audioDevices.outputDeviceId,
             userAudio: audioSettings,
             onError: handleAudioError,
+            onPlaybackBlocked: () => setPlaybackBlocked(true),
             onConnectionInterrupted: () => reconnectServerRelayAudioRef.current(),
             onRemoteTrack: () => setAudioDiagnosticsRefreshKey((key) => key + 1),
             onRemoteSpeakingChange: setUserSpeaking
@@ -660,6 +664,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
     const nextMuted = !muted;
     setMuted(nextMuted);
     serverAudioSessionRef.current?.setMuted(nextMuted);
+  }
+
+  async function resumePlayback() {
+    const session = serverAudioSessionRef.current;
+    if (!session) {
+      return;
+    }
+    try {
+      await session.resumePlayback();
+      setPlaybackBlocked(false);
+      setStatus(listenOnlyRef.current ? "Listening without microphone" : "Server relay audio connected");
+      setAudioDiagnosticsRefreshKey((key) => key + 1);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Audio playback failed");
+    }
   }
 
   const loadAudioDiagnostics = useCallback(
@@ -814,8 +833,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
       link={link}
       loadAudioDiagnostics={loadAudioDiagnostics}
       muted={muted}
+      playbackBlocked={playbackBlocked}
       onApplyUserAudioSettings={applyUserAudioSettings}
       onLeave={leave}
+      onResumePlayback={resumePlayback}
       onSaveSettings={saveSettings}
       onSettingsOpenChange={setSettingsOpen}
       onToggleMuted={toggleMuted}

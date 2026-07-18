@@ -5,9 +5,10 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use lyre_core::{
-    MediaRelayStatus, MediaTrackKind, RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest,
-    UserId,
+    AudioFrame, MediaRelayStatus, MediaTrackKind, NoiseCancellationConfig, NoiseProvider,
+    RegisterMediaTrackRequest, RoomId, StartMediaRelayRequest, UserId,
 };
+use lyre_noise_cancelling::{RNNOISE_CHANNELS, RNNOISE_FRAME_SIZE, RNNOISE_SAMPLE_RATE_HZ};
 use lyre_webrtc::{ServerMediaOffer, WebRtcStack};
 use tower::ServiceExt;
 
@@ -80,6 +81,7 @@ async fn close_server_media_session_for_user_keeps_room_relay_and_other_peers() 
 
     let closed = state
         .close_server_media_session_for_user(room_id, UserId::from_external("user_a"))
+        .await
         .unwrap();
 
     assert_eq!(closed.media_relay.status, MediaRelayStatus::Active);
@@ -96,6 +98,48 @@ async fn close_server_media_session_for_user_keeps_room_relay_and_other_peers() 
         state.active_server_media_sessions()[0].user_id.as_str(),
         "user_b"
     );
+}
+
+#[tokio::test]
+async fn closing_a_user_media_session_releases_noise_processor_state() {
+    let state = AppState::default();
+    let room_id = RoomId::default_room();
+    let user_id = UserId::from_external("user_a");
+    state.media_relays.start(
+        room_id.clone(),
+        StartMediaRelayRequest {
+            noise: Some(NoiseCancellationConfig {
+                provider: NoiseProvider::Rnnoise,
+                ..NoiseCancellationConfig::default()
+            }),
+        },
+    );
+    register_audio_track(&state, user_id.as_str());
+    let mut output = state.subscribe_processed_media_frames(&room_id);
+    let frame = AudioFrame {
+        room_id: room_id.clone(),
+        user_id: user_id.clone(),
+        track_id: "audio-main".to_owned(),
+        sample_rate_hz: RNNOISE_SAMPLE_RATE_HZ,
+        channels: RNNOISE_CHANNELS,
+        sequence: 1,
+        rtp_timestamp: None,
+        samples: (0..RNNOISE_FRAME_SIZE)
+            .map(|index| ((index as f32) / 24.0).sin() * 0.1)
+            .collect(),
+    };
+
+    state.process_media_frame(frame.clone()).unwrap();
+    let first = output.recv().await.unwrap();
+    state
+        .close_server_media_session_for_user(room_id.clone(), user_id.clone())
+        .await
+        .unwrap();
+    register_audio_track(&state, user_id.as_str());
+    state.process_media_frame(frame).unwrap();
+    let after_rejoin = output.recv().await.unwrap();
+
+    assert_eq!(after_rejoin.samples, first.samples);
 }
 
 #[tokio::test]

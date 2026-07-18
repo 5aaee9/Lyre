@@ -50,6 +50,7 @@ const audioContexts: MockAudioContext[] = [];
 const mediaStreamSources: MockAudioSource[] = [];
 const gainNodes: MockGainNode[] = [];
 let rejectSetSinkId = false;
+let nextAudioContextResumeError: unknown = null;
 
 const localAudioTrack = { id: "local-audio", enabled: true, stop: stopTrack };
 
@@ -91,6 +92,11 @@ class MockAudioContext {
   createGain = vi.fn(() => new MockGainNode());
   close = vi.fn();
   resume = vi.fn(async () => {
+    if (nextAudioContextResumeError) {
+      const error = nextAudioContextResumeError;
+      nextAudioContextResumeError = null;
+      throw error;
+    }
     this.state = "running";
   });
   setSinkId = vi.fn(async () => {
@@ -118,6 +124,7 @@ class MockPeerConnection {
   };
   addIceCandidate = vi.fn();
   addTrack = vi.fn();
+  addTransceiver = vi.fn();
   close = vi.fn();
   createOffer = vi.fn(async () => ({ type: "offer", sdp: "local-offer" }));
   getReceivers = vi.fn(() => [] as RTCRtpReceiver[]);
@@ -170,6 +177,7 @@ describe("ServerMediaAudioSession", () => {
     mediaStreamSources.length = 0;
     gainNodes.length = 0;
     rejectSetSinkId = false;
+    nextAudioContextResumeError = null;
     voiceActivityMock.instances.length = 0;
     localAudioTrack.enabled = true;
     stopTrack.mockClear();
@@ -242,6 +250,35 @@ describe("ServerMediaAudioSession", () => {
     await vi.advanceTimersByTimeAsync(10);
 
     expect(socketSend).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers enough audio media sections for every subscribed source", () => {
+    new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [],
+      stream,
+      subscribedSourceIds: ["user_b", "user_c", "user_d"]
+    });
+
+    expect(peerConnections[0].addTransceiver).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers an audio media section for listen-only sessions before sources exist", () => {
+    new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [],
+      stream: { getAudioTracks: () => [] } as unknown as MediaStream,
+      listenOnly: true,
+      subscribedSourceIds: []
+    });
+
+    expect(peerConnections[0].addTransceiver).toHaveBeenCalledOnce();
   });
 
   it("sends local ICE candidates over the room websocket", async () => {
@@ -383,6 +420,65 @@ describe("ServerMediaAudioSession", () => {
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("speaker unavailable"));
   });
 
+  it("keeps the playback diagnostic when speaker routing still fails on resume", async () => {
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [],
+      stream,
+      outputDeviceId: "speaker-a"
+    });
+    await session.start();
+    rejectSetSinkId = true;
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    await vi.waitFor(async () => {
+      await expect(session.diagnostics()).resolves.toMatchObject({
+        lastPlaybackError: "speaker unavailable"
+      });
+    });
+
+    await expect(session.resumePlayback()).rejects.toThrow("speaker unavailable");
+
+    expect(audioContexts[0].setSinkId).toHaveBeenCalledTimes(2);
+    await expect(session.diagnostics()).resolves.toMatchObject({
+      lastPlaybackError: "speaker unavailable"
+    });
+  });
+
+  it("clears the playback diagnostic after speaker routing succeeds on resume", async () => {
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [],
+      stream,
+      outputDeviceId: "speaker-a"
+    });
+    await session.start();
+    rejectSetSinkId = true;
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    await vi.waitFor(async () => {
+      await expect(session.diagnostics()).resolves.toMatchObject({
+        lastPlaybackError: "speaker unavailable"
+      });
+    });
+    rejectSetSinkId = false;
+
+    await session.resumePlayback();
+
+    expect(audioContexts[0].setSinkId).toHaveBeenLastCalledWith("speaker-a");
+    await expect(session.diagnostics()).resolves.toMatchObject({ lastPlaybackError: null });
+  });
+
   it("keeps default remote playback output when no speaker is selected", async () => {
     const session = makeSession();
     await session.start();
@@ -497,7 +593,7 @@ describe("ServerMediaAudioSession", () => {
         "v=0",
         "m=audio 9 UDP/TLS/RTP/SAVPF 111",
         "a=mid:0",
-        "a=msid:audio lyre-user:user_b:audio"
+        "a=msid:lyre-user:user_b:audio lyre-user:user_b:audio"
       ].join("\r\n"),
       state: "negotiating"
     });
@@ -545,6 +641,43 @@ describe("ServerMediaAudioSession", () => {
     await session.resumePlayback();
 
     expect(audioContexts[0].resume).toHaveBeenCalledOnce();
+  });
+
+  it("retries blocked playback resources and clears the playback diagnostic", async () => {
+    const blockedError = Object.assign(new Error("Playback requires a user gesture"), {
+      name: "NotAllowedError"
+    });
+    const onPlaybackBlocked = vi.fn();
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [],
+      stream,
+      onPlaybackBlocked
+    });
+    await session.start();
+    nextAudioContextResumeError = blockedError;
+    play.mockRejectedValueOnce(blockedError);
+
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio", enabled: true, readyState: "live" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onPlaybackBlocked).toHaveBeenCalled();
+    await expect(session.diagnostics()).resolves.toMatchObject({
+      lastPlaybackError: "Playback requires a user gesture"
+    });
+
+    await session.resumePlayback();
+
+    expect(audioContexts[0].resume).toHaveBeenCalledTimes(2);
+    expect(play).toHaveBeenCalledTimes(2);
+    await expect(session.diagnostics()).resolves.toMatchObject({ lastPlaybackError: null });
   });
 
   it("summarizes WebRTC audio diagnostics", async () => {
@@ -812,5 +945,48 @@ describe("ServerMediaAudioSession", () => {
     expect(removeAudio).toHaveBeenCalledOnce();
     expect(audioContexts[0].close).toHaveBeenCalledOnce();
     expect(socketSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues one-time session cleanup when individual release steps fail", async () => {
+    const onError = vi.fn();
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [{ urls: ["stun:stun.example:3478"], username: null, credential: null }],
+      stream,
+      pollIntervalMs: 10,
+      onError
+    });
+    await session.start();
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    peerConnections[0].close.mockImplementationOnce(() => {
+      throw new Error("peer close failed");
+    });
+    stopTrack.mockImplementationOnce(() => {
+      throw new Error("local track stop failed");
+    });
+    mediaStreamSources[0].disconnect.mockImplementationOnce(() => {
+      throw new Error("source disconnect failed");
+    });
+    audioContexts[0].close.mockRejectedValueOnce(new Error("audio context close failed"));
+
+    expect(() => session.close()).not.toThrow();
+    session.close();
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("audio context close failed"));
+
+    expect(peerConnections[0].close).toHaveBeenCalledOnce();
+    expect(stopTrack).toHaveBeenCalledOnce();
+    expect(gainNodes[0].disconnect).toHaveBeenCalledOnce();
+    expect(voiceActivityMock.instances[0].stop).toHaveBeenCalledOnce();
+    expect(removeAudio).toHaveBeenCalledOnce();
+    expect(audioContexts[0].close).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith("peer close failed");
+    expect(onError).toHaveBeenCalledWith("local track stop failed");
+    expect(onError).toHaveBeenCalledWith("source disconnect failed");
   });
 });

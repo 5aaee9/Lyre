@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        JoinRoomRequest, PersistedRoom, PersistedRoomRegistry, PersistedRoomUser, RoomAccessToken,
-        RoomId, RoomRegistry, UserId, UserProfile,
+        JoinRoomRequest, PersistedRoom, PersistedRoomRegistry, PersistedRoomUser,
+        PersistedWebSocketAdmission, RoomAccessToken, RoomId, RoomRegistry, UserId, UserProfile,
     };
     use chrono::{TimeZone, Utc};
 
@@ -15,6 +15,7 @@ mod tests {
                 noise: Default::default(),
             },
             access_token: RoomAccessToken::from_external(access_token),
+            websocket_admission: PersistedWebSocketAdmission::Confirmed,
         }
     }
 
@@ -45,6 +46,29 @@ mod tests {
         assert_eq!(
             persisted.rooms[0].users[0].access_token,
             joined.access_token
+        );
+        assert_eq!(
+            persisted.rooms[0].users[0].websocket_admission,
+            PersistedWebSocketAdmission::Confirmed
+        );
+    }
+
+    #[test]
+    fn pending_websocket_admission_round_trips_with_deadline() {
+        let registry = RoomRegistry::new();
+        let room_id = RoomId::default_room();
+        let expires_at = Utc.with_ymd_and_hms(2026, 7, 20, 0, 0, 0).unwrap();
+        let joined = registry.join_pending_websocket_admission(
+            room_id.clone(),
+            JoinRoomRequest::default(),
+            expires_at,
+        );
+
+        let restored = RoomRegistry::from_persisted(registry.to_persisted());
+
+        assert_eq!(
+            restored.pending_websocket_admissions(),
+            vec![(room_id, joined.user.id, expires_at)]
         );
     }
 

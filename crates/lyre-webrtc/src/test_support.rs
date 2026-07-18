@@ -10,8 +10,10 @@ use rtc::{
         media_engine::{MediaEngine, MIME_TYPE_OPUS},
     },
     rtp_transceiver::rtp_sender::{
-        RTCRtpCodec, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
+        RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters, RTCRtpEncodingParameters,
+        RtpCodecKind,
     },
+    rtp_transceiver::{RTCRtpTransceiverDirection, RTCRtpTransceiverInit},
 };
 use std::sync::{Arc, Mutex};
 use webrtc::{
@@ -76,6 +78,23 @@ impl PeerConnectionEventHandler for TestPeerConnectionHandler {
 }
 
 pub async fn server_media_offer_with_valid_opus_sender() -> ServerMediaTestOffer {
+    server_media_offer_with_valid_opus_sender_and_remote_source_count(1).await
+}
+
+pub async fn server_media_offer_with_valid_opus_sender_and_remote_source_count(
+    remote_source_count: usize,
+) -> ServerMediaTestOffer {
+    server_media_offer(remote_source_count, None).await
+}
+
+pub async fn server_media_offer_with_opus_payload_type(payload_type: u8) -> ServerMediaTestOffer {
+    server_media_offer(1, Some(payload_type)).await
+}
+
+async fn server_media_offer(
+    remote_source_count: usize,
+    opus_payload_type: Option<u8>,
+) -> ServerMediaTestOffer {
     let (
         offerer,
         track,
@@ -83,7 +102,7 @@ pub async fn server_media_offer_with_valid_opus_sender() -> ServerMediaTestOffer
         remote_rtp_packets,
         mut gather_complete_rx,
         connected_rx,
-    ) = opus_offerer().await;
+    ) = opus_offerer(remote_source_count, opus_payload_type).await;
 
     let offer = offerer.create_offer(None).await.unwrap();
     offerer.set_local_description(offer).await.unwrap();
@@ -249,11 +268,26 @@ type OpusOffererParts = (
     Receiver<()>,
 );
 
-async fn opus_offerer() -> OpusOffererParts {
+async fn opus_offerer(
+    remote_source_count: usize,
+    opus_payload_type: Option<u8>,
+) -> OpusOffererParts {
     let mut media_engine = MediaEngine::default();
-    media_engine
-        .register_default_codecs()
-        .expect("default codecs should register for tests");
+    if let Some(payload_type) = opus_payload_type {
+        media_engine
+            .register_codec(
+                RTCRtpCodecParameters {
+                    rtp_codec: test_opus_codec(),
+                    payload_type,
+                },
+                RtpCodecKind::Audio,
+            )
+            .expect("test Opus codec should register");
+    } else {
+        media_engine
+            .register_default_codecs()
+            .expect("default codecs should register for tests");
+    }
     let registry = register_default_interceptors(Registry::new(), &mut media_engine).unwrap();
     let local_ice_candidates = Arc::new(Mutex::new(Vec::new()));
     let remote_rtp_packets = Arc::new(Mutex::new(Vec::new()));
@@ -272,13 +306,6 @@ async fn opus_offerer() -> OpusOffererParts {
         .build()
         .await
         .expect("test offerer peer connection should build");
-    let codec = RTCRtpCodec {
-        mime_type: MIME_TYPE_OPUS.to_owned(),
-        clock_rate: 48_000,
-        channels: 2,
-        sdp_fmtp_line: String::new(),
-        rtcp_feedback: vec![],
-    };
     let track = Arc::new(TrackLocalStaticRTP::new(MediaStreamTrack::new(
         "lyre-test".to_owned(),
         "audio".to_owned(),
@@ -289,11 +316,23 @@ async fn opus_offerer() -> OpusOffererParts {
                 ssrc: Some(1234),
                 ..Default::default()
             },
-            codec,
+            codec: test_opus_codec(),
             ..Default::default()
         }],
     )));
     offerer.add_track(track.clone()).await.unwrap();
+    for _ in 1..remote_source_count {
+        offerer
+            .add_transceiver_from_kind(
+                RtpCodecKind::Audio,
+                Some(RTCRtpTransceiverInit {
+                    direction: RTCRtpTransceiverDirection::Recvonly,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
+    }
     (
         Arc::from(offerer),
         track,
@@ -302,6 +341,16 @@ async fn opus_offerer() -> OpusOffererParts {
         gather_complete_rx,
         connected_rx,
     )
+}
+
+fn test_opus_codec() -> RTCRtpCodec {
+    RTCRtpCodec {
+        mime_type: MIME_TYPE_OPUS.to_owned(),
+        clock_rate: 48_000,
+        channels: 2,
+        sdp_fmtp_line: String::new(),
+        rtcp_feedback: vec![],
+    }
 }
 
 async fn local_description_sdp_after_gathering(

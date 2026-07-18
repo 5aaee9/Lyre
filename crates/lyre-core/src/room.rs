@@ -91,6 +91,14 @@ pub struct PersistedRoom {
 pub struct PersistedRoomUser {
     pub profile: UserProfile,
     pub access_token: RoomAccessToken,
+    pub websocket_admission: PersistedWebSocketAdmission,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PersistedWebSocketAdmission {
+    Confirmed,
+    Pending { expires_at: DateTime<Utc> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +117,7 @@ pub enum PersistedRoomRegistryError {
 struct RoomState {
     users: DashMap<UserId, UserProfile>,
     access_tokens: DashMap<UserId, RoomAccessToken>,
+    pending_websocket_admissions: DashMap<UserId, DateTime<Utc>>,
 }
 
 #[derive(Debug, Default)]
@@ -128,11 +137,28 @@ impl RoomRegistry {
     }
 
     pub fn snapshot(&self, room_id: RoomId) -> RoomSnapshot {
-        self.rooms.entry(room_id.clone()).or_default();
         self.snapshot_existing(room_id)
     }
 
     pub fn join(&self, room_id: RoomId, request: JoinRoomRequest) -> JoinRoomResponse {
+        self.join_with_websocket_admission(room_id, request, None)
+    }
+
+    pub fn join_pending_websocket_admission(
+        &self,
+        room_id: RoomId,
+        request: JoinRoomRequest,
+        expires_at: DateTime<Utc>,
+    ) -> JoinRoomResponse {
+        self.join_with_websocket_admission(room_id, request, Some(expires_at))
+    }
+
+    fn join_with_websocket_admission(
+        &self,
+        room_id: RoomId,
+        request: JoinRoomRequest,
+        pending_expires_at: Option<DateTime<Utc>>,
+    ) -> JoinRoomResponse {
         let room = self.rooms.entry(room_id.clone()).or_default();
         let nickname = request
             .nickname
@@ -149,6 +175,10 @@ impl RoomRegistry {
         room.users.insert(user.id.clone(), user.clone());
         room.access_tokens
             .insert(user.id.clone(), access_token.clone());
+        if let Some(expires_at) = pending_expires_at {
+            room.pending_websocket_admissions
+                .insert(user.id.clone(), expires_at);
+        }
         drop(room);
 
         JoinRoomResponse {
@@ -162,6 +192,13 @@ impl RoomRegistry {
         let removed = if let Some(room) = self.rooms.get(room_id) {
             let removed = room.users.remove(user_id).is_some();
             room.access_tokens.remove(user_id);
+            room.pending_websocket_admissions.remove(user_id);
+            let room_is_empty = room.users.is_empty();
+            drop(room);
+            if removed && room_is_empty {
+                self.rooms
+                    .remove_if(room_id, |_, room| room.users.is_empty());
+            }
             removed
         } else {
             false
@@ -211,6 +248,32 @@ impl RoomRegistry {
         }
     }
 
+    pub fn confirm_websocket_admission(&self, room_id: &RoomId, user_id: &UserId) -> bool {
+        self.rooms
+            .get(room_id)
+            .is_some_and(|room| room.pending_websocket_admissions.remove(user_id).is_some())
+    }
+
+    pub fn pending_websocket_admissions(&self) -> Vec<(RoomId, UserId, DateTime<Utc>)> {
+        let mut pending = self
+            .rooms
+            .iter()
+            .flat_map(|room| {
+                room.pending_websocket_admissions
+                    .iter()
+                    .map(|entry| (room.key().clone(), entry.key().clone(), *entry.value()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        pending.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then(left.1.cmp(&right.1))
+                .then(left.2.cmp(&right.2))
+        });
+        pending
+    }
+
     pub fn to_persisted(&self) -> PersistedRoomRegistry {
         let mut rooms = self
             .rooms
@@ -229,6 +292,15 @@ impl RoomRegistry {
                         Some(PersistedRoomUser {
                             profile: user_entry.value().clone(),
                             access_token,
+                            websocket_admission: room_entry
+                                .value()
+                                .pending_websocket_admissions
+                                .get(user_entry.key())
+                                .map_or(PersistedWebSocketAdmission::Confirmed, |expires_at| {
+                                    PersistedWebSocketAdmission::Pending {
+                                        expires_at: *expires_at.value(),
+                                    }
+                                }),
                         })
                     })
                     .collect::<Vec<_>>();
@@ -265,6 +337,15 @@ impl RoomRegistry {
             let room = self.rooms.entry(persisted_room.room_id).or_default();
             for persisted_user in persisted_room.users {
                 let user_id = persisted_user.profile.id.clone();
+                match persisted_user.websocket_admission {
+                    PersistedWebSocketAdmission::Confirmed => {
+                        room.pending_websocket_admissions.remove(&user_id);
+                    }
+                    PersistedWebSocketAdmission::Pending { expires_at } => {
+                        room.pending_websocket_admissions
+                            .insert(user_id.clone(), expires_at);
+                    }
+                }
                 room.users.insert(user_id.clone(), persisted_user.profile);
                 room.access_tokens
                     .insert(user_id, persisted_user.access_token);
@@ -289,146 +370,5 @@ impl RoomRegistry {
                 .then(left.id.cmp(&right.id))
         });
         RoomSnapshot { room_id, users }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::DEFAULT_ROOM_ID;
-
-    #[test]
-    fn snapshot_auto_creates_arbitrary_room() {
-        let registry = RoomRegistry::new();
-        let room_id = RoomId::parse_boundary("Team-A").unwrap();
-        let snapshot = registry.snapshot(room_id.clone());
-        assert_eq!(snapshot.room_id, room_id);
-        assert!(snapshot.users.is_empty());
-    }
-
-    #[test]
-    fn blank_nickname_gets_guest_name() {
-        let registry = RoomRegistry::new();
-        let response = registry.join(
-            RoomId::default_room(),
-            JoinRoomRequest {
-                nickname: Some(" ".to_owned()),
-                noise: None,
-            },
-        );
-
-        assert_eq!(response.user.nickname, "Guest 1");
-        assert_eq!(response.room.users.len(), 1);
-    }
-
-    #[test]
-    fn leave_removes_only_matching_user() {
-        let registry = RoomRegistry::new();
-        let room_id = RoomId::default_room();
-        let first = registry
-            .join(room_id.clone(), JoinRoomRequest::default())
-            .user;
-        let second = registry
-            .join(room_id.clone(), JoinRoomRequest::default())
-            .user;
-
-        let snapshot = registry.leave(&room_id, &first.id).room;
-
-        assert_eq!(snapshot.users.len(), 1);
-        assert_eq!(snapshot.users[0].id, second.id);
-    }
-
-    #[test]
-    fn default_room_is_available() {
-        let registry = RoomRegistry::new();
-        let snapshot = registry.snapshot(RoomId::default_room());
-
-        assert_eq!(snapshot.room_id.as_str(), DEFAULT_ROOM_ID);
-    }
-
-    #[test]
-    fn join_returns_distinct_access_tokens() {
-        let registry = RoomRegistry::new();
-        let room_id = RoomId::default_room();
-
-        let first = registry.join(room_id.clone(), JoinRoomRequest::default());
-        let second = registry.join(room_id.clone(), JoinRoomRequest::default());
-
-        assert!(!first.access_token.as_str().is_empty());
-        assert_ne!(first.access_token, second.access_token);
-    }
-
-    #[test]
-    fn access_token_validates_room_and_user_tuple() {
-        let registry = RoomRegistry::new();
-        let room_id = RoomId::default_room();
-        let response = registry.join(room_id.clone(), JoinRoomRequest::default());
-
-        assert!(registry
-            .validate_access_token(&room_id, &response.user.id, &response.access_token)
-            .is_ok());
-        assert!(registry
-            .validate_access_token(
-                &RoomId::parse_boundary("OTHER").unwrap(),
-                &response.user.id,
-                &response.access_token,
-            )
-            .is_err());
-        assert!(registry
-            .validate_access_token(
-                &room_id,
-                &UserId::from_external("other_user"),
-                &response.access_token,
-            )
-            .is_err());
-        assert!(registry
-            .validate_access_token(
-                &room_id,
-                &response.user.id,
-                &RoomAccessToken::from_external("unknown"),
-            )
-            .is_err());
-    }
-
-    #[test]
-    fn access_token_validates_any_room_member() {
-        let registry = RoomRegistry::new();
-        let room_id = RoomId::default_room();
-        let response = registry.join(room_id.clone(), JoinRoomRequest::default());
-
-        assert!(registry
-            .validate_any_access_token(&room_id, &response.access_token)
-            .is_ok());
-        assert!(registry
-            .validate_any_access_token(
-                &RoomId::parse_boundary("OTHER").unwrap(),
-                &response.access_token,
-            )
-            .is_err());
-    }
-
-    #[test]
-    fn leave_invalidates_access_token() {
-        let registry = RoomRegistry::new();
-        let room_id = RoomId::default_room();
-        let response = registry.join(room_id.clone(), JoinRoomRequest::default());
-
-        registry.leave(&room_id, &response.user.id);
-
-        assert!(registry
-            .validate_access_token(&room_id, &response.user.id, &response.access_token)
-            .is_err());
-    }
-
-    #[test]
-    fn room_snapshot_does_not_serialize_access_token() {
-        let registry = RoomRegistry::new();
-        let room_id = RoomId::default_room();
-        registry.join(room_id.clone(), JoinRoomRequest::default());
-
-        let json = serde_json::to_value(registry.snapshot(room_id)).unwrap();
-
-        assert!(json.to_string().contains("users"));
-        assert!(!json.to_string().contains("access_token"));
     }
 }

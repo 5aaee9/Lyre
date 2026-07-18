@@ -1,32 +1,24 @@
-use crate::{
-    error::ApiError,
-    server_media_ice_diagnostics::{summarize_candidates, ServerMediaIceCandidateSummary},
-    signalling::{route_signal_message, SignalMessage, SignalPayload},
-};
+use crate::{api_websocket::handle_socket, error::ApiError};
 use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, Query, State,
-    },
+    extract::{ws::WebSocketUpgrade, Path, Query, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
-use futures_util::{SinkExt, StreamExt};
 use lyre_core::{
     supported_noise_providers, IceServerConfig, JoinRoomRequest, LeaveRoomRequest, RoomId, UserId,
 };
-use lyre_webrtc::{ServerMediaIceCandidate, ServerMediaSessionKey};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::mpsc;
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::{DefaultOnResponse, TraceLayer},
 };
 use tracing::Level;
 
+#[cfg(test)]
+pub(crate) use crate::api_websocket::{handle_signal_message, handle_socket_io};
 pub use crate::app_state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -163,24 +155,26 @@ pub(crate) fn authorize_room_user(
     room_id: &RoomId,
     user_id: &lyre_core::UserId,
     headers: &HeaderMap,
-) -> Result<(), ApiError> {
+) -> Result<lyre_core::RoomAccessToken, ApiError> {
     let token = bearer_token(headers)?;
     state
         .registry
         .validate_access_token(room_id, user_id, &token)
-        .map_err(|_| ApiError::Unauthorized)
+        .map_err(|_| ApiError::Unauthorized)?;
+    Ok(token)
 }
 
 pub(crate) fn authorize_room_member(
     state: &AppState,
     room_id: &RoomId,
     headers: &HeaderMap,
-) -> Result<(), ApiError> {
+) -> Result<lyre_core::RoomAccessToken, ApiError> {
     let token = bearer_token(headers)?;
     state
         .registry
         .validate_any_access_token(room_id, &token)
-        .map_err(|_| ApiError::Unauthorized)
+        .map_err(|_| ApiError::Unauthorized)?;
+    Ok(token)
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -241,6 +235,7 @@ async fn leave_room(
         .leave_room_persisted(&room_id, &request.user_id)
         .await?;
     if response.removed {
+        state.peers.remove_peer(&room_id, &request.user_id);
         state.peers.user_left(&room_id, &request.user_id);
     }
     Ok(Json(response.room))
@@ -261,8 +256,12 @@ async fn start_media_relay(
     Json(request): Json<lyre_core::StartMediaRelayRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_member(&state, &room_id, &headers)?;
-    Ok(Json(state.start_media_relay(room_id, request)))
+    let access_token = authorize_room_member(&state, &room_id, &headers)?;
+    Ok(Json(
+        state
+            .start_authorized_media_relay(room_id, request, &access_token)
+            .await?,
+    ))
 }
 
 async fn stop_media_relay(
@@ -272,8 +271,12 @@ async fn stop_media_relay(
     Json(request): Json<lyre_core::StopMediaRelayRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
-    Ok(Json(state.stop_media_relay(room_id, request)))
+    let access_token = authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    Ok(Json(
+        state
+            .stop_authorized_media_relay(room_id, request, &access_token)
+            .await?,
+    ))
 }
 
 async fn register_media_track(
@@ -283,8 +286,12 @@ async fn register_media_track(
     Json(request): Json<lyre_core::RegisterMediaTrackRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
-    Ok(Json(state.media_relays.register_track(room_id, request)?))
+    let access_token = authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    Ok(Json(
+        state
+            .register_authorized_media_track(room_id, request, &access_token)
+            .await?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -299,11 +306,11 @@ async fn register_media_participant(
     Json(request): Json<RegisterMediaParticipantRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    let access_token = authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     Ok(Json(
         state
-            .media_relays
-            .register_participant(room_id, request.user_id)?,
+            .register_authorized_media_participant(room_id, request.user_id, &access_token)
+            .await?,
     ))
 }
 
@@ -314,9 +321,11 @@ async fn update_media_relay_subscriptions(
     Json(request): Json<lyre_core::media::UpdateMediaRelaySubscriptionsRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    let access_token = authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
     Ok(Json(
-        state.media_relays.update_subscriptions(room_id, request)?,
+        state
+            .update_authorized_media_relay_subscriptions(room_id, request, &access_token)
+            .await?,
     ))
 }
 
@@ -327,8 +336,12 @@ async fn update_media_relay_settings(
     Json(request): Json<lyre_core::UpdateMediaRelaySettingsRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let room_id = RoomId::parse_boundary(room_id)?;
-    authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
-    Ok(Json(state.update_media_relay_settings(room_id, request)?))
+    let access_token = authorize_room_user(&state, &room_id, &request.user_id, &headers)?;
+    Ok(Json(
+        state
+            .update_authorized_media_relay_settings(room_id, request, &access_token)
+            .await?,
+    ))
 }
 
 async fn room_ws(
@@ -347,154 +360,5 @@ async fn room_ws(
         .registry
         .validate_access_token(&room_id, &user_id, &token)
         .map_err(|_| ApiError::Unauthorized)?;
-    Ok(ws.on_upgrade(move |socket| handle_socket(state, room_id, user_id, socket)))
-}
-
-async fn handle_socket(
-    state: AppState,
-    room_id: RoomId,
-    user_id: lyre_core::UserId,
-    socket: WebSocket,
-) {
-    let (mut ws_tx, mut ws_rx) = socket.split();
-    let (peer_tx, mut peer_rx) = mpsc::unbounded_channel();
-    let snapshot = state.peers.connect(
-        &state.registry,
-        room_id.clone(),
-        user_id.clone(),
-        peer_tx.clone(),
-    );
-    let snapshot_message = SignalMessage::new(
-        room_id.clone(),
-        user_id.clone(),
-        Some(user_id.clone()),
-        SignalPayload::RoomSnapshot { room: snapshot },
-    );
-    let _ = ws_tx
-        .send(Message::Text(
-            serde_json::to_string(&snapshot_message).unwrap().into(),
-        ))
-        .await;
-
-    loop {
-        tokio::select! {
-            Some(message) = peer_rx.recv() => {
-                match serde_json::to_string(&message) {
-                    Ok(json) => {
-                        if ws_tx.send(Message::Text(json.into())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(error) => {
-                        tracing::debug!(error = %error, "failed to serialize signal message");
-                    }
-                }
-            }
-            Some(Ok(message)) = ws_rx.next() => {
-                if let Message::Text(text) = message {
-                    match serde_json::from_str::<SignalMessage>(&text) {
-                        Ok(signal) => {
-                            if let Some(response) = handle_signal_message(&state, &room_id, &user_id, signal).await {
-                                let _ = ws_tx.send(Message::Text(serde_json::to_string(&response).unwrap().into())).await;
-                            }
-                        }
-                        Err(_) => {
-                            let error = SignalMessage::error(room_id.clone(), user_id.clone(), "invalid signal message");
-                            let _ = ws_tx.send(Message::Text(serde_json::to_string(&error).unwrap().into())).await;
-                        }
-                    }
-                }
-            }
-            else => break,
-        }
-    }
-
-    state.peers.remove_peer_sender(&room_id, &user_id, &peer_tx);
-}
-
-pub(crate) async fn handle_signal_message(
-    state: &AppState,
-    room_id: &RoomId,
-    user_id: &lyre_core::UserId,
-    signal: SignalMessage,
-) -> Option<SignalMessage> {
-    match route_signal_message(room_id, user_id, &signal) {
-        Ok(_) => handle_valid_signal_message(state, room_id, user_id, signal).await,
-        Err(error) => Some(*error),
-    }
-}
-
-async fn handle_valid_signal_message(
-    state: &AppState,
-    room_id: &RoomId,
-    user_id: &lyre_core::UserId,
-    signal: SignalMessage,
-) -> Option<SignalMessage> {
-    match signal.payload {
-        SignalPayload::ServerMediaIceCandidate {
-            candidate,
-            sdp_mid,
-            sdp_mline_index,
-            username_fragment,
-        } => {
-            let candidate = ServerMediaIceCandidate {
-                room_id: room_id.clone(),
-                user_id: user_id.clone(),
-                candidate,
-                sdp_mid,
-                sdp_mline_index,
-                username_fragment,
-            };
-            let summary = ServerMediaIceCandidateSummary::from_candidate(&candidate);
-            match state.add_server_media_ice_candidate(candidate).await {
-                Ok(()) => {
-                    tracing::debug!(
-                        room_id = %room_id,
-                        user_id = %user_id,
-                        candidate = ?summary,
-                        "server media remote ICE candidate accepted over websocket"
-                    );
-                    None
-                }
-                Err(error) => {
-                    tracing::debug!(
-                        room_id = %room_id,
-                        user_id = %user_id,
-                        candidate = ?summary,
-                        error = %format_args!("{error:#}"),
-                        "failed to add server media ICE candidate over websocket"
-                    );
-                    Some(SignalMessage::error(
-                        room_id.clone(),
-                        user_id.clone(),
-                        error.to_string(),
-                    ))
-                }
-            }
-        }
-        SignalPayload::ServerMediaIceCandidatesRequest => {
-            let key = ServerMediaSessionKey {
-                room_id: room_id.clone(),
-                user_id: user_id.clone(),
-            };
-            let candidates = state.server_media_ice_candidates(&key);
-            let candidate_summaries = summarize_candidates(&candidates);
-            tracing::debug!(
-                room_id = %room_id,
-                user_id = %user_id,
-                candidate_count = candidates.len(),
-                candidates = ?candidate_summaries,
-                "server media local ICE candidates returned over websocket"
-            );
-            Some(SignalMessage::to_self(
-                room_id.clone(),
-                user_id.clone(),
-                SignalPayload::ServerMediaIceCandidates { candidates },
-            ))
-        }
-        _ => {
-            state.peers.forward(signal);
-            None
-        }
-    }
+    Ok(ws.on_upgrade(move |socket| handle_socket(state, room_id, user_id, token, socket)))
 }

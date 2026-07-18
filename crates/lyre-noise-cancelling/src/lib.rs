@@ -19,4 +19,6 @@ pub use rnnoise::{
 pub use server::*;
 
 #[cfg(all(test, feature = "server"))]
+mod lifecycle_tests;
+#[cfg(all(test, feature = "server"))]
 mod tests;

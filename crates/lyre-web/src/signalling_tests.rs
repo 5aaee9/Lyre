@@ -183,9 +183,10 @@ fn targeted_delivery_reaches_only_recipient() {
     let sender_id = UserId::from_external("sender");
     let recipient_id = UserId::from_external("recipient");
     let observer_id = UserId::from_external("observer");
-    let (sender_tx, mut sender_rx) = mpsc::unbounded_channel();
-    let (recipient_tx, mut recipient_rx) = mpsc::unbounded_channel();
-    let (observer_tx, mut observer_rx) = mpsc::unbounded_channel();
+    let (sender_tx, mut sender_rx) = mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (recipient_tx, mut recipient_rx) =
+        mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (observer_tx, mut observer_rx) = mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
     let registry = RoomRegistry::new();
     hub.connect(&registry, room_id.clone(), sender_id.clone(), sender_tx);
     hub.connect(
@@ -210,14 +211,85 @@ fn targeted_delivery_reaches_only_recipient() {
 }
 
 #[test]
+fn slow_recipient_queue_is_bounded_without_blocking_healthy_peer() {
+    let hub = PeerHub::new();
+    let registry = RoomRegistry::new();
+    let room_id = RoomId::default_room();
+    let sender_id = UserId::from_external("sender");
+    let slow_id = UserId::from_external("slow");
+    let healthy_id = UserId::from_external("healthy");
+    let (slow_tx, mut slow_rx) = mpsc::channel(1);
+    let (healthy_tx, mut healthy_rx) = mpsc::channel(1);
+    hub.connect(&registry, room_id.clone(), slow_id.clone(), slow_tx);
+    hub.connect(&registry, room_id.clone(), healthy_id.clone(), healthy_tx);
+    let message_to = |recipient_id| {
+        SignalMessage::new(
+            room_id.clone(),
+            sender_id.clone(),
+            Some(recipient_id),
+            SignalPayload::ServerMediaIceCandidatesRequest,
+        )
+    };
+
+    assert_eq!(hub.forward(message_to(slow_id.clone())).delivered, 1);
+    assert_eq!(hub.forward(message_to(slow_id.clone())).delivered, 0);
+    assert_eq!(hub.forward(message_to(healthy_id)).delivered, 1);
+
+    assert!(slow_rx.try_recv().is_ok());
+    assert_eq!(hub.forward(message_to(slow_id)).delivered, 1);
+    assert!(slow_rx.try_recv().is_ok());
+    assert!(healthy_rx.try_recv().is_ok());
+}
+
+#[test]
+fn dropped_presence_event_marks_the_current_peer_for_authoritative_resync() {
+    let hub = PeerHub::new();
+    let registry = RoomRegistry::new();
+    let room_id = RoomId::default_room();
+    let recipient_id = UserId::from_external("recipient");
+    let joined_id = UserId::from_external("joined");
+    let (recipient_tx, mut recipient_rx) = mpsc::channel(1);
+    hub.connect(
+        &registry,
+        room_id.clone(),
+        recipient_id.clone(),
+        recipient_tx.clone(),
+    );
+    hub.forward(SignalMessage::to_self(
+        room_id.clone(),
+        recipient_id.clone(),
+        SignalPayload::Error {
+            message: "fills the bounded queue".to_owned(),
+        },
+    ));
+
+    let delivery = hub.user_joined(
+        &room_id,
+        UserProfile {
+            id: joined_id.clone(),
+            nickname: "Joined".to_owned(),
+            joined_at: chrono::Utc::now(),
+            noise: NoiseCancellationConfig::default(),
+        },
+    );
+
+    assert_eq!(delivery.delivered, 0);
+    assert!(recipient_rx.try_recv().is_ok());
+    assert_eq!(hub.user_left(&room_id, &joined_id).delivered, 0);
+    assert!(recipient_rx.try_recv().is_err());
+    assert!(hub.take_room_snapshot_pending(&room_id, &recipient_id, &recipient_tx));
+    assert!(!hub.take_room_snapshot_pending(&room_id, &recipient_id, &recipient_tx));
+}
+
+#[test]
 fn broadcast_excludes_sender_and_presence_events_emit() {
     let hub = PeerHub::new();
     let registry = RoomRegistry::new();
     let room_id = RoomId::default_room();
     let sender_id = UserId::from_external("sender");
     let peer_id = UserId::from_external("peer");
-    let (sender_tx, mut sender_rx) = mpsc::unbounded_channel();
-    let (peer_tx, mut peer_rx) = mpsc::unbounded_channel();
+    let (sender_tx, mut sender_rx) = mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (peer_tx, mut peer_rx) = mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
     hub.connect(&registry, room_id.clone(), sender_id.clone(), sender_tx);
     hub.connect(&registry, room_id.clone(), peer_id.clone(), peer_tx);
 
@@ -254,8 +326,8 @@ fn remove_peer_drops_socket_without_presence_broadcast() {
     let room_id = RoomId::default_room();
     let leaving_id = UserId::from_external("leaving");
     let peer_id = UserId::from_external("peer");
-    let (leaving_tx, mut leaving_rx) = mpsc::unbounded_channel();
-    let (peer_tx, mut peer_rx) = mpsc::unbounded_channel();
+    let (leaving_tx, mut leaving_rx) = mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (peer_tx, mut peer_rx) = mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
     hub.connect(&registry, room_id.clone(), leaving_id.clone(), leaving_tx);
     hub.connect(&registry, room_id.clone(), peer_id.clone(), peer_tx);
 
@@ -278,8 +350,8 @@ fn removing_replaced_peer_keeps_reconnected_socket() {
     let registry = RoomRegistry::new();
     let room_id = RoomId::default_room();
     let user_id = UserId::from_external("user");
-    let (old_tx, mut old_rx) = mpsc::unbounded_channel();
-    let (new_tx, mut new_rx) = mpsc::unbounded_channel();
+    let (old_tx, mut old_rx) = mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
+    let (new_tx, mut new_rx) = mpsc::channel(crate::signalling::SIGNAL_CHANNEL_CAPACITY);
     hub.connect(&registry, room_id.clone(), user_id.clone(), old_tx.clone());
     hub.connect(&registry, room_id.clone(), user_id.clone(), new_tx);
 

@@ -1,119 +1,40 @@
 import {
   answerServerMediaOffer,
-  type IceServerConfig,
   type ServerMediaIceCandidate
 } from "./api";
 import type { UserAudioSettings } from "./settings-store";
+import {
+  applyRemotePlaybackSettings,
+  candidateKey,
+  createRemotePlayback,
+  DEFAULT_AUDIO_TRACK_ID,
+  DEFAULT_CANDIDATE_POLL_INTERVAL_MS,
+  parseServerMediaSourceTrackId,
+  parseServerMediaSourceTrackIdsByMid,
+  SOCKET_NOT_CONNECTED_ERROR,
+  summarizeAudioStats,
+  type AudioContextWithSinkId,
+  type DtxRtpSendParameters,
+  type RemotePlayback,
+  type ServerMediaAudioDiagnostics,
+  type ServerMediaAudioSessionInput,
+  type ServerMediaRemoteSourceDiagnostics
+} from "./server-media-audio-support";
 import {
   encodeServerMediaIceCandidate,
   encodeServerMediaIceCandidatesRequest,
   type SignalMessage
 } from "./signalling";
-import { VoiceActivityDetector } from "./voice-activity";
 import { createPeerConnection } from "./webrtc";
 
-type ServerMediaAudioSessionInput = {
-  roomId: string;
-  userId: string;
-  accessToken: string;
-  socket: WebSocket;
-  audioTrackId?: string;
-  iceServers: IceServerConfig[];
-  stream: MediaStream;
-  listenOnly?: boolean;
-  outputDeviceId?: string;
-  userAudio?: Record<string, UserAudioSettings>;
-  pollIntervalMs?: number;
-  onError?: (message: string) => void;
-  onConnectionInterrupted?: () => void;
-  onRemoteTrack?: () => void;
-  onRemoteSpeakingChange?: (userId: string, speaking: boolean) => void;
-};
-
-type RemotePlayback = {
-  stream: MediaStream;
-  source: MediaStreamAudioSourceNode;
-  gain: GainNode;
-  voiceActivity: VoiceActivityDetector;
-  element: HTMLAudioElement;
-  settings: UserAudioSettings;
-};
-
-export type ServerMediaRemoteSourceDiagnostics = {
-  userId: string;
-  trackIds: string[];
-  gain: number;
-  muted: boolean;
-  volumePercent: number;
-  readyStates: MediaStreamTrackState[];
-  enabled: boolean[];
-};
-
-export type ServerMediaAudioStats = {
-  packetsSent: number;
-  bytesSent: number;
-  packetsReceived: number;
-  bytesReceived: number;
-  packetsLost: number;
-  remotePacketsLost: number;
-  audioLevel: number | null;
-  totalAudioEnergy: number | null;
-  totalSamplesDuration: number | null;
-  roundTripTimeMs: number | null;
-};
-
-export type ServerMediaIceDiagnostics = {
-  localCandidateCount: number;
-  serverCandidateCount: number;
-  lastServerCandidateCount: number;
-  lastServerCandidateAt: string | null;
-  lastLocalCandidateAt: string | null;
-  lastServerCandidateError: string | null;
-};
-
-export type ServerMediaAudioDiagnostics = {
-  connectionState: RTCPeerConnectionState;
-  iceConnectionState: RTCIceConnectionState;
-  signalingState: RTCSignalingState;
-  audioContextState: AudioContextState | "uncreated";
-  remoteTrackIds: string[];
-  receiverTrackIds: string[];
-  onTrackTrackIds: string[];
-  rejectedTrackIds: string[];
-  ice: ServerMediaIceDiagnostics;
-  remoteSources: ServerMediaRemoteSourceDiagnostics[];
-  lastPlaybackError: string | null;
-  stats: ServerMediaAudioStats;
-};
-
-type DtxEncodingParameters = RTCRtpEncodingParameters & {
-  dtx?: "disabled" | "enabled";
-};
-
-type DtxRtpSendParameters = RTCRtpSendParameters & {
-  encodings: DtxEncodingParameters[];
-};
-
-type AudioContextWithSinkId = AudioContext & {
-  setSinkId?: (sinkId: string) => Promise<void>;
-};
-
-const DEFAULT_AUDIO_TRACK_ID = "audio-main";
-const DEFAULT_CANDIDATE_POLL_INTERVAL_MS = 1_000;
-const SOCKET_NOT_CONNECTED_ERROR = "Audio signalling websocket is not connected";
-
-const EMPTY_AUDIO_STATS: ServerMediaAudioStats = {
-  packetsSent: 0,
-  bytesSent: 0,
-  packetsReceived: 0,
-  bytesReceived: 0,
-  packetsLost: 0,
-  remotePacketsLost: 0,
-  audioLevel: null,
-  totalAudioEnergy: null,
-  totalSamplesDuration: null,
-  roundTripTimeMs: null
-};
+export {
+  parseServerMediaSourceTrackId,
+  parseServerMediaSourceTrackIdsByMid,
+  type ServerMediaAudioDiagnostics,
+  type ServerMediaAudioStats,
+  type ServerMediaIceDiagnostics,
+  type ServerMediaRemoteSourceDiagnostics
+} from "./server-media-audio-support";
 
 export class ServerMediaAudioSession {
   private readonly audioTrackId: string;
@@ -134,10 +55,17 @@ export class ServerMediaAudioSession {
   private readonly onTrackTrackIds: string[] = [];
   private readonly rejectedTrackIds: string[] = [];
   private lastPlaybackError: string | null = null;
+  private closed = false;
 
   constructor(private readonly input: ServerMediaAudioSessionInput) {
     this.audioTrackId = input.audioTrackId ?? DEFAULT_AUDIO_TRACK_ID;
-    this.peer = createPeerConnection(input.iceServers, input.stream, { receiveOnlyAudio: input.listenOnly });
+    this.peer = createPeerConnection(input.iceServers, input.stream, {
+      receiveOnlyAudio: input.listenOnly,
+      remoteAudioSourceCount: Math.max(
+        input.subscribedSourceIds?.length ?? 0,
+        input.listenOnly ? 1 : 0
+      )
+    });
     this.peer.onicecandidate = (event) => {
       if (event.candidate) {
         void this.sendOrQueueLocalCandidate(event.candidate.toJSON());
@@ -193,8 +121,17 @@ export class ServerMediaAudioSession {
   }
 
   async resumePlayback(): Promise<void> {
-    if (this.audioContext?.state === "suspended") {
-      await this.audioContext.resume();
+    const attempts = [
+      ...(this.audioContext?.state === "suspended" ? [this.audioContext.resume()] : []),
+      ...(this.audioContext ? [this.applyOutputDevice(this.audioContext)] : []),
+      ...[...this.remotePlayback.values()].map((playback) => playback.element.play())
+    ];
+    try {
+      await Promise.all(attempts);
+      this.lastPlaybackError = null;
+    } catch (error) {
+      this.reportPlaybackError(error);
+      throw error;
     }
   }
 
@@ -228,13 +165,7 @@ export class ServerMediaAudioSession {
   }
 
   setUserAudioSettings(userId: string, settings: UserAudioSettings): void {
-    const playback = this.remotePlayback.get(userId);
-    if (!playback) {
-      return;
-    }
-    const volumePercent = Math.min(150, Math.max(0, settings.volumePercent));
-    playback.gain.gain.value = settings.muted ? 0 : volumePercent / 100;
-    playback.settings = { muted: settings.muted, volumePercent };
+    applyRemotePlaybackSettings(this.remotePlayback.get(userId), settings);
   }
 
   removeUserAudio(userId: string): void {
@@ -242,28 +173,39 @@ export class ServerMediaAudioSession {
     if (!playback) {
       return;
     }
-    playback.source.disconnect();
-    playback.gain.disconnect();
-    playback.voiceActivity.stop();
-    playback.element.remove();
     this.remotePlayback.delete(userId);
+    this.runCleanupStep(() => { playback.source.disconnect(); });
+    this.runCleanupStep(() => { playback.gain.disconnect(); });
+    this.runCleanupStep(() => { playback.voiceActivity.stop(); });
+    this.runCleanupStep(() => { playback.element.remove(); });
   }
 
   close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
     if (this.candidatePoll !== undefined) {
       window.clearInterval(this.candidatePoll);
       this.candidatePoll = undefined;
     }
-    this.peer.close();
+    this.runCleanupStep(() => { this.peer.close(); });
     this.sourceTrackIdsByMid.clear();
     for (const track of this.input.stream.getAudioTracks()) {
-      track.stop();
+      this.runCleanupStep(() => { track.stop(); });
     }
     for (const userId of [...this.remotePlayback.keys()]) {
       this.removeUserAudio(userId);
     }
-    void this.audioContext?.close();
+    const audioContext = this.audioContext;
     this.audioContext = undefined;
+    if (audioContext) {
+      this.runCleanupStep(() => {
+        void Promise.resolve(audioContext.close()).catch((error: unknown) => {
+          this.reportCleanupError(error);
+        });
+      });
+    }
   }
 
   async handleSignal(signal: SignalMessage): Promise<void> {
@@ -319,37 +261,21 @@ export class ServerMediaAudioSession {
       return;
     }
     this.removeUserAudio(sourceUserId);
-    const stream = new MediaStream();
-    stream.addTrack(track);
-    const element = document.createElement("audio");
-    element.autoplay = true;
-    element.hidden = true;
-    element.muted = true;
-    element.srcObject = stream;
-    document.body.append(element);
     const audioContext = this.audioContext ?? new AudioContext();
     this.audioContext = audioContext;
-    this.applyOutputDevice(audioContext);
-    const source = audioContext.createMediaStreamSource(stream);
-    const voiceActivity = new VoiceActivityDetector(stream, (speaking) => {
-      this.input.onRemoteSpeakingChange?.(sourceUserId, speaking);
+    void this.applyOutputDevice(audioContext).catch((error: unknown) => {
+      this.reportPlaybackError(error);
     });
-    voiceActivity.start();
-    const gain = audioContext.createGain();
-    source.connect(gain);
-    gain.connect(audioContext.destination);
-    if (audioContext.state === "suspended") {
-      void audioContext.resume().catch((error: unknown) => this.reportPlaybackError(error));
-    }
-    void element.play().catch((error: unknown) => this.reportPlaybackError(error));
-    this.remotePlayback.set(sourceUserId, {
-      stream,
-      source,
-      gain,
-      voiceActivity,
-      element,
-      settings: { muted: false, volumePercent: 100 }
-    });
+    this.remotePlayback.set(
+      sourceUserId,
+      createRemotePlayback(
+        track,
+        sourceUserId,
+        audioContext,
+        this.input.onRemoteSpeakingChange,
+        (error) => this.reportPlaybackError(error)
+      )
+    );
     this.setUserAudioSettings(
       sourceUserId,
       this.input.userAudio?.[sourceUserId] ?? { muted: false, volumePercent: 100 }
@@ -357,15 +283,13 @@ export class ServerMediaAudioSession {
     this.input.onRemoteTrack?.();
   }
 
-  private applyOutputDevice(audioContext: AudioContext): void {
+  private applyOutputDevice(audioContext: AudioContext): Promise<void> {
     const outputDeviceId = this.input.outputDeviceId;
     const setSinkId = (audioContext as AudioContextWithSinkId).setSinkId;
     if (!outputDeviceId || !setSinkId) {
-      return;
+      return Promise.resolve();
     }
-    void setSinkId.call(audioContext, outputDeviceId).catch((error: unknown) => {
-      this.reportPlaybackError(error);
-    });
+    return setSinkId.call(audioContext, outputDeviceId);
   }
 
   private requestServerCandidates({ report = true }: { report?: boolean } = {}): void {
@@ -426,6 +350,22 @@ export class ServerMediaAudioSession {
     this.input.onError?.(typeof error === "string" ? error : "Audio connection failed");
   }
 
+  private runCleanupStep(step: () => void): void {
+    try {
+      step();
+    } catch (error) {
+      this.reportCleanupError(error);
+    }
+  }
+
+  private reportCleanupError(error: unknown): void {
+    try {
+      this.reportError(error);
+    } catch (reportError) {
+      console.error("Server media audio cleanup error reporting failed", reportError);
+    }
+  }
+
   private reportPlaybackError(error: unknown): void {
     const message = error instanceof Error
       ? error.message
@@ -433,6 +373,9 @@ export class ServerMediaAudioSession {
         ? error
         : "Audio playback failed";
     this.lastPlaybackError = message;
+    if (error instanceof Error && error.name === "NotAllowedError") {
+      this.input.onPlaybackBlocked?.();
+    }
     this.input.onError?.(message);
   }
 
@@ -452,105 +395,4 @@ export class ServerMediaAudioSession {
       })
       .sort((left, right) => left.userId.localeCompare(right.userId));
   }
-}
-
-export function parseServerMediaSourceTrackId(trackId: string): string | null {
-  const prefix = "lyre-user:";
-  const suffix = ":audio";
-  if (!trackId.startsWith(prefix) || !trackId.endsWith(suffix)) {
-    return null;
-  }
-  const encoded = trackId.slice(prefix.length, -suffix.length);
-  try {
-    return decodeURIComponent(encoded);
-  } catch {
-    return null;
-  }
-}
-
-export function parseServerMediaSourceTrackIdsByMid(sdp: string): Map<string, string> {
-  const tracksByMid = new Map<string, string>();
-  let currentMid: string | null = null;
-  for (const rawLine of sdp.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (line.startsWith("m=")) {
-      currentMid = null;
-      continue;
-    }
-    if (line.startsWith("a=mid:")) {
-      currentMid = line.slice("a=mid:".length);
-      continue;
-    }
-    if (!currentMid || !line.startsWith("a=msid:")) {
-      continue;
-    }
-    const [, trackId] = line.slice("a=msid:".length).split(/\s+/, 2);
-    if (trackId && parseServerMediaSourceTrackId(trackId)) {
-      tracksByMid.set(currentMid, trackId);
-    }
-  }
-  return tracksByMid;
-}
-
-function candidateKey(candidate: ServerMediaIceCandidate): string {
-  return [
-    candidate.candidate,
-    candidate.sdp_mid ?? "",
-    candidate.sdp_mline_index ?? "",
-    candidate.username_fragment ?? ""
-  ].join("|");
-}
-
-function summarizeAudioStats(report: RTCStatsReport): ServerMediaAudioStats {
-  const summary = { ...EMPTY_AUDIO_STATS };
-  for (const stat of report.values()) {
-    if (!isAudioRtpStats(stat)) {
-      continue;
-    }
-    if (stat.type === "outbound-rtp") {
-      summary.packetsSent += stat.packetsSent ?? 0;
-      summary.bytesSent += stat.bytesSent ?? 0;
-    }
-    if (stat.type === "inbound-rtp") {
-      summary.packetsReceived += stat.packetsReceived ?? 0;
-      summary.bytesReceived += stat.bytesReceived ?? 0;
-      summary.packetsLost += stat.packetsLost ?? 0;
-      if (typeof stat.audioLevel === "number") {
-        summary.audioLevel = Math.max(summary.audioLevel ?? 0, stat.audioLevel);
-      }
-      if (typeof stat.totalAudioEnergy === "number") {
-        summary.totalAudioEnergy = (summary.totalAudioEnergy ?? 0) + stat.totalAudioEnergy;
-      }
-      if (typeof stat.totalSamplesDuration === "number") {
-        summary.totalSamplesDuration = (summary.totalSamplesDuration ?? 0) + stat.totalSamplesDuration;
-      }
-    }
-    if (stat.type === "remote-inbound-rtp") {
-      summary.remotePacketsLost += stat.packetsLost ?? 0;
-      if (typeof stat.roundTripTime === "number") {
-        summary.roundTripTimeMs = Math.round(stat.roundTripTime * 1000);
-      }
-    }
-  }
-  return summary;
-}
-
-type AudioRtpStats = RTCStats & {
-  kind?: string;
-  packetsSent?: number;
-  bytesSent?: number;
-  packetsReceived?: number;
-  bytesReceived?: number;
-  packetsLost?: number;
-  audioLevel?: number;
-  totalAudioEnergy?: number;
-  totalSamplesDuration?: number;
-  roundTripTime?: number;
-};
-
-function isAudioRtpStats(stat: RTCStats): stat is AudioRtpStats {
-  if (stat.type !== "inbound-rtp" && stat.type !== "outbound-rtp" && stat.type !== "remote-inbound-rtp") {
-    return false;
-  }
-  return !("kind" in stat) || stat.kind === "audio";
 }

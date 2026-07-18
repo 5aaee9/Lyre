@@ -5,7 +5,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use lyre_core::{RoomId, StopMediaRelayRequest, UserId};
-use lyre_webrtc::{ServerMediaSessionConfig, ServerMediaSessionState, ServerMediaSessionStatus};
+use lyre_webrtc::{ServerMediaSessionConfig, ServerMediaSessionState};
 use tower::ServiceExt;
 
 async fn body_json(response: axum::response::Response) -> serde_json::Value {
@@ -44,29 +44,23 @@ fn app_state_exposes_shared_webrtc_session_registry() {
     assert_eq!(state.active_server_media_sessions(), vec![status]);
 }
 
-#[test]
-fn stop_media_relay_closes_webrtc_sessions_for_room() {
+#[tokio::test]
+async fn stop_media_relay_removes_webrtc_sessions_for_room() {
     let state = AppState::default();
     let room_id = RoomId::default_room();
     let user_id = UserId::from_external("user_01");
     state.start_server_media_session(session_config(room_id.clone(), user_id.clone()));
 
-    state.stop_media_relay(
-        room_id.clone(),
-        StopMediaRelayRequest {
-            user_id: user_id.clone(),
-        },
-    );
+    state
+        .stop_media_relay(
+            room_id.clone(),
+            StopMediaRelayRequest {
+                user_id: user_id.clone(),
+            },
+        )
+        .await;
 
-    assert_eq!(
-        state.server_media_sessions(),
-        vec![ServerMediaSessionStatus {
-            room_id,
-            user_id,
-            audio_track_id: "audio-main".to_owned(),
-            state: ServerMediaSessionState::Closed,
-        }]
-    );
+    assert!(state.server_media_sessions().is_empty());
     assert!(state.active_server_media_sessions().is_empty());
 }
 

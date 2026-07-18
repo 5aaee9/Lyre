@@ -7,7 +7,7 @@ use crate::{
     egress::server_media_source_track_id, ServerMediaEgressError, ServerMediaIceCandidate,
     ServerMediaNegotiationError, ServerMediaNegotiator, ServerMediaOffer,
     ServerMediaProcessedAudioFrame, ServerMediaSessionKey, ServerMediaSessionRegistry,
-    ServerMediaSessionState, WebRtcStack, SERVER_MEDIA_OPUS_FRAME_SIZE,
+    ServerMediaSessionState, WebRtcStack, WebRtcStackError, SERVER_MEDIA_OPUS_FRAME_SIZE,
 };
 
 async fn offer_sdp() -> String {
@@ -140,6 +140,31 @@ async fn failed_offer_does_not_create_session_or_handle() {
     assert!(result.is_err());
     assert!(sessions.sessions().is_empty());
     assert_eq!(negotiator.stored_peer_connection_count(), 0);
+}
+
+#[tokio::test]
+async fn failed_offer_closes_temporary_peer_connection() {
+    let stack = WebRtcStack::new();
+    let sessions = Arc::new(ServerMediaSessionRegistry::new());
+    let negotiator = ServerMediaNegotiator::new(stack.clone(), Arc::clone(&sessions));
+
+    let error = negotiator
+        .answer_offer_for_sources(
+            offer("audio-main", "not sdp".to_owned()),
+            subscribed_sources(),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        &error,
+        ServerMediaNegotiationError::WebRtc {
+            source: WebRtcStackError::CreateAnswer { .. }
+        }
+    ));
+    let stack_error = std::error::Error::source(&error).unwrap();
+    assert!(std::error::Error::source(stack_error).is_some());
+    assert_eq!(stack.live_peer_connection_count_for_test(), 0);
 }
 
 #[tokio::test]

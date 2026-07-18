@@ -1,3 +1,5 @@
+const MAX_ONNX_DELAYED_RAW_FRAMES = 2;
+
 class LyreNoiseProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
@@ -6,13 +8,18 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
     this.frameSize = options.processorOptions.frameSize;
     this.inputFrame = new Float32Array(this.frameSize);
     this.outputQueue = [];
-    this.pendingOnnxFrames = new Map();
+    this.pendingOnnxFrame = null;
+    this.onnxBypassed = false;
     this.nextFrameId = 1;
     this.inputOffset = 0;
     this.ready = false;
+    this.disposed = false;
     this.port.onmessage = (event) => {
       if (event.data.type === "onnx-port") {
         this.attachOnnxPort(event.data.port);
+      }
+      if (event.data.type === "dispose") {
+        this.dispose();
       }
     };
     this.initialise(options.processorOptions.wasmBytes);
@@ -21,6 +28,9 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
   async initialise(wasmBytes) {
     try {
       const { instance } = await WebAssembly.instantiate(wasmBytes, {});
+      if (this.disposed) {
+        return;
+      }
       this.wasm = instance.exports;
       if (this.processorKind !== "rnnoise") {
         this.initialiseOnnxProcessor();
@@ -79,7 +89,9 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
         this.finishOnnxFrame(event.data.id, event.data.output);
       }
       if (event.data.type === "error") {
-        this.port.postMessage(event.data);
+        if (this.failOnnxFrame(event.data.id)) {
+          this.port.postMessage(event.data);
+        }
       }
     };
   }
@@ -89,6 +101,10 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
     const output = outputs[0]?.[0];
     if (!output) {
       return true;
+    }
+    if (this.disposed) {
+      output.fill(0);
+      return false;
     }
     if (!input || !this.ready) {
       output.fill(0);
@@ -132,7 +148,15 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
 
   processDpdfNetFrame() {
     if (!this.onnxPort) {
-      this.outputQueue.push(...new Float32Array(this.frameSize));
+      this.outputQueue.push(...this.inputFrame);
+      return;
+    }
+    if (this.onnxBypassed) {
+      this.outputQueue.push(...this.inputFrame);
+      return;
+    }
+    if (this.pendingOnnxFrame) {
+      this.bufferRawFrameWhileOnnxPending();
       return;
     }
     const memory = new Float32Array(this.wasm.memory.buffer);
@@ -157,7 +181,15 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
 
   processDeepFilterNetFrame() {
     if (!this.onnxPort) {
-      this.outputQueue.push(...new Float32Array(this.frameSize));
+      this.outputQueue.push(...this.inputFrame);
+      return;
+    }
+    if (this.onnxBypassed) {
+      this.outputQueue.push(...this.inputFrame);
+      return;
+    }
+    if (this.pendingOnnxFrame) {
+      this.bufferRawFrameWhileOnnxPending();
       return;
     }
     const memory = new Float32Array(this.wasm.memory.buffer);
@@ -189,7 +221,12 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
   sendOnnxFrame(payload) {
     const id = this.nextFrameId;
     this.nextFrameId += 1;
-    this.pendingOnnxFrames.set(id, this.inputFrame.slice());
+    this.pendingOnnxFrame = {
+      delayedRawFrames: [],
+      expired: false,
+      id,
+      raw: this.inputFrame.slice()
+    };
     const transfer = [];
     for (const value of Object.values(payload)) {
       transfer.push(value.buffer);
@@ -198,15 +235,116 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
   }
 
   finishOnnxFrame(id, output) {
-    if (!this.pendingOnnxFrames.has(id)) {
+    const pending = this.pendingOnnxFrame;
+    if (!pending || pending.id !== id) {
+      return false;
+    }
+    if (pending.expired) {
       return;
     }
-    this.pendingOnnxFrames.delete(id);
+    const synthesisSucceeded = this.processorKind === "dpdfnet"
+      ? this.finishDpdfNetFrame(output)
+      : this.finishDeepFilterNetFrame(output);
+    this.pendingOnnxFrame = null;
+    if (!synthesisSucceeded) {
+      this.onnxBypassed = true;
+      this.outputQueue.push(...pending.raw);
+      this.flushDelayedRawFrames(pending);
+      this.port.postMessage({
+        message: this.processorKind === "dpdfnet"
+          ? "DPDFNet inverse STFT failed; raw audio bypass enabled"
+          : "DeepFilterNet synthesis failed; raw audio bypass enabled",
+        type: "error"
+      });
+      return;
+    }
+    this.flushDelayedRawFrames(pending);
+  }
+
+  bufferRawFrameWhileOnnxPending() {
+    const pending = this.pendingOnnxFrame;
+    if (pending.expired) {
+      this.outputQueue.push(...this.inputFrame);
+      return;
+    }
+    pending.delayedRawFrames.push(this.inputFrame.slice());
+    if (pending.delayedRawFrames.length >= MAX_ONNX_DELAYED_RAW_FRAMES) {
+      this.expireSlowOnnxFrame();
+    }
+  }
+
+  expireSlowOnnxFrame() {
+    const pending = this.pendingOnnxFrame;
+    if (!pending || pending.expired) {
+      return;
+    }
+    pending.expired = true;
+    this.onnxBypassed = true;
+    this.pendingOnnxFrame = null;
+    this.outputQueue.push(...pending.raw);
+    this.flushDelayedRawFrames(pending);
+    this.port.postMessage({
+      message: "ONNX inference exceeded the realtime latency budget; raw audio bypass enabled",
+      type: "error"
+    });
+  }
+
+  failOnnxFrame(id) {
+    const pending = this.pendingOnnxFrame;
+    if (!pending || pending.id !== id) {
+      return;
+    }
+    this.pendingOnnxFrame = null;
+    this.onnxBypassed = true;
+    if (!pending.expired) {
+      this.outputQueue.push(...pending.raw);
+      this.flushDelayedRawFrames(pending);
+    }
+    return true;
+  }
+
+  flushDelayedRawFrames(pending) {
+    for (const frame of pending.delayedRawFrames.splice(0)) {
+      this.outputQueue.push(...frame);
+    }
+  }
+
+  dispose() {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.ready = false;
+    this.pendingOnnxFrame = null;
+    this.outputQueue.length = 0;
+    if (this.onnxPort) {
+      this.onnxPort.onmessage = null;
+      this.onnxPort.close();
+      this.onnxPort = null;
+    }
+    if (!this.wasm || !this.processor) {
+      return;
+    }
+    if (this.processorKind === "rnnoise") {
+      this.wasm.lyre_noise_wasm_rnnoise_free(this.processor);
+      this.wasm.lyre_noise_wasm_dealloc_f32(this.inputPtr, this.frameSize);
+      this.wasm.lyre_noise_wasm_dealloc_f32(this.outputPtr, this.frameSize);
+      return;
+    }
     if (this.processorKind === "dpdfnet") {
-      this.finishDpdfNetFrame(output);
+      this.wasm.lyre_noise_wasm_dpdfnet_free(this.processor);
+      this.wasm.lyre_noise_wasm_dealloc_f32(this.inputPtr, this.dpdfnetHopSize);
+      this.wasm.lyre_noise_wasm_dealloc_f32(this.specPtr, this.dpdfnetSpecLen);
+      this.wasm.lyre_noise_wasm_dealloc_f32(this.outputPtr, this.dpdfnetHopSize);
       return;
     }
-    this.finishDeepFilterNetFrame(output);
+    this.wasm.lyre_noise_wasm_deepfilternet_free(this.processor);
+    this.wasm.lyre_noise_wasm_dealloc_f32(this.inputPtr, this.frameSize);
+    this.wasm.lyre_noise_wasm_dealloc_f32(this.featErbPtr, this.deepfilternetFeatErbLen);
+    this.wasm.lyre_noise_wasm_dealloc_f32(this.featSpecPtr, this.deepfilternetFeatSpecLen);
+    this.wasm.lyre_noise_wasm_dealloc_f32(this.maskPtr, this.deepfilternetFeatErbLen);
+    this.wasm.lyre_noise_wasm_dealloc_f32(this.coefsPtr, this.deepfilternetCoefsLen);
+    this.wasm.lyre_noise_wasm_dealloc_f32(this.outputPtr, this.frameSize);
   }
 
   finishDpdfNetFrame(spec) {
@@ -220,13 +358,14 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
       this.frameSize
     );
     if (!ok) {
-      return;
+      return false;
     }
     const output = memory.slice(
       this.outputPtr / Float32Array.BYTES_PER_ELEMENT,
       this.outputPtr / Float32Array.BYTES_PER_ELEMENT + this.frameSize
     );
     this.outputQueue.push(...output);
+    return true;
   }
 
   finishDeepFilterNetFrame(modelOutput) {
@@ -245,13 +384,14 @@ class LyreNoiseProcessor extends AudioWorkletProcessor {
       this.frameSize
     );
     if (!ok) {
-      return;
+      return false;
     }
     const output = memory.slice(
       this.outputPtr / Float32Array.BYTES_PER_ELEMENT,
       this.outputPtr / Float32Array.BYTES_PER_ELEMENT + this.frameSize
     );
     this.outputQueue.push(...output);
+    return true;
   }
 }
 

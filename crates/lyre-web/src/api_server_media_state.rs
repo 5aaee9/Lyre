@@ -1,5 +1,7 @@
 use crate::{api::AppState, error::ApiError, server_media_runtime};
-use lyre_core::{MediaRelayError, MediaRelayRoomStatus, RoomId, UserId};
+use lyre_core::{
+    MediaRelayError, MediaRelayRoomStatus, RoomAccessToken, RoomId, StopMediaRelayRequest, UserId,
+};
 #[cfg(test)]
 use lyre_webrtc::WebRtcPeerConnectionHandle;
 use lyre_webrtc::{
@@ -32,18 +34,40 @@ impl AppState {
         self.server_media_sessions.active_sessions()
     }
 
-    pub fn close_server_media_sessions_for_room(
+    pub async fn close_server_media_sessions_for_room(
+        &self,
+        room_id: &RoomId,
+    ) -> Vec<ServerMediaSessionStatus> {
+        let _guard = self.server_media_lifecycle.lock(room_id).await;
+        self.close_server_media_sessions_for_room_locked(room_id)
+            .await
+    }
+
+    pub(crate) async fn close_server_media_sessions_for_room_locked(
         &self,
         room_id: &RoomId,
     ) -> Vec<ServerMediaSessionStatus> {
         self.processed_audio_webrtc_egress_pump.stop(room_id);
         self.raw_opus_webrtc_egress_pump.stop(room_id);
-        self.server_media_runtime_pump.stop_room(room_id);
+        self.server_media_runtime_pump
+            .stop_room_and_wait(room_id)
+            .await;
         self.server_media_negotiator.close_room(room_id);
+        self.media_runtime.clear_room(room_id);
         self.server_media_sessions.sessions()
     }
 
-    pub fn close_server_media_session_for_user(
+    pub async fn close_server_media_session_for_user(
+        &self,
+        room_id: RoomId,
+        user_id: UserId,
+    ) -> Result<CloseServerMediaSessionResponse, MediaRelayError> {
+        let _guard = self.server_media_lifecycle.lock(&room_id).await;
+        self.close_server_media_session_for_user_locked(room_id, user_id)
+            .await
+    }
+
+    pub(crate) async fn close_server_media_session_for_user_locked(
         &self,
         room_id: RoomId,
         user_id: UserId,
@@ -52,16 +76,31 @@ impl AppState {
             room_id: room_id.clone(),
             user_id: user_id.clone(),
         };
-        self.server_media_runtime_pump.stop(&key);
+        self.server_media_runtime_pump.stop_and_wait(&key).await;
         let session = self.server_media_negotiator.close(&key);
-        let media_relay = self.media_relays.remove_participant(room_id, &user_id)?;
+        let media_relay = self.media_relays.remove_participant(room_id, &user_id);
+        self.processed_audio_webrtc_egress_pump
+            .remove_recipient(&key.room_id, &key.user_id);
+        self.media_runtime
+            .release_source(&key.room_id, &key.user_id);
+        let media_relay = media_relay?;
         Ok(CloseServerMediaSessionResponse {
             media_relay,
             session,
         })
     }
 
-    pub(crate) fn close_departed_user_server_media_state(
+    pub(crate) async fn close_departed_user_server_media_state(
+        &self,
+        room_id: &RoomId,
+        user_id: &UserId,
+    ) {
+        let _guard = self.server_media_lifecycle.lock(room_id).await;
+        self.close_departed_user_server_media_state_locked(room_id, user_id)
+            .await;
+    }
+
+    async fn close_departed_user_server_media_state_locked(
         &self,
         room_id: &RoomId,
         user_id: &UserId,
@@ -70,7 +109,7 @@ impl AppState {
             room_id: room_id.clone(),
             user_id: user_id.clone(),
         };
-        self.server_media_runtime_pump.stop(&key);
+        self.server_media_runtime_pump.stop_and_wait(&key).await;
         self.server_media_negotiator.close(&key);
         let media_relay = match self
             .media_relays
@@ -80,7 +119,7 @@ impl AppState {
             Err(MediaRelayError::Inactive { .. }) => None,
             Err(error) => {
                 tracing::debug!(
-                    error = %error,
+                    error = format_args!("{error:#}"),
                     room_id = %room_id,
                     user_id = %user_id,
                     "failed to remove departed user from media relay"
@@ -88,12 +127,22 @@ impl AppState {
                 None
             }
         };
+        self.processed_audio_webrtc_egress_pump
+            .remove_recipient(room_id, user_id);
+        self.media_runtime.release_source(room_id, user_id);
         if media_relay
             .as_ref()
             .is_some_and(|status| status.participants.is_empty())
         {
-            self.processed_audio_webrtc_egress_pump.stop(room_id);
-            self.raw_opus_webrtc_egress_pump.stop(room_id);
+            self.media_relays.stop(
+                room_id.clone(),
+                StopMediaRelayRequest {
+                    user_id: user_id.clone(),
+                },
+            );
+            self.media_runtime.clear_room(room_id);
+            self.close_server_media_sessions_for_room_locked(room_id)
+                .await;
         }
     }
 
@@ -109,11 +158,30 @@ impl AppState {
         &self,
         offer: ServerMediaOffer,
     ) -> Result<ServerMediaAnswer, ApiError> {
+        let _guard = self.server_media_lifecycle.lock(&offer.room_id).await;
         let subscribed_source_user_ids = self
             .media_relays
             .subscriptions(&offer.room_id, &offer.user_id)?
             .source_user_ids;
-        self.answer_server_media_offer_for_sources(offer, subscribed_source_user_ids)
+        self.answer_server_media_offer_for_sources_locked(offer, subscribed_source_user_ids)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn answer_authorized_server_media_offer_with_subscriptions(
+        &self,
+        offer: ServerMediaOffer,
+        access_token: &RoomAccessToken,
+    ) -> Result<ServerMediaAnswer, ApiError> {
+        let _guard = self.server_media_lifecycle.lock(&offer.room_id).await;
+        self.registry
+            .validate_access_token(&offer.room_id, &offer.user_id, access_token)
+            .map_err(|_| ApiError::Unauthorized)?;
+        let subscribed_source_user_ids = self
+            .media_relays
+            .subscriptions(&offer.room_id, &offer.user_id)?
+            .source_user_ids;
+        self.answer_server_media_offer_for_sources_locked(offer, subscribed_source_user_ids)
             .await
             .map_err(Into::into)
     }
@@ -123,15 +191,56 @@ impl AppState {
         offer: ServerMediaOffer,
         subscribed_source_user_ids: Vec<UserId>,
     ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
+        let _guard = self.server_media_lifecycle.lock(&offer.room_id).await;
+        self.answer_server_media_offer_for_sources_locked(offer, subscribed_source_user_ids)
+            .await
+    }
+
+    async fn answer_server_media_offer_for_sources_locked(
+        &self,
+        offer: ServerMediaOffer,
+        subscribed_source_user_ids: Vec<UserId>,
+    ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
+        let key = ServerMediaSessionKey {
+            room_id: offer.room_id.clone(),
+            user_id: offer.user_id.clone(),
+        };
+        let replaces_audio_track = self
+            .server_media_negotiator
+            .session_status(&key)
+            .is_some_and(|status| status.audio_track_id != offer.audio_track_id);
         let answer = self
             .server_media_negotiator
             .answer_offer_for_sources(offer, subscribed_source_user_ids)
             .await?;
-        self.server_media_runtime_pump.start(ServerMediaSessionKey {
-            room_id: answer.room_id.clone(),
-            user_id: answer.user_id.clone(),
-        });
+        self.server_media_runtime_pump.stop_and_wait(&key).await;
+        #[cfg(test)]
+        self.server_media_lifecycle
+            .pause_before_pump_if_requested()
+            .await;
+        if replaces_audio_track {
+            self.media_runtime
+                .release_source(&answer.room_id, &answer.user_id);
+        }
+        self.server_media_runtime_pump.start(key);
         Ok(answer)
+    }
+
+    #[cfg(test)]
+    pub fn pause_next_server_media_offer_before_pump_for_test(&self) {
+        self.server_media_lifecycle.pause_next_offer_before_pump();
+    }
+
+    #[cfg(test)]
+    pub async fn wait_for_server_media_offer_before_pump_for_test(&self) {
+        self.server_media_lifecycle
+            .wait_for_offer_before_pump()
+            .await;
+    }
+
+    #[cfg(test)]
+    pub fn resume_server_media_offer_for_test(&self) {
+        self.server_media_lifecycle.resume_offer();
     }
 
     pub async fn add_server_media_ice_candidate(

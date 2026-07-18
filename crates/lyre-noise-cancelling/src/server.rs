@@ -12,7 +12,7 @@ pub use crate::dpdfnet::{
 pub use lyre_core::{DpdfNetConfig, NoiseCancellationConfig, NoiseProvider};
 
 use crate::{RnnoiseFrameProcessor, RNNOISE_CHANNELS, RNNOISE_FRAME_SIZE, RNNOISE_SAMPLE_RATE_HZ};
-use lyre_core::{AudioFrame, AudioFrameProcessor};
+use lyre_core::{AudioFrame, AudioFrameProcessor, RoomId, UserId};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -267,6 +267,12 @@ impl NoiseConfigKey {
                 .then(|| config.dpdfnet.model.clone()),
         }
     }
+
+    fn same_source(&self, other: &Self) -> bool {
+        self.room_id == other.room_id
+            && self.user_id == other.user_id
+            && self.track_id == other.track_id
+    }
 }
 
 pub struct NoiseCancellingAudioFrameProcessor {
@@ -308,6 +314,7 @@ impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
                 .cancellers
                 .lock()
                 .expect("noise canceller map mutex poisoned");
+            cancellers.retain(|existing, _| existing == &key || !existing.same_source(&key));
             match cancellers.get(&key) {
                 Some(canceller) => Arc::clone(canceller),
                 None => match build_noise_canceller_with_model_config(
@@ -364,5 +371,19 @@ impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
                 frame.samples.clone()
             }
         }
+    }
+
+    fn release_source(&self, room_id: &RoomId, user_id: &UserId) {
+        self.cancellers
+            .lock()
+            .expect("noise canceller map mutex poisoned")
+            .retain(|key, _| &key.room_id != room_id || &key.user_id != user_id);
+    }
+
+    fn clear_room(&self, room_id: &RoomId) {
+        self.cancellers
+            .lock()
+            .expect("noise canceller map mutex poisoned")
+            .retain(|key, _| &key.room_id != room_id);
     }
 }

@@ -27,7 +27,8 @@ export async function openLocalAudioStream(): Promise<MediaStream> {
   }
   try {
     return await processLocalAudioStream(stream, { noise });
-  } catch {
+  } catch (error) {
+    console.error("Client noise cancellation initialization failed", error);
     return stream;
   }
 }
@@ -60,6 +61,7 @@ function audioConstraint(enabled: boolean): boolean | ConstrainBooleanParameters
 
 export type PeerConnectionOptions = {
   receiveOnlyAudio?: boolean;
+  remoteAudioSourceCount?: number;
 };
 
 export function createPeerConnection(
@@ -78,7 +80,9 @@ export function createPeerConnection(
   for (const track of audioTracks) {
     connection.addTrack(track, stream);
   }
-  if (options.receiveOnlyAudio && audioTracks.length === 0) {
+  const remoteAudioSourceCount = options.remoteAudioSourceCount ?? (options.receiveOnlyAudio ? 1 : 0);
+  const receiveOnlyTransceiverCount = Math.max(remoteAudioSourceCount - audioTracks.length, 0);
+  for (let index = 0; index < receiveOnlyTransceiverCount; index += 1) {
     connection.addTransceiver("audio", { direction: "recvonly" });
   }
   return connection;

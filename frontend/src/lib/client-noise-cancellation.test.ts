@@ -1,5 +1,27 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { processLocalAudioStream } from "./client-noise-cancellation";
+import {
+  addModule,
+  contextClose,
+  destinationStream,
+  dpdfnetModelBundle,
+  inputStream,
+  inputTrackStop,
+  outputTrack,
+  outputTrackStop,
+  processorConnect,
+  processorDisconnect,
+  secondOutputTrack,
+  secondOutputTrackStop,
+  setDestinationAudioTracks,
+  setupClientNoiseCancellationTest,
+  sourceConnect,
+  sourceDisconnect,
+  workerPostMessage,
+  workers,
+  workerTerminate,
+  workletNodes
+} from "./client-noise-cancellation.test-support";
 import { defaultNoiseConfig } from "./settings-store";
 
 const wasmLoader = vi.hoisted(() => ({
@@ -15,111 +37,13 @@ vi.mock("./lyre-noise-wasm", () => ({
   loadLyreNoiseWasm: wasmLoader.loadLyreNoiseWasm
 }));
 
-const inputTrackStop = vi.fn();
-const outputTrackStop = vi.fn();
-const sourceDisconnect = vi.fn();
-const processorDisconnect = vi.fn();
-const contextClose = vi.fn();
-const addModule = vi.fn();
-const workerPostMessage = vi.fn();
-const workerTerminate = vi.fn();
-const sourceConnect = vi.fn();
-const processorConnect = vi.fn();
-const workletNodes: MockAudioWorkletNode[] = [];
-const outputTrack = {
-  id: "processed",
-  stop: outputTrackStop
-};
-const destinationStream = {
-  getAudioTracks: () => [outputTrack]
-} as unknown as MediaStream;
-const inputStream = {
-  getAudioTracks: () => [{
-    id: "raw",
-    stop: inputTrackStop
-  }]
-} as unknown as MediaStream;
-
-class MockAudioContext {
-  sampleRate = 48_000;
-  audioWorklet = {
-    addModule
-  };
-  createMediaStreamSource = vi.fn(() => ({
-    connect: sourceConnect,
-    disconnect: sourceDisconnect
-  }));
-  createMediaStreamDestination = vi.fn(() => ({
-    stream: destinationStream
-  }));
-  close = contextClose;
-
-  constructor(options: AudioContextOptions) {
-    this.sampleRate = options.sampleRate ?? 48_000;
-  }
-}
-
-class MockAudioWorkletNode {
-  port: {
-    onmessage: ((event: MessageEvent) => void) | null;
-    postMessage: ReturnType<typeof vi.fn>;
-  } = {
-    onmessage: null,
-    postMessage: vi.fn()
-  };
-  connect = processorConnect;
-  disconnect = processorDisconnect;
-
-  constructor(
-    readonly context: AudioContext,
-    readonly name: string,
-    readonly options: AudioWorkletNodeOptions
-  ) {
-    workletNodes.push(this);
-    queueMicrotask(() => {
-      this.port.onmessage?.({ data: { type: "ready" } } as MessageEvent);
-    });
-  }
-}
-
-class MockWorker {
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  postMessage = workerPostMessage;
-  terminate = workerTerminate;
-
-  constructor() {
-    queueMicrotask(() => {
-      this.onmessage?.({ data: { type: "ready" } } as MessageEvent);
-    });
-  }
-}
-
-describe("client noise cancellation", () => {
+describe("client noise cancellation runtime", () => {
   beforeEach(() => {
-    wasmLoader.loadLyreNoiseWasm.mockReset();
-    wasmLoader.loadCachedNoiseModelBundle.mockReset();
-    wasmLoader.loadLyreNoiseWasm.mockResolvedValue({
-      bytes: new ArrayBuffer(8),
-      channels: 1,
-      frameSize: 480,
-      sampleRateHz: 48_000
-    });
-    wasmLoader.loadCachedNoiseModelBundle.mockResolvedValue(null);
-    workletNodes.length = 0;
-    inputTrackStop.mockClear();
-    outputTrackStop.mockClear();
-    sourceDisconnect.mockClear();
-    processorDisconnect.mockClear();
-    processorConnect.mockClear();
-    sourceConnect.mockClear();
-    contextClose.mockClear();
-    addModule.mockClear();
-    workerPostMessage.mockClear();
-    workerTerminate.mockClear();
-    outputTrack.stop = outputTrackStop;
-    vi.stubGlobal("AudioContext", MockAudioContext);
-    vi.stubGlobal("AudioWorkletNode", MockAudioWorkletNode);
-    vi.stubGlobal("Worker", MockWorker);
+    setupClientNoiseCancellationTest(wasmLoader);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("routes microphone audio through the Lyre noise worklet", async () => {
@@ -151,55 +75,139 @@ describe("client noise cancellation", () => {
     expect(inputTrackStop).toHaveBeenCalledOnce();
     expect(sourceDisconnect).toHaveBeenCalledOnce();
     expect(processorDisconnect).toHaveBeenCalledOnce();
+    expect(workletNodes[0].port.postMessage).toHaveBeenCalledWith({ type: "dispose" });
+    expect(workletNodes[0].port.onmessage).toBeNull();
     expect(contextClose).toHaveBeenCalledOnce();
   });
 
-  it("uses RNNoise in the worklet for non-ONNX client providers", async () => {
-    await expect(
-      processLocalAudioStream(inputStream, {
-        noise: {
-          ...defaultNoiseConfig,
-          provider: "rnnoise"
-        }
-      })
-    ).resolves.toBe(destinationStream);
+  it("stops each output track and releases a shared audio graph exactly once", async () => {
+    wasmLoader.loadCachedNoiseModelBundle.mockResolvedValue(dpdfnetModelBundle());
+    setDestinationAudioTracks([outputTrack, secondOutputTrack]);
+    const output = await processLocalAudioStream(inputStream, { noise: defaultNoiseConfig });
 
-    expect(workletNodes[0].options.processorOptions).toMatchObject({
-      processor: "rnnoise"
+    for (const track of output.getAudioTracks()) {
+      track.stop();
+      track.stop();
+    }
+
+    expect(outputTrackStop).toHaveBeenCalledOnce();
+    expect(secondOutputTrackStop).toHaveBeenCalledOnce();
+    expect(inputTrackStop).toHaveBeenCalledOnce();
+    expect(sourceDisconnect).toHaveBeenCalledOnce();
+    expect(processorDisconnect).toHaveBeenCalledOnce();
+    expect(workletNodes[0].port.postMessage.mock.calls.filter(
+      ([message]) => message.type === "dispose"
+    )).toHaveLength(1);
+    expect(workerTerminate).toHaveBeenCalledOnce();
+    expect(contextClose).toHaveBeenCalledOnce();
+  });
+
+  it("continues releasing the full audio graph when individual cleanup steps fail", async () => {
+    const outputStopError = new Error("output track stop failed");
+    const sourceError = new Error("source disconnect failed");
+    const inputStopError = new Error("input track stop failed");
+    const closeError = new Error("audio context close failed");
+    const onError = vi.fn();
+    wasmLoader.loadCachedNoiseModelBundle.mockResolvedValue(dpdfnetModelBundle());
+    outputTrackStop.mockImplementationOnce(() => {
+      throw outputStopError;
     });
+    sourceDisconnect.mockImplementationOnce(() => {
+      throw sourceError;
+    });
+    inputTrackStop.mockImplementationOnce(() => {
+      throw inputStopError;
+    });
+    contextClose.mockRejectedValueOnce(closeError);
+    const output = await processLocalAudioStream(inputStream, {
+      noise: defaultNoiseConfig,
+      onError
+    });
+
+    expect(() => output.getAudioTracks()[0].stop()).not.toThrow();
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(closeError));
+
+    expect(processorDisconnect).toHaveBeenCalledOnce();
+    expect(workerTerminate).toHaveBeenCalledOnce();
+    expect(contextClose).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith(outputStopError);
+    expect(onError).toHaveBeenCalledWith(sourceError);
+    expect(onError).toHaveBeenCalledWith(inputStopError);
+  });
+
+  it("reports worklet failures that happen after initialization", async () => {
+    const onError = vi.fn();
+    await processLocalAudioStream(inputStream, { noise: defaultNoiseConfig, onError });
+
+    workletNodes[0].port.onmessage?.({
+      data: { message: "inference crashed", type: "error" }
+    } as MessageEvent);
+
+    expect(onError.mock.calls[0][0]).toEqual(new Error("inference crashed"));
+  });
+
+  it("preserves worklet processor failures that happen after initialization", async () => {
+    const processorError = new Error("audio worklet processor crashed");
+    const onError = vi.fn();
+    await processLocalAudioStream(inputStream, { noise: defaultNoiseConfig, onError });
+
+    workletNodes[0].onprocessorerror?.({
+      error: processorError,
+      message: processorError.message
+    } as ErrorEvent);
+
+    expect(onError).toHaveBeenCalledWith(processorError);
+  });
+
+  it("preserves unreadable worklet messages that happen after initialization", async () => {
+    const messageError = new Error("audio worklet runtime message could not be cloned");
+    const onError = vi.fn();
+    await processLocalAudioStream(inputStream, { noise: defaultNoiseConfig, onError });
+
+    workletNodes[0].port.onmessageerror?.({ data: messageError } as MessageEvent);
+
+    expect(onError).toHaveBeenCalledWith(messageError);
+  });
+
+  it("reports worker failures that happen after initialization", async () => {
+    const runtimeError = new Error("worker terminated unexpectedly");
+    const onError = vi.fn();
+    wasmLoader.loadCachedNoiseModelBundle.mockResolvedValue(dpdfnetModelBundle());
+    await processLocalAudioStream(inputStream, { noise: defaultNoiseConfig, onError });
+
+    workers[0].onerror?.({ error: runtimeError, message: runtimeError.message } as ErrorEvent);
+
+    expect(onError).toHaveBeenCalledWith(runtimeError);
+    destinationStream.getAudioTracks()[0].stop();
+    expect(workers[0].onerror).toBeNull();
+    expect(workers[0].onmessage).toBeNull();
+    expect(workers[0].onmessageerror).toBeNull();
+  });
+
+  it("uses RNNoise in the worklet for non-ONNX client providers", async () => {
+    await expect(processLocalAudioStream(inputStream, {
+      noise: { ...defaultNoiseConfig, provider: "rnnoise" }
+    })).resolves.toBe(destinationStream);
+
+    expect(workletNodes[0].options.processorOptions).toMatchObject({ processor: "rnnoise" });
   });
 
   it("passes cached ONNX models into the worklet", async () => {
-    const modelBundle = {
+    wasmLoader.loadCachedNoiseModelBundle.mockResolvedValue({
       provider: "deepfilternet",
-      models: [
-        {
-          bytes: new ArrayBuffer(4),
-          name: "enc",
-          url: "/models/deepfilternet/enc.onnx"
-        }
-      ]
-    };
-    wasmLoader.loadCachedNoiseModelBundle.mockResolvedValue(modelBundle);
+      models: [{ bytes: new ArrayBuffer(4), name: "enc", url: "/models/deepfilternet/enc.onnx" }]
+    });
 
-    await expect(
-      processLocalAudioStream(inputStream, {
-        noise: {
-          ...defaultNoiseConfig,
-          provider: "deepfilternet"
-        }
-      })
-    ).resolves.toBe(destinationStream);
+    await expect(processLocalAudioStream(inputStream, {
+      noise: { ...defaultNoiseConfig, provider: "deepfilternet" }
+    })).resolves.toBe(destinationStream);
 
     expect(workletNodes[0].options.processorOptions).toMatchObject({
       hasOnnxModels: true,
       processor: "deepfilternet"
     });
     expect(workerPostMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: "deepfilternet",
-        type: "init"
-      }),
+      expect.objectContaining({ provider: "deepfilternet", type: "init" }),
       expect.any(Array)
     );
     expect(workletNodes[0].port.postMessage).toHaveBeenCalledWith(
@@ -209,38 +217,21 @@ describe("client noise cancellation", () => {
   });
 
   it("passes the cached DPDFNet manifest into the ONNX worker", async () => {
-    const modelBundle = {
-      provider: "dpdfnet",
-      manifest: {
-        initialState: [0.25, 0.5]
-      },
-      models: [
-        {
-          bytes: new ArrayBuffer(4),
-          name: "dpdfnet8_48khz_hr",
-          url: "/models/dpdfnet/dpdfnet8_48khz_hr.onnx"
-        }
-      ]
-    };
+    const modelBundle = dpdfnetModelBundle([0.25, 0.5]);
+    modelBundle.models[0].name = "dpdfnet8_48khz_hr";
     wasmLoader.loadCachedNoiseModelBundle.mockResolvedValue(modelBundle);
 
-    await expect(
-      processLocalAudioStream(inputStream, {
-        noise: {
-          ...defaultNoiseConfig,
-          provider: "dpdfnet",
-          dpdfnet: {
-            model: "dpdfnet8_48khz_hr"
-          }
-        }
-      })
-    ).resolves.toBe(destinationStream);
+    await expect(processLocalAudioStream(inputStream, {
+      noise: {
+        ...defaultNoiseConfig,
+        provider: "dpdfnet",
+        dpdfnet: { model: "dpdfnet8_48khz_hr" }
+      }
+    })).resolves.toBe(destinationStream);
 
     expect(workerPostMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        manifest: {
-          initialState: [0.25, 0.5]
-        },
+        manifest: { initialState: [0.25, 0.5] },
         model: "dpdfnet8_48khz_hr",
         provider: "dpdfnet",
         type: "init"

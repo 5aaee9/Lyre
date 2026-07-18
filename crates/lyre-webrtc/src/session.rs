@@ -89,7 +89,7 @@ impl ServerMediaSessionRegistry {
     }
 
     pub fn close(&self, key: &ServerMediaSessionKey) -> Option<ServerMediaSessionStatus> {
-        let mut session = self.sessions.get_mut(key)?;
+        let (_, mut session) = self.sessions.remove(key)?;
         session.state = ServerMediaSessionState::Closed;
         Some(status_from_session(key, &session))
     }
@@ -105,12 +105,16 @@ impl ServerMediaSessionRegistry {
     }
 
     pub fn close_room(&self, room_id: &RoomId) -> Vec<ServerMediaSessionStatus> {
-        let statuses = self.sessions.iter_mut().filter_map(|mut entry| {
-            if &entry.key().room_id != room_id {
-                return None;
-            }
-            entry.value_mut().state = ServerMediaSessionState::Closed;
-            Some(status_from_session(entry.key(), entry.value()))
+        let keys = self
+            .sessions
+            .iter()
+            .filter(|entry| &entry.key().room_id == room_id)
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        let statuses = keys.into_iter().filter_map(|key| {
+            let (_, mut session) = self.sessions.remove(&key)?;
+            session.state = ServerMediaSessionState::Closed;
+            Some(status_from_session(&key, &session))
         });
         sorted_statuses(statuses)
     }
@@ -189,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn close_keeps_closed_session_in_all_sessions_only() {
+    fn close_returns_closed_status_without_retaining_session() {
         let registry = ServerMediaSessionRegistry::new();
         let key = ServerMediaSessionKey {
             room_id: RoomId::default_room(),
@@ -199,11 +203,17 @@ mod tests {
 
         let closed = registry.close(&key).unwrap();
 
-        assert_eq!(closed.state, ServerMediaSessionState::Closed);
         assert_eq!(
-            registry.sessions()[0].state,
-            ServerMediaSessionState::Closed
+            closed,
+            ServerMediaSessionStatus {
+                room_id: RoomId::default_room(),
+                user_id: UserId::from_external("user_01"),
+                audio_track_id: "audio-main".to_owned(),
+                state: ServerMediaSessionState::Closed,
+            }
         );
+        assert!(registry.sessions().is_empty());
+        assert_eq!(registry.status(&key), None);
         assert!(registry.active_sessions().is_empty());
     }
 
@@ -285,15 +295,33 @@ mod tests {
     }
 
     #[test]
-    fn close_room_closes_only_matching_room() {
+    fn close_room_returns_closed_statuses_and_removes_only_matching_room() {
         let registry = ServerMediaSessionRegistry::new();
-        registry.start(config("DEFAULT", "user_01", "audio-main"));
-        registry.start(config("OTHER", "user_02", "audio-main"));
+        registry.start(config("DEFAULT", "user_b", "audio-b"));
+        registry.start(config("OTHER", "user_c", "audio-c"));
+        registry.start(config("DEFAULT", "user_a", "audio-a"));
 
         let closed = registry.close_room(&RoomId::default_room());
 
-        assert_eq!(closed.len(), 1);
-        assert_eq!(closed[0].state, ServerMediaSessionState::Closed);
+        assert_eq!(
+            closed,
+            vec![
+                ServerMediaSessionStatus {
+                    room_id: RoomId::default_room(),
+                    user_id: UserId::from_external("user_a"),
+                    audio_track_id: "audio-a".to_owned(),
+                    state: ServerMediaSessionState::Closed,
+                },
+                ServerMediaSessionStatus {
+                    room_id: RoomId::default_room(),
+                    user_id: UserId::from_external("user_b"),
+                    audio_track_id: "audio-b".to_owned(),
+                    state: ServerMediaSessionState::Closed,
+                },
+            ]
+        );
+        assert_eq!(registry.sessions().len(), 1);
+        assert_eq!(registry.sessions()[0].room_id.as_str(), "OTHER");
         assert_eq!(registry.active_sessions()[0].room_id.as_str(), "OTHER");
     }
 }

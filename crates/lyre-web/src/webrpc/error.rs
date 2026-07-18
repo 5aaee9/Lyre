@@ -65,6 +65,10 @@ impl WebrpcError {
                 status: StatusCode::UNAUTHORIZED,
                 message: "room access token is invalid".to_owned(),
             },
+            ApiError::PendingWebSocketAdmissionsFull => Self {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                message: "too many pending websocket admissions".to_owned(),
+            },
         }
     }
 }

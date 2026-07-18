@@ -19,8 +19,10 @@ type RoomViewProps = {
   link: string;
   loadAudioDiagnostics: () => Promise<ServerMediaAudioDiagnostics | null>;
   muted: boolean;
+  playbackBlocked: boolean;
   onApplyUserAudioSettings: (userId: string, settings: Partial<UserAudioSettings>) => void | Promise<void>;
   onLeave: () => void | Promise<void>;
+  onResumePlayback: () => void | Promise<void>;
   onSaveSettings: (settings: SettingsSnapshot) => void | Promise<void>;
   onSettingsOpenChange: (open: boolean) => void;
   onToggleMuted: () => void;
@@ -47,8 +49,10 @@ export function RoomView({
   link,
   loadAudioDiagnostics,
   muted,
+  playbackBlocked,
   onApplyUserAudioSettings,
   onLeave,
+  onResumePlayback,
   onSaveSettings,
   onSettingsOpenChange,
   onToggleMuted,
@@ -93,6 +97,12 @@ export function RoomView({
               <Settings aria-hidden="true" className="size-4" />
               <span>{t("settings")}</span>
             </Button>
+            {playbackBlocked ? (
+              <Button onClick={() => void onResumePlayback()} variant="outline">
+                <Volume2 aria-hidden="true" className="size-4" />
+                <span>{t("resumeAudio")}</span>
+              </Button>
+            ) : null}
             <Button aria-pressed={muted} disabled={!audioStarted || listenOnly} onClick={onToggleMuted} variant={muted ? "outline" : "default"}>
               {muted ? <MicOff aria-hidden="true" className="size-4" /> : <Mic aria-hidden="true" className="size-4" />}
               <span>{muted ? t("unmute") : t("mute")}</span>
