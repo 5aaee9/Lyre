@@ -2,7 +2,6 @@ use crate::{NoiseCancellationConfig, RoomId, UserId};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use rand::{rngs::StdRng, Rng as _, SeedableRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -12,8 +11,7 @@ pub struct RoomAccessToken(String);
 
 impl RoomAccessToken {
     pub fn new() -> Self {
-        let mut rng = StdRng::from_os_rng();
-        let bytes: [u8; 32] = rng.random();
+        let bytes: [u8; 32] = rand::random();
         Self(URL_SAFE_NO_PAD.encode(bytes))
     }
 

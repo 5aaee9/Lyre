@@ -8,6 +8,8 @@ mod deepfilternet;
 #[cfg(feature = "server")]
 mod dpdfnet;
 #[cfg(feature = "server")]
+mod ort_env;
+#[cfg(feature = "server")]
 mod server;
 
 pub use rnnoise::{

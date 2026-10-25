@@ -24,7 +24,7 @@ use webrtc::{
         PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCIceCandidateInit,
         RTCIceGatheringState, RTCPeerConnectionIceEvent, RTCPeerConnectionState, Registry,
     },
-    runtime::{channel, timeout, Receiver, Sender},
+    runtime::{channel, timeout, Receiver, Sender, TokioRuntime},
 };
 
 #[derive(Clone)]
@@ -125,16 +125,25 @@ async fn local_description_sdp_after_gathering(
     peer_connection: &Arc<dyn PeerConnection>,
     gather_complete_rx: &mut Receiver<()>,
 ) -> String {
-    let _ = timeout(std::time::Duration::from_secs(5), gather_complete_rx.recv()).await;
+    let _ = timeout(
+        &TokioRuntime,
+        std::time::Duration::from_secs(5),
+        gather_complete_rx.recv(),
+    )
+    .await;
     peer_connection.local_description().await.unwrap().sdp
 }
 
 async fn wait_for_connected(connected_rx: &mut Receiver<()>) -> bool {
-    timeout(std::time::Duration::from_secs(5), connected_rx.recv())
-        .await
-        .ok()
-        .flatten()
-        .is_some()
+    timeout(
+        &TokioRuntime,
+        std::time::Duration::from_secs(5),
+        connected_rx.recv(),
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_some()
 }
 
 async fn wait_for_test_candidates(

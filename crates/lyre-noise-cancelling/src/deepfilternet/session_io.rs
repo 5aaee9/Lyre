@@ -37,8 +37,7 @@ pub(super) fn build_session(
     runtime: &super::DeepFilterNetRuntimeConfig,
     path: &PathBuf,
 ) -> Result<Session, NoiseCancellationError> {
-    Session::builder()
-        .map_err(|error| noise_runtime_error(NoiseProvider::Deepfilternet, error))?
+    crate::ort_env::session_builder(NoiseProvider::Deepfilternet)?
         .with_optimization_level(GraphOptimizationLevel::All)
         .map_err(|error| noise_runtime_error(NoiseProvider::Deepfilternet, error))?
         .with_inter_op_spinning(false)

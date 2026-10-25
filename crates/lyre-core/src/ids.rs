@@ -69,7 +69,7 @@ pub struct UserId(String);
 
 impl UserId {
     pub fn new() -> Self {
-        Self(format!("user_{}", Ulid::new()))
+        Self(format!("user_{}", Ulid::generate()))
     }
 
     pub fn from_external(input: impl Into<String>) -> Self {

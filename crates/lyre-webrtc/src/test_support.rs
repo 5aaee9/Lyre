@@ -26,7 +26,7 @@ use webrtc::{
         PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCIceCandidateInit,
         RTCIceGatheringState, RTCPeerConnectionIceEvent, RTCPeerConnectionState, Registry,
     },
-    runtime::{channel, timeout, Receiver, Sender},
+    runtime::{channel, timeout, Receiver, Sender, TokioRuntime},
 };
 
 #[derive(Clone)]
@@ -112,6 +112,7 @@ async fn server_media_offer(
         offer_sdp,
         offerer,
         track,
+        opus_payload_type: opus_payload_type.unwrap_or(111),
         offerer_candidates,
         remote_rtp_packets,
         connected_rx,
@@ -122,6 +123,7 @@ pub struct ServerMediaTestOffer {
     pub offer_sdp: String,
     offerer: Arc<dyn PeerConnection>,
     track: Arc<TrackLocalStaticRTP>,
+    opus_payload_type: u8,
     offerer_candidates: Arc<Mutex<Vec<RTCIceCandidateInit>>>,
     remote_rtp_packets: Arc<Mutex<Vec<rtc::rtp::Packet>>>,
     connected_rx: Receiver<()>,
@@ -165,6 +167,7 @@ impl ServerMediaTestOffer {
         ServerMediaConnectedOffer {
             _offerer: self.offerer,
             track: self.track,
+            opus_payload_type: self.opus_payload_type,
             remote_rtp_packets: self.remote_rtp_packets,
             next_packet_index: Mutex::new(0),
         }
@@ -182,6 +185,7 @@ impl ServerMediaTestOffer {
 pub struct ServerMediaConnectedOffer {
     _offerer: Arc<dyn PeerConnection>,
     track: Arc<TrackLocalStaticRTP>,
+    opus_payload_type: u8,
     remote_rtp_packets: Arc<Mutex<Vec<rtc::rtp::Packet>>>,
     next_packet_index: Mutex<usize>,
 }
@@ -204,14 +208,13 @@ impl ServerMediaConnectedOffer {
         };
         for (index, payload) in payloads.into_iter().enumerate() {
             let packet_index = start_index + index;
-            let _ = self
-                .track
-                .write_rtp(opus_rtp_packet_for_test(
-                    42_u16.wrapping_add(packet_index as u16),
-                    1234_u32.wrapping_add((packet_index * SERVER_MEDIA_OPUS_FRAME_SIZE) as u32),
-                    payload,
-                ))
-                .await;
+            let mut packet = opus_rtp_packet_for_test(
+                42_u16.wrapping_add(packet_index as u16),
+                1234_u32.wrapping_add((packet_index * SERVER_MEDIA_OPUS_FRAME_SIZE) as u32),
+                payload,
+            );
+            packet.header.payload_type = self.opus_payload_type;
+            let _ = self.track.write_rtp(packet).await;
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
     }
@@ -357,16 +360,25 @@ async fn local_description_sdp_after_gathering(
     peer_connection: &Arc<dyn PeerConnection>,
     gather_complete_rx: &mut Receiver<()>,
 ) -> String {
-    let _ = timeout(std::time::Duration::from_secs(5), gather_complete_rx.recv()).await;
+    let _ = timeout(
+        &TokioRuntime,
+        std::time::Duration::from_secs(5),
+        gather_complete_rx.recv(),
+    )
+    .await;
     peer_connection.local_description().await.unwrap().sdp
 }
 
 async fn wait_for_connected(connected_rx: &mut Receiver<()>) -> bool {
-    timeout(std::time::Duration::from_secs(5), connected_rx.recv())
-        .await
-        .ok()
-        .flatten()
-        .is_some()
+    timeout(
+        &TokioRuntime,
+        std::time::Duration::from_secs(5),
+        connected_rx.recv(),
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_some()
 }
 
 async fn wait_for_test_candidates(

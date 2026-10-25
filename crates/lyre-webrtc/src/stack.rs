@@ -133,27 +133,33 @@ impl WebRtcStack {
         self.peer_connection_lifecycle.record_created();
         #[cfg(test)]
         let peer_connection_closed = Arc::new(AtomicBool::new(false));
+        let mut egress_senders = Vec::new();
         for track in media_egress.tracks() {
-            if let Err(source) = peer_connection
+            match peer_connection
                 .add_track(track as Arc<dyn TrackLocal>)
                 .await
             {
-                let close_result = peer_connection.close().await;
-                #[cfg(test)]
-                if close_result.is_ok() && !peer_connection_closed.swap(true, Ordering::Relaxed) {
-                    self.peer_connection_lifecycle.record_closed();
-                }
-                if let Err(close_error) = close_result {
-                    warn!(
+                Ok(sender) => egress_senders.push(sender),
+                Err(source) => {
+                    let close_result = peer_connection.close().await;
+                    #[cfg(test)]
+                    if close_result.is_ok() && !peer_connection_closed.swap(true, Ordering::Relaxed)
+                    {
+                        self.peer_connection_lifecycle.record_closed();
+                    }
+                    if let Err(close_error) = close_result {
+                        warn!(
                         error = format_args!("{close_error:#}"),
                         "failed to close peer connection after egress track registration failed"
                     );
+                    }
+                    return Err(WebRtcStackError::CreatePeerConnection {
+                        source: Box::new(source),
+                    });
                 }
-                return Err(WebRtcStackError::CreatePeerConnection {
-                    source: Box::new(source),
-                });
             }
         }
+        media_egress.attach_senders(egress_senders);
 
         Ok(WebRtcPeerConnectionHandle {
             _peer_connection: Arc::from(peer_connection),

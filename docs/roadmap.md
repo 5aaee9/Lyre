@@ -141,6 +141,7 @@
 - Pending room joins now use a persisted 30-second WebSocket admission lease with a global 4096-entry cap; successful admission and leave cancel it, startup restores or prunes it, and persistence failures retain it for retry instead of leaking room membership.
 - Client ONNX noise processing now keeps at most one inference in flight, uses startup deadlines and a sticky live-raw fallback after late or failed inference, and explicitly frees Worklet WASM buffers, workers, ports, tracks, media nodes, peer sessions, and audio contexts even when individual cleanup steps fail.
 - Browser playback-block recovery now retries both Web Audio and remote media elements from an explicit localized room action, clearing playback diagnostics after recovery.
+- Dependencies upgraded to latest: Rust workspace (`webrtc`/`rtc` 0.21, `ort` 2.0.0-rc.15 with a shared process-wide ONNX Runtime environment, `rubato` 5, `rand` 0.10, `ulid` 3, `hmac` 0.13, `sha1` 0.11, `base64` 0.23, `tower-http` 0.7) and frontend (Next 16.4, React 19.3, ESLint 10, Vitest 5, jsdom 30, TypeScript 6). Server egress now stamps the Opus payload type negotiated on each sender leg, since `rtc` 0.21 rejects unnegotiated payload types instead of rewriting them.
 
 ## Next
 

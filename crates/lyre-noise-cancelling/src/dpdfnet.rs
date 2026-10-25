@@ -124,8 +124,7 @@ impl DpdfNetNoiseCanceller {
             return Err(model_file_unavailable(NoiseProvider::Dpdfnet, model_path));
         }
 
-        let session = Session::builder()
-            .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
+        let session = crate::ort_env::session_builder(NoiseProvider::Dpdfnet)?
             .with_optimization_level(GraphOptimizationLevel::All)
             .map_err(|error| noise_runtime_error(NoiseProvider::Dpdfnet, error))?
             .with_inter_op_spinning(false)

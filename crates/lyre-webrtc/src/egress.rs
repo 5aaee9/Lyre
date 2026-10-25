@@ -7,12 +7,15 @@ use rtc::rtp_transceiver::rtp_sender::{
 use std::{
     collections::BTreeMap,
     error::Error,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 use thiserror::Error;
-use webrtc::media_stream::{
-    track_local::{static_rtp::TrackLocalStaticRTP, TrackLocal},
-    MediaStreamTrack,
+use webrtc::{
+    media_stream::{
+        track_local::{static_rtp::TrackLocalStaticRTP, TrackLocal},
+        MediaStreamTrack,
+    },
+    rtp_transceiver::RtpSender,
 };
 
 pub const SERVER_MEDIA_EGRESS_PAYLOAD_TYPE: u8 = 111;
@@ -84,6 +87,7 @@ pub(crate) struct ServerMediaEgress {
 #[derive(Clone)]
 pub(crate) struct ServerMediaEgressSource {
     track: Arc<TrackLocalStaticRTP>,
+    sender: Arc<OnceLock<Arc<dyn RtpSender>>>,
     encoder: Arc<Mutex<ServerMediaOpusEgress>>,
     ssrc: u32,
 }
@@ -120,6 +124,7 @@ impl ServerMediaEgress {
                             ..Default::default()
                         }],
                     ))),
+                    sender: Arc::new(OnceLock::new()),
                     encoder: Arc::new(Mutex::new(ServerMediaOpusEgress::new()?)),
                     ssrc,
                 },
@@ -136,6 +141,13 @@ impl ServerMediaEgress {
             .values()
             .map(|source| Arc::clone(&source.track))
             .collect()
+    }
+
+    /// Attaches the RTP senders returned by `add_track`, in `tracks()` order.
+    pub(crate) fn attach_senders(&self, senders: Vec<Arc<dyn RtpSender>>) {
+        for (source, sender) in self.sources.values().zip(senders) {
+            let _ = source.sender.set(sender);
+        }
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -160,7 +172,7 @@ impl ServerMediaEgress {
         for packet in &packets {
             source
                 .track
-                .write_rtp(egress_rtp_packet(packet, source.ssrc))
+                .write_rtp(source.rtp_packet(packet).await?)
                 .await
                 .map_err(|source| ServerMediaEgressError::WriteRtp {
                     source: Box::new(source),
@@ -179,7 +191,7 @@ impl ServerMediaEgress {
         validate_opus_rtp_packet(&packet)?;
         source
             .track
-            .write_rtp(egress_rtp_packet(&packet, source.ssrc))
+            .write_rtp(source.rtp_packet(&packet).await?)
             .await
             .map_err(|source| ServerMediaEgressError::WriteRtp {
                 source: Box::new(source),
@@ -222,18 +234,39 @@ fn percent_encode_user_id(source_user_id: &UserId) -> String {
     encoded
 }
 
-fn egress_rtp_packet(packet: &ServerMediaEgressRtpPacket, ssrc: u32) -> rtc::rtp::Packet {
-    rtc::rtp::Packet {
-        header: rtc::rtp::Header {
-            version: 2,
-            sequence_number: packet.sequence_number,
-            timestamp: packet.timestamp,
-            marker: true,
-            payload_type: packet.payload_type,
-            ssrc,
-            ..Default::default()
-        },
-        payload: Bytes::from(packet.payload.clone()),
+impl ServerMediaEgressSource {
+    /// Builds the outbound RTP packet using the Opus payload type negotiated on this
+    /// sender leg; the sender rejects payload types that were not negotiated.
+    async fn rtp_packet(
+        &self,
+        packet: &ServerMediaEgressRtpPacket,
+    ) -> Result<rtc::rtp::Packet, ServerMediaEgressError> {
+        let payload_type = match self.sender.get() {
+            Some(sender) => sender
+                .get_parameters()
+                .await
+                .map_err(|source| ServerMediaEgressError::WriteRtp {
+                    source: Box::new(source),
+                })?
+                .rtp_parameters
+                .codecs
+                .iter()
+                .find(|codec| codec.rtp_codec.mime_type.eq_ignore_ascii_case("audio/opus"))
+                .map_or(packet.payload_type, |codec| codec.payload_type),
+            None => packet.payload_type,
+        };
+        Ok(rtc::rtp::Packet {
+            header: rtc::rtp::Header {
+                version: 2,
+                sequence_number: packet.sequence_number,
+                timestamp: packet.timestamp,
+                marker: true,
+                payload_type,
+                ssrc: self.ssrc,
+                ..Default::default()
+            },
+            payload: Bytes::from(packet.payload.clone()),
+        })
     }
 }
 
