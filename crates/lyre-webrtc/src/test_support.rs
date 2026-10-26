@@ -29,6 +29,10 @@ use webrtc::{
     runtime::{channel, timeout, Receiver, Sender, TokioRuntime},
 };
 
+mod renegotiation;
+
+pub use renegotiation::wait_for_server_connected;
+
 #[derive(Clone)]
 struct TestPeerConnectionHandler {
     local_ice_candidates: Arc<Mutex<Vec<RTCIceCandidateInit>>>,
@@ -165,7 +169,7 @@ impl ServerMediaTestOffer {
 
         let _ = wait_for_connected(&mut self.connected_rx).await;
         ServerMediaConnectedOffer {
-            _offerer: self.offerer,
+            offerer: self.offerer,
             track: self.track,
             opus_payload_type: self.opus_payload_type,
             remote_rtp_packets: self.remote_rtp_packets,
@@ -183,7 +187,7 @@ impl ServerMediaTestOffer {
 }
 
 pub struct ServerMediaConnectedOffer {
-    _offerer: Arc<dyn PeerConnection>,
+    pub(crate) offerer: Arc<dyn PeerConnection>,
     track: Arc<TrackLocalStaticRTP>,
     opus_payload_type: u8,
     remote_rtp_packets: Arc<Mutex<Vec<rtc::rtp::Packet>>>,

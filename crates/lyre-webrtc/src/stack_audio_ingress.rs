@@ -1,13 +1,77 @@
+use std::sync::Arc;
+
+use rtc::peer_connection::configuration::media_engine::MIME_TYPE_OPUS;
 use tracing::warn;
+use webrtc::media_stream::track_remote::{TrackRemote, TrackRemoteEvent};
 
 use crate::{
-    media_ingress::MediaIngressRecorder, ServerMediaDecodeError, ServerMediaDecodeFailure,
-    ServerMediaJitterBuffer, ServerMediaJitterBufferOutput, ServerMediaOpusDecoder,
-    ServerMediaPcmConcealer, ServerMediaRtpPacket,
+    media_ingress::MediaIngressRecorder, payload_dump::PayloadDumper, ServerMediaDecodeError,
+    ServerMediaDecodeFailure, ServerMediaJitterBuffer, ServerMediaJitterBufferOutput,
+    ServerMediaOpusDecoder, ServerMediaPcmConcealer, ServerMediaRtpPacket,
 };
+
+/// How long an audio track may stay quiet before packets held behind a lost packet are
+/// released, so the tail of a talk spurt is not delayed until the speaker talks again.
+pub(crate) const JITTER_BUFFER_IDLE_FLUSH: std::time::Duration =
+    std::time::Duration::from_millis(60);
 
 pub(crate) const CONCEALMENT_UNAVAILABLE_ERROR: &str =
     "packet loss concealment required but not available with current Opus decoder";
+
+pub(crate) async fn run_remote_audio_track(
+    track: Arc<dyn TrackRemote>,
+    track_id: String,
+    media_ingress: MediaIngressRecorder,
+    payload_dumper: PayloadDumper,
+) {
+    let mut decoder = match ServerMediaOpusDecoder::new() {
+        Ok(decoder) => decoder,
+        Err(error) => {
+            warn!(error = %error, "failed to initialize server media Opus decoder");
+            return;
+        }
+    };
+    let mut jitter_buffer = ServerMediaJitterBuffer::default();
+    let mut concealer = ServerMediaPcmConcealer::default();
+    loop {
+        let event = match tokio::time::timeout(JITTER_BUFFER_IDLE_FLUSH, track.poll()).await {
+            Ok(Some(event)) => event,
+            Ok(None) => break,
+            Err(_) => {
+                handle_jitter_buffer_outputs(
+                    &media_ingress,
+                    &mut decoder,
+                    &mut concealer,
+                    jitter_buffer.flush(),
+                );
+                continue;
+            }
+        };
+        if let TrackRemoteEvent::OnRtpPacket(packet) = event {
+            let negotiated_codec_is_opus = track
+                .codec(packet.header.ssrc)
+                .await
+                .is_some_and(|codec| codec.mime_type.eq_ignore_ascii_case(MIME_TYPE_OPUS));
+            let packet = ServerMediaRtpPacket {
+                track_id: track_id.clone(),
+                sequence_number: packet.header.sequence_number,
+                timestamp: packet.header.timestamp,
+                marker: packet.header.marker,
+                payload_type: packet.header.payload_type,
+                payload: packet.payload.to_vec(),
+            };
+            payload_dumper.dump_inbound(&packet);
+            handle_audio_rtp_packet(
+                &media_ingress,
+                &mut decoder,
+                &mut jitter_buffer,
+                &mut concealer,
+                negotiated_codec_is_opus,
+                packet,
+            );
+        }
+    }
+}
 
 pub(crate) fn handle_audio_rtp_packet(
     media_ingress: &MediaIngressRecorder,
@@ -24,7 +88,21 @@ pub(crate) fn handle_audio_rtp_packet(
         return;
     }
 
-    for output in jitter_buffer.push(packet) {
+    handle_jitter_buffer_outputs(
+        media_ingress,
+        decoder,
+        concealer,
+        jitter_buffer.push(packet),
+    );
+}
+
+fn handle_jitter_buffer_outputs(
+    media_ingress: &MediaIngressRecorder,
+    decoder: &mut ServerMediaOpusDecoder,
+    concealer: &mut ServerMediaPcmConcealer,
+    outputs: Vec<ServerMediaJitterBufferOutput>,
+) {
+    for output in outputs {
         match output {
             ServerMediaJitterBufferOutput::Packet(packet) => {
                 decode_packet(media_ingress, decoder, concealer, packet);

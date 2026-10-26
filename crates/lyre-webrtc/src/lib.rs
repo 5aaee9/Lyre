@@ -1,5 +1,6 @@
 mod connection_state;
 pub mod egress;
+mod egress_clock;
 mod jitter_buffer;
 mod libopus;
 pub mod media_ingress;
@@ -17,6 +18,8 @@ pub mod test_support;
 mod dynamic_payload_tests;
 #[cfg(test)]
 mod negotiation_tests;
+#[cfg(test)]
+mod renegotiation_tests;
 #[cfg(test)]
 mod stack_egress_tests;
 #[cfg(test)]

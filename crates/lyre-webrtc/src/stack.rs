@@ -10,10 +10,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::{
     connection_state::ServerMediaConnectionState, egress::ServerMediaEgress,
     media_ingress::MediaIngressRecorder, payload_dump::PayloadDumper,
-    stack_audio_ingress::handle_audio_rtp_packet, ServerMediaDecodeFailure, ServerMediaEgressError,
-    ServerMediaJitterBuffer, ServerMediaOpusDecoder, ServerMediaPcmConcealer, ServerMediaPcmFrame,
-    ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack, ServerMediaRtpPacket,
-    ServerMediaSessionKey, ServerMediaTrackKind,
+    stack_audio_ingress::run_remote_audio_track, ServerMediaDecodeFailure, ServerMediaEgressError,
+    ServerMediaPcmFrame, ServerMediaProcessedAudioFrame, ServerMediaRemoteTrack,
+    ServerMediaRtpPacket, ServerMediaSessionKey, ServerMediaTrackKind,
 };
 use rtc::{
     peer_connection::configuration::{
@@ -25,8 +24,7 @@ use rtc::{
 use thiserror::Error;
 use tracing::{info, warn};
 use webrtc::{
-    media_stream::track_local::TrackLocal,
-    media_stream::track_remote::{TrackRemote, TrackRemoteEvent},
+    media_stream::track_remote::TrackRemote,
     peer_connection::{
         PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCIceCandidateInit,
         RTCIceGatheringState, RTCPeerConnectionIceEvent, RTCPeerConnectionState,
@@ -85,9 +83,11 @@ impl WebRtcStack {
         let session_key = Arc::new(Mutex::new(None));
         let media_ingress = MediaIngressRecorder::default();
         let payload_dumper = PayloadDumper::from_env();
-        let media_egress = ServerMediaEgress::new(source_user_ids, payload_dumper.clone())
-            .map_err(|source| WebRtcStackError::CreatePeerConnection {
-                source: Box::new(source),
+        let media_egress =
+            ServerMediaEgress::new(&[], payload_dumper.clone()).map_err(|source| {
+                WebRtcStackError::CreatePeerConnection {
+                    source: Box::new(source),
+                }
             })?;
         let handler = Arc::new(PeerConnectionHandler {
             local_ice_candidates: Arc::clone(&local_ice_candidates),
@@ -133,33 +133,23 @@ impl WebRtcStack {
         self.peer_connection_lifecycle.record_created();
         #[cfg(test)]
         let peer_connection_closed = Arc::new(AtomicBool::new(false));
-        let mut egress_senders = Vec::new();
-        for track in media_egress.tracks() {
-            match peer_connection
-                .add_track(track as Arc<dyn TrackLocal>)
-                .await
-            {
-                Ok(sender) => egress_senders.push(sender),
-                Err(source) => {
-                    let close_result = peer_connection.close().await;
-                    #[cfg(test)]
-                    if close_result.is_ok() && !peer_connection_closed.swap(true, Ordering::Relaxed)
-                    {
-                        self.peer_connection_lifecycle.record_closed();
-                    }
-                    if let Err(close_error) = close_result {
-                        warn!(
-                        error = format_args!("{close_error:#}"),
-                        "failed to close peer connection after egress track registration failed"
-                    );
-                    }
-                    return Err(WebRtcStackError::CreatePeerConnection {
-                        source: Box::new(source),
-                    });
-                }
+        if let Err(source) = media_egress
+            .sync_sources(&peer_connection, source_user_ids)
+            .await
+        {
+            let close_result = peer_connection.close().await;
+            #[cfg(test)]
+            if close_result.is_ok() && !peer_connection_closed.swap(true, Ordering::Relaxed) {
+                self.peer_connection_lifecycle.record_closed();
             }
+            if let Err(close_error) = close_result {
+                warn!(
+                    error = format_args!("{close_error:#}"),
+                    "failed to close peer connection after egress track registration failed"
+                );
+            }
+            return Err(WebRtcStackError::CreatePeerConnection { source });
         }
-        media_egress.attach_senders(egress_senders);
 
         Ok(WebRtcPeerConnectionHandle {
             _peer_connection: Arc::from(peer_connection),
@@ -334,44 +324,12 @@ impl PeerConnectionEventHandler for PeerConnectionHandler {
             return;
         }
 
-        let media_ingress = self.media_ingress.clone();
-        let payload_dumper = self.payload_dumper.clone();
-        tokio::spawn(async move {
-            let mut decoder = match ServerMediaOpusDecoder::new() {
-                Ok(decoder) => decoder,
-                Err(error) => {
-                    warn!(error = %error, "failed to initialize server media Opus decoder");
-                    return;
-                }
-            };
-            let mut jitter_buffer = ServerMediaJitterBuffer::default();
-            let mut concealer = ServerMediaPcmConcealer::default();
-            while let Some(event) = track.poll().await {
-                if let TrackRemoteEvent::OnRtpPacket(packet) = event {
-                    let negotiated_codec_is_opus = track
-                        .codec(packet.header.ssrc)
-                        .await
-                        .is_some_and(|codec| codec.mime_type.eq_ignore_ascii_case(MIME_TYPE_OPUS));
-                    let packet = ServerMediaRtpPacket {
-                        track_id: track_id.clone(),
-                        sequence_number: packet.header.sequence_number,
-                        timestamp: packet.header.timestamp,
-                        marker: packet.header.marker,
-                        payload_type: packet.header.payload_type,
-                        payload: packet.payload.to_vec(),
-                    };
-                    payload_dumper.dump_inbound(&packet);
-                    handle_audio_rtp_packet(
-                        &media_ingress,
-                        &mut decoder,
-                        &mut jitter_buffer,
-                        &mut concealer,
-                        negotiated_codec_is_opus,
-                        packet,
-                    );
-                }
-            }
-        });
+        tokio::spawn(run_remote_audio_track(
+            track,
+            track_id,
+            self.media_ingress.clone(),
+            self.payload_dumper.clone(),
+        ));
     }
 }
 

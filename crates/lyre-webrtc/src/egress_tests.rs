@@ -30,21 +30,12 @@ fn frame_with_rtp_timestamp(
 fn encodes_valid_processed_audio_frame_to_opus_rtp_payload() {
     let mut encoder = ServerMediaOpusEgress::new().unwrap();
 
-    let packets = encoder
-        .encode(&frame(vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE]))
+    let payloads = encoder
+        .encode(&frame(vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE * 2]))
         .unwrap();
 
-    assert_eq!(packets.len(), 1);
-    assert_eq!(packets[0].sequence_number, 0);
-    assert_eq!(packets[0].timestamp, 0);
-    assert_eq!(packets[0].payload_type, SERVER_MEDIA_EGRESS_PAYLOAD_TYPE);
-    assert!(!packets[0].payload.is_empty());
-
-    let next = encoder
-        .encode(&frame(vec![0.1; SERVER_MEDIA_OPUS_FRAME_SIZE]))
-        .unwrap();
-    assert_eq!(next[0].sequence_number, 1);
-    assert_eq!(next[0].timestamp, SERVER_MEDIA_OPUS_FRAME_SIZE as u32);
+    assert_eq!(payloads.len(), 2);
+    assert!(payloads.iter().all(|payload| !payload.is_empty()));
 }
 
 #[test]
@@ -55,7 +46,7 @@ fn encoded_processed_audio_decodes_to_audible_pcm() {
         .collect::<Vec<_>>();
 
     let packets = encoder.encode(&frame(input)).unwrap();
-    let output = decode_with_libopus(&packets[0].payload);
+    let output = decode_with_libopus(&packets[0]);
 
     let peak = output.iter().map(|sample| sample.abs()).fold(0.0, f32::max);
     assert!(peak > 0.05, "peak={peak}");
@@ -98,9 +89,7 @@ fn egress_encoder_fades_pcm_after_source_rtp_timestamp_discontinuity() {
         ))
         .unwrap();
 
-    assert_ne!(after_gap[0].payload, continuous[0].payload);
-    assert_eq!(after_gap[0].sequence_number, 1);
-    assert_eq!(after_gap[0].timestamp, SERVER_MEDIA_OPUS_FRAME_SIZE as u32);
+    assert_ne!(after_gap[0], continuous[0]);
 }
 
 #[tokio::test]
@@ -172,7 +161,7 @@ fn egress_encoder_output_is_libopus_decodable_after_near_silence() {
             .map(|sample| ((sample as f32) / 24.0).sin() * amplitude)
             .collect::<Vec<_>>();
         let packets = encoder.encode(&frame(input)).unwrap();
-        let decoded = decode_with_libopus(&packets[0].payload);
+        let decoded = decode_with_libopus(&packets[0]);
         peak = peak.max(
             decoded
                 .iter()

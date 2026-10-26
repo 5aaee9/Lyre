@@ -122,9 +122,11 @@ class MockPeerConnection {
     getParameters: vi.fn(() => ({ encodings: [{}] })),
     setParameters: vi.fn(async () => undefined)
   };
+  transceivers: { mid: string; receiver: { track: { id: string; kind: string } } }[] = [];
   addIceCandidate = vi.fn();
-  addTrack = vi.fn();
-  addTransceiver = vi.fn();
+  addTrack = vi.fn(() => this.pushTransceiver());
+  addTransceiver = vi.fn(() => this.pushTransceiver());
+  getTransceivers = vi.fn(() => this.transceivers);
   close = vi.fn();
   createOffer = vi.fn(async () => ({ type: "offer", sdp: "local-offer" }));
   getReceivers = vi.fn(() => [] as RTCRtpReceiver[]);
@@ -135,6 +137,11 @@ class MockPeerConnection {
 
   constructor() {
     peerConnections.push(this);
+  }
+
+  private pushTransceiver() {
+    const mid = String(this.transceivers.length);
+    this.transceivers.push({ mid, receiver: { track: { id: `receiver-${mid}`, kind: "audio" } } });
   }
 }
 
@@ -846,9 +853,100 @@ describe("ServerMediaAudioSession", () => {
     expect(localAudioTrack.enabled).toBe(true);
   });
 
-  it("reports ICE disconnection and failure through the interruption callback", async () => {
-    const onConnectionInterrupted = vi.fn();
-    const session = new ServerMediaAudioSession({
+  function serverAnswer(sourcesByMid: Record<string, string>) {
+    return {
+      room_id: "DEFAULT",
+      user_id: "user_a",
+      audio_track_id: "audio-main",
+      sdp: ["v=0", ...Object.entries(sourcesByMid).flatMap(([mid, userId]) => [
+        "m=audio 9 UDP/TLS/RTP/SAVPF 111",
+        `a=mid:${mid}`,
+        `a=msid:lyre-user:${userId}:audio lyre-user:${userId}:audio`
+      ])].join("\r\n"),
+      state: "negotiating"
+    };
+  }
+
+  it("renegotiates subscriptions on the same peer connection with enough recvonly transceivers", async () => {
+    const session = makeSession();
+    await session.start();
+    const answer = serverAnswer({ "0": "user_b", "1": "user_c", "2": "user_d" });
+    apiMocks.answerServerMediaOffer.mockResolvedValueOnce(answer);
+
+    await session.updateSubscriptions(["user_b", "user_c", "user_d"], {});
+
+    expect(peerConnections).toHaveLength(1);
+    expect(peerConnections[0].addTransceiver).toHaveBeenCalledTimes(2);
+    expect(peerConnections[0].addTransceiver).toHaveBeenCalledWith("audio", { direction: "recvonly" });
+    expect(peerConnections[0].createOffer).toHaveBeenCalledTimes(2);
+    expect(apiMocks.answerServerMediaOffer).toHaveBeenLastCalledWith(
+      "DEFAULT",
+      "user_a",
+      "audio-main",
+      "local-offer",
+      "token_a"
+    );
+    expect(peerConnections[0].setRemoteDescription).toHaveBeenLastCalledWith({ type: "answer", sdp: answer.sdp });
+    expect(peerConnections[0].audioSender.setParameters).toHaveBeenCalledTimes(2);
+    expect(peerConnections[0].close).not.toHaveBeenCalled();
+    expect(stopTrack).not.toHaveBeenCalled();
+  });
+
+  it("syncs remote playback to renegotiated mids without relying on ontrack", async () => {
+    const session = makeSession();
+    await session.start();
+    apiMocks.answerServerMediaOffer.mockResolvedValueOnce(serverAnswer({ "0": "user_b", "1": "user_c" }));
+    await session.updateSubscriptions(["user_b", "user_c"], {
+      user_c: { muted: false, volumePercent: 50 }
+    });
+    peerConnections[0].ontrack?.({
+      track: peerConnections[0].transceivers[0].receiver.track,
+      streams: [],
+      transceiver: { mid: "0" }
+    } as unknown as RTCTrackEvent);
+
+    expect(gainNodes).toHaveLength(2);
+    expect(gainNodes[1].gain.value).toBe(0.5);
+    await expect(session.diagnostics()).resolves.toMatchObject({
+      remoteSources: [
+        { userId: "user_b", trackIds: ["receiver-0"] },
+        { userId: "user_c", trackIds: ["receiver-1"] }
+      ]
+    });
+
+    apiMocks.answerServerMediaOffer.mockResolvedValueOnce(serverAnswer({ "0": "user_d", "1": "user_c" }));
+    await session.updateSubscriptions(["user_c", "user_d"], {});
+
+    expect(gainNodes[0].disconnect).toHaveBeenCalledOnce();
+    expect(gainNodes[1].disconnect).not.toHaveBeenCalled();
+    await expect(session.diagnostics()).resolves.toMatchObject({
+      remoteSources: [
+        { userId: "user_c", trackIds: ["receiver-1"] },
+        { userId: "user_d", trackIds: ["receiver-0"] }
+      ]
+    });
+  });
+
+  it("serializes concurrent renegotiations on one peer connection", async () => {
+    const session = makeSession();
+    await session.start();
+    let resolveFirst!: (answer: ReturnType<typeof serverAnswer>) => void;
+    apiMocks.answerServerMediaOffer.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveFirst = resolve;
+    }));
+
+    const first = session.updateSubscriptions(["user_b"], {});
+    const second = session.updateSubscriptions([], {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(peerConnections[0].createOffer).toHaveBeenCalledTimes(2);
+    resolveFirst(serverAnswer({ "0": "user_b" }));
+    await Promise.all([first, second]);
+    expect(peerConnections[0].createOffer).toHaveBeenCalledTimes(3);
+  });
+
+  function makeInterruptibleSession(onConnectionInterrupted: () => void) {
+    return new ServerMediaAudioSession({
       roomId: "DEFAULT",
       userId: "user_a",
       accessToken: "token_a",
@@ -858,16 +956,87 @@ describe("ServerMediaAudioSession", () => {
       pollIntervalMs: 10,
       onConnectionInterrupted
     });
+  }
+
+  function setIceState(state: RTCIceConnectionState) {
+    peerConnections[0].iceConnectionState = state;
+    peerConnections[0].oniceconnectionstatechange?.();
+  }
+
+  it("reports ICE failure immediately through the interruption callback", async () => {
+    const onConnectionInterrupted = vi.fn();
+    await makeInterruptibleSession(onConnectionInterrupted).start();
+
+    setIceState("connected");
+    setIceState("failed");
+
+    expect(onConnectionInterrupted).toHaveBeenCalledOnce();
+  });
+
+  it("reports ICE disconnection only after the grace period", async () => {
+    const onConnectionInterrupted = vi.fn();
+    await makeInterruptibleSession(onConnectionInterrupted).start();
+
+    setIceState("connected");
+    setIceState("disconnected");
+    vi.advanceTimersByTime(3_999);
+    expect(onConnectionInterrupted).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(onConnectionInterrupted).toHaveBeenCalledOnce();
+  });
+
+  it("does not report ICE disconnection that recovers or outlives the session", async () => {
+    const onConnectionInterrupted = vi.fn();
+    const session = makeInterruptibleSession(onConnectionInterrupted);
     await session.start();
 
-    peerConnections[0].iceConnectionState = "connected";
-    peerConnections[0].oniceconnectionstatechange?.();
-    peerConnections[0].iceConnectionState = "disconnected";
-    peerConnections[0].oniceconnectionstatechange?.();
-    peerConnections[0].iceConnectionState = "failed";
-    peerConnections[0].oniceconnectionstatechange?.();
+    setIceState("disconnected");
+    setIceState("connected");
+    vi.advanceTimersByTime(5_000);
+    setIceState("disconnected");
+    session.close();
+    vi.advanceTimersByTime(5_000);
 
-    expect(onConnectionInterrupted).toHaveBeenCalledTimes(2);
+    expect(onConnectionInterrupted).not.toHaveBeenCalled();
+  });
+
+  it("reports playback blocked while the playback context is not running", async () => {
+    const onPlaybackBlocked = vi.fn();
+    const session = new ServerMediaAudioSession({
+      roomId: "DEFAULT",
+      userId: "user_a",
+      accessToken: "token_a",
+      socket: { readyState: WebSocket.OPEN, send: socketSend } as unknown as WebSocket,
+      iceServers: [],
+      stream,
+      onPlaybackBlocked
+    });
+    await session.start();
+    audioContexts.length = 0;
+    peerConnections[0].ontrack?.({
+      track: { id: "lyre-user:user_b:audio", enabled: true, readyState: "live" },
+      streams: []
+    } as unknown as RTCTrackEvent);
+    const context = audioContexts[0] as MockAudioContext & { onstatechange: (() => void) | null };
+    context.resume.mockImplementation(() => new Promise(() => undefined));
+    context.state = "suspended";
+
+    vi.advanceTimersByTime(1_000);
+    expect(onPlaybackBlocked).toHaveBeenLastCalledWith(true);
+
+    context.state = "running";
+    context.onstatechange?.();
+    expect(onPlaybackBlocked).toHaveBeenLastCalledWith(false);
+
+    context.state = "interrupted" as AudioContextState;
+    context.onstatechange?.();
+    expect(onPlaybackBlocked).toHaveBeenLastCalledWith(true);
+
+    session.close();
+    context.state = "running";
+    context.onstatechange?.();
+    expect(onPlaybackBlocked).toHaveBeenLastCalledWith(true);
   });
 
   it("deduplicates repeated server ICE candidates", async () => {

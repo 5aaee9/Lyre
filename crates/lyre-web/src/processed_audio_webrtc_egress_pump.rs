@@ -10,7 +10,9 @@ use std::{collections::HashSet, error::Error, sync::Arc};
 use tokio::sync::{broadcast, mpsc, Notify};
 use tokio_util::sync::CancellationToken;
 
-const PER_RECIPIENT_EGRESS_QUEUE_CAPACITY: usize = 1;
+// About 320 ms of 20 ms frames: absorbs processing/jitter bursts without letting a stalled
+// recipient build unbounded latency.
+const PER_RECIPIENT_EGRESS_QUEUE_CAPACITY: usize = 16;
 
 #[derive(Debug)]
 pub struct ProcessedAudioWebRtcEgressPump<S = ServerMediaNegotiator> {

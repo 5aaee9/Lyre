@@ -1,4 +1,4 @@
-import type { IceServerConfig, ServerMediaIceCandidate } from "./api";
+import { answerServerMediaOffer, type IceServerConfig, type ServerMediaIceCandidate } from "./api";
 import type { UserAudioSettings } from "./settings-store";
 import { VoiceActivityDetector } from "./voice-activity";
 
@@ -16,7 +16,7 @@ export type ServerMediaAudioSessionInput = {
   userAudio?: Record<string, UserAudioSettings>;
   pollIntervalMs?: number;
   onError?: (message: string) => void;
-  onPlaybackBlocked?: () => void;
+  onPlaybackBlocked?: (blocked: boolean) => void;
   onConnectionInterrupted?: () => void;
   onRemoteTrack?: () => void;
   onRemoteSpeakingChange?: (userId: string, speaking: boolean) => void;
@@ -92,6 +92,8 @@ export type AudioContextWithSinkId = AudioContext & {
 
 export const DEFAULT_AUDIO_TRACK_ID = "audio-main";
 export const DEFAULT_CANDIDATE_POLL_INTERVAL_MS = 1_000;
+export const ICE_DISCONNECTED_GRACE_MS = 4_000;
+export const PLAYBACK_RESUME_CHECK_MS = 1_000;
 export const SOCKET_NOT_CONNECTED_ERROR = "Audio signalling websocket is not connected";
 
 const EMPTY_AUDIO_STATS: ServerMediaAudioStats = {
@@ -203,6 +205,22 @@ export function candidateKey(candidate: ServerMediaIceCandidate): string {
   ].join("|");
 }
 
+export function serverIceCandidateInit(candidate: ServerMediaIceCandidate): RTCIceCandidateInit {
+  return {
+    candidate: candidate.candidate,
+    sdpMid: candidate.sdp_mid ?? undefined,
+    sdpMLineIndex: candidate.sdp_mline_index ?? undefined,
+    usernameFragment: candidate.username_fragment ?? undefined
+  };
+}
+
+export function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return typeof error === "string" ? error : fallback;
+}
+
 export function summarizeAudioStats(report: RTCStatsReport): ServerMediaAudioStats {
   const summary = { ...EMPTY_AUDIO_STATS };
   for (const stat of report.values()) {
@@ -255,4 +273,73 @@ function isAudioRtpStats(stat: RTCStats): stat is AudioRtpStats {
     return false;
   }
   return !("kind" in stat) || stat.kind === "audio";
+}
+
+export function applyOutputDevice(audioContext: AudioContext, outputDeviceId: string | undefined): Promise<void> {
+  const setSinkId = (audioContext as AudioContextWithSinkId).setSinkId;
+  if (!outputDeviceId || !setSinkId) {
+    return Promise.resolve();
+  }
+  return setSinkId.call(audioContext, outputDeviceId);
+}
+
+export async function enableOpusDtx(peer: RTCPeerConnection): Promise<void> {
+  const senders = peer.getSenders().filter((sender) => sender.track?.kind === "audio");
+  await Promise.all(senders.map(async (sender) => {
+    try {
+      const parameters = sender.getParameters() as DtxRtpSendParameters;
+      const encodings = parameters.encodings.length > 0 ? parameters.encodings : [{}];
+      await sender.setParameters({
+        ...parameters,
+        encodings: encodings.map((encoding) => ({ ...encoding, dtx: "enabled" }))
+      });
+    } catch {
+      return;
+    }
+  }));
+}
+
+export async function negotiateServerMediaOffer(
+  peer: RTCPeerConnection,
+  input: ServerMediaAudioSessionInput,
+  audioTrackId: string,
+  sourceTrackIdsByMid: Map<string, string>
+): Promise<void> {
+  if (peer.signalingState !== "stable") {
+    throw new Error(`Cannot negotiate server media audio in signaling state ${peer.signalingState}`);
+  }
+  const offer = await peer.createOffer();
+  await peer.setLocalDescription(offer);
+  await enableOpusDtx(peer);
+  const answer = await answerServerMediaOffer(input.roomId, input.userId, audioTrackId, offer.sdp ?? "", input.accessToken);
+  sourceTrackIdsByMid.clear();
+  for (const [mid, trackId] of parseServerMediaSourceTrackIdsByMid(answer.sdp)) {
+    sourceTrackIdsByMid.set(mid, trackId);
+  }
+  // ontrack can fire during setRemoteDescription, so the mid map must be current first.
+  await peer.setRemoteDescription({ type: "answer", sdp: answer.sdp });
+}
+
+export function ensureRecvonlyAudioTransceivers(peer: RTCPeerConnection, count: number): void {
+  const existing = peer.getTransceivers().filter((transceiver) => transceiver.receiver.track.kind === "audio").length;
+  for (let index = existing; index < count; index += 1) {
+    peer.addTransceiver("audio", { direction: "recvonly" });
+  }
+}
+
+export function remoteSourceDiagnostics(remotePlayback: Map<string, RemotePlayback>): ServerMediaRemoteSourceDiagnostics[] {
+  return [...remotePlayback.entries()]
+    .map(([userId, playback]) => {
+      const tracks = playback.stream.getAudioTracks();
+      return {
+        userId,
+        trackIds: tracks.map((track) => track.id),
+        gain: playback.gain.gain.value,
+        muted: playback.settings.muted,
+        volumePercent: playback.settings.volumePercent,
+        readyStates: tracks.map((track) => track.readyState),
+        enabled: tracks.map((track) => track.enabled)
+      };
+    })
+    .sort((left, right) => left.userId.localeCompare(right.userId));
 }

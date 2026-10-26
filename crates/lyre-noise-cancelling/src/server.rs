@@ -277,7 +277,6 @@ impl NoiseConfigKey {
 
 pub struct NoiseCancellingAudioFrameProcessor {
     cancellers: Mutex<HashMap<NoiseConfigKey, SharedNoiseCanceller>>,
-    dpdfnet_inference: Mutex<()>,
     model_runtime: NoiseModelRuntimeConfig,
 }
 
@@ -294,7 +293,6 @@ impl NoiseCancellingAudioFrameProcessor {
     pub fn with_model_runtime(model_runtime: NoiseModelRuntimeConfig) -> Self {
         Self {
             cancellers: Mutex::new(HashMap::new()),
-            dpdfnet_inference: Mutex::new(()),
             model_runtime,
         }
     }
@@ -346,11 +344,6 @@ impl AudioFrameProcessor for NoiseCancellingAudioFrameProcessor {
         let mut canceller = canceller
             .lock()
             .expect("noise canceller state mutex poisoned");
-        let _dpdfnet_inference = (noise.provider == NoiseProvider::Dpdfnet).then(|| {
-            self.dpdfnet_inference
-                .lock()
-                .expect("DPDFNet inference mutex poisoned")
-        });
         match canceller.process_frame(NoiseFrame {
             sample_rate_hz: frame.sample_rate_hz,
             channels: frame.channels,

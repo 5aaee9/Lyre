@@ -245,6 +245,29 @@ impl WebRtcPeerConnectionHandle {
         Ok(local_description.sdp)
     }
 
+    /// Renegotiates this peer connection in place when `offer_sdp` continues its current ICE
+    /// session, syncing egress tracks to `source_user_ids` first. Returns `None` when the offer
+    /// comes from a different browser peer connection, which needs a new server peer instead.
+    pub async fn renegotiate(
+        &self,
+        offer_sdp: &str,
+        source_user_ids: &[lyre_core::UserId],
+    ) -> Result<Option<String>, WebRtcStackError> {
+        let Some(remote_description) = self._peer_connection.remote_description().await else {
+            return Ok(None);
+        };
+        let same_ice_session = ice_ufrag(&remote_description.sdp)
+            .is_some_and(|ufrag| Some(ufrag) == ice_ufrag(offer_sdp));
+        if !same_ice_session {
+            return Ok(None);
+        }
+        self.media_egress
+            .sync_sources(self._peer_connection.as_ref(), source_user_ids)
+            .await
+            .map_err(|source| WebRtcStackError::CreateAnswer { source })?;
+        self.answer_remote_offer(offer_sdp.to_owned()).await.map(Some)
+    }
+
     async fn local_description_with_ice(&self) -> Result<RTCSessionDescription, WebRtcStackError> {
         for _ in 0..64 {
             if let Some(local_description) = self._peer_connection.local_description().await {
@@ -295,4 +318,9 @@ pub enum WebRtcStackError {
     },
     #[error("WebRTC peer connection did not produce a local description")]
     MissingLocalDescription,
+}
+
+fn ice_ufrag(sdp: &str) -> Option<&str> {
+    sdp.lines()
+        .find_map(|line| line.trim().strip_prefix("a=ice-ufrag:"))
 }

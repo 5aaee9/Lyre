@@ -110,6 +110,7 @@ class MockPeerConnection {
   createOffer = vi.fn(async () => createOfferMock(this));
   getReceivers = vi.fn(() => [] as RTCRtpReceiver[]);
   getSenders = vi.fn(() => [this.audioSender]);
+  getTransceivers = vi.fn(() => [] as RTCRtpTransceiver[]);
   getStats = vi.fn(async () => peerStatsReports[peerConnections.indexOf(this)] ?? new Map());
   setLocalDescription = vi.fn();
   setRemoteDescription = vi.fn();

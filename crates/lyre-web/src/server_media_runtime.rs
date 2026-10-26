@@ -77,10 +77,11 @@ pub fn process_pcm_frames(
         return Ok(0);
     }
 
-    let track_id = negotiator
-        .session_status(key)
-        .expect("server media peer connection exists without session")
-        .audio_track_id;
+    // The session can be closed between draining frames and reading its status.
+    let Some(status) = negotiator.session_status(key) else {
+        return Ok(0);
+    };
+    let track_id = status.audio_track_id;
     runtime.process_frames(
         frames
             .into_iter()

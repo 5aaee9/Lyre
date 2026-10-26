@@ -14,6 +14,7 @@ export const sourceDisconnect = vi.fn();
 export const processorDisconnect = vi.fn();
 export const contextClose = vi.fn();
 export const addModule = vi.fn();
+export const contextResume = vi.fn();
 export const workerPostMessage = vi.fn();
 export const workerTerminate = vi.fn();
 export const sourceConnect = vi.fn();
@@ -56,11 +57,17 @@ class MockAudioContext {
   }));
   createMediaStreamDestination = vi.fn(() => ({ stream: destinationStream }));
   close = contextClose;
+  resume = contextResume;
+  state: AudioContextState = "suspended";
+  onstatechange: (() => void) | null = null;
 
   constructor(options: AudioContextOptions) {
     this.sampleRate = options.sampleRate ?? 48_000;
+    audioContexts.push(this);
   }
 }
+
+export const audioContexts: MockAudioContext[] = [];
 
 export class MockAudioWorkletNode {
   onprocessorerror: ((event: Event) => void) | null = null;
@@ -144,6 +151,7 @@ export function setupClientNoiseCancellationTest(loaders: NoiseLoaderMocks): voi
   loaders.loadCachedNoiseModelBundle.mockResolvedValue(null);
   workletNodes.length = 0;
   workers.length = 0;
+  audioContexts.length = 0;
   for (const mock of [
     inputTrackStop,
     outputTrackStop,
@@ -153,6 +161,7 @@ export function setupClientNoiseCancellationTest(loaders: NoiseLoaderMocks): voi
     processorConnect,
     sourceConnect,
     contextClose,
+    contextResume,
     addModule,
     workerPostMessage,
     workerTerminate
@@ -160,6 +169,7 @@ export function setupClientNoiseCancellationTest(loaders: NoiseLoaderMocks): voi
     mock.mockReset();
   }
   contextClose.mockResolvedValue(undefined);
+  contextResume.mockResolvedValue(undefined);
   workerReadyMessage = { type: "ready" };
   workletReadyMessage = { type: "ready" };
   workerStartupError = null;

@@ -1,24 +1,25 @@
-import {
-  answerServerMediaOffer,
-  type ServerMediaIceCandidate
-} from "./api";
+import type { ServerMediaIceCandidate } from "./api";
 import type { UserAudioSettings } from "./settings-store";
 import {
+  applyOutputDevice,
   applyRemotePlaybackSettings,
   candidateKey,
   createRemotePlayback,
   DEFAULT_AUDIO_TRACK_ID,
   DEFAULT_CANDIDATE_POLL_INTERVAL_MS,
+  ensureRecvonlyAudioTransceivers,
+  errorMessage,
+  ICE_DISCONNECTED_GRACE_MS,
+  negotiateServerMediaOffer,
   parseServerMediaSourceTrackId,
-  parseServerMediaSourceTrackIdsByMid,
+  PLAYBACK_RESUME_CHECK_MS,
+  remoteSourceDiagnostics,
+  serverIceCandidateInit,
   SOCKET_NOT_CONNECTED_ERROR,
   summarizeAudioStats,
-  type AudioContextWithSinkId,
-  type DtxRtpSendParameters,
   type RemotePlayback,
   type ServerMediaAudioDiagnostics,
-  type ServerMediaAudioSessionInput,
-  type ServerMediaRemoteSourceDiagnostics
+  type ServerMediaAudioSessionInput
 } from "./server-media-audio-support";
 import {
   encodeServerMediaIceCandidate,
@@ -49,7 +50,9 @@ export class ServerMediaAudioSession {
   private lastServerCandidateError: string | null = null;
   private readonly remotePlayback = new Map<string, RemotePlayback>();
   private readonly sourceTrackIdsByMid = new Map<string, string>();
+  private renegotiation: Promise<void> = Promise.resolve();
   private candidatePoll?: number;
+  private iceDisconnectedTimer?: number;
   private audioContext?: AudioContext;
   private offerAnswered = false;
   private readonly onTrackTrackIds: string[] = [];
@@ -84,34 +87,42 @@ export class ServerMediaAudioSession {
       }
     };
     this.peer.oniceconnectionstatechange = () => {
-      if (this.peer.iceConnectionState === "disconnected" || this.peer.iceConnectionState === "failed") {
-        this.input.onConnectionInterrupted?.();
+      switch (this.peer.iceConnectionState) {
+        case "failed":
+          this.clearIceDisconnectedTimer();
+          this.input.onConnectionInterrupted?.();
+          return;
+        case "disconnected":
+          if (this.iceDisconnectedTimer === undefined) {
+            this.iceDisconnectedTimer = window.setTimeout(() => {
+              this.iceDisconnectedTimer = undefined;
+              this.input.onConnectionInterrupted?.();
+            }, ICE_DISCONNECTED_GRACE_MS);
+          }
+          return;
+        case "connected":
+        case "completed":
+          this.clearIceDisconnectedTimer();
+          return;
       }
     };
   }
 
   async start(): Promise<void> {
-    const offer = await this.peer.createOffer();
-    await this.peer.setLocalDescription(offer);
-    await this.enableOpusDtx();
-    const answer = await answerServerMediaOffer(
-      this.input.roomId,
-      this.input.userId,
-      this.audioTrackId,
-      offer.sdp ?? "",
-      this.input.accessToken
-    );
-    this.sourceTrackIdsByMid.clear();
-    for (const [mid, trackId] of parseServerMediaSourceTrackIdsByMid(answer.sdp)) {
-      this.sourceTrackIdsByMid.set(mid, trackId);
-    }
-    await this.peer.setRemoteDescription({ type: "answer", sdp: answer.sdp });
+    await negotiateServerMediaOffer(this.peer, this.input, this.audioTrackId, this.sourceTrackIdsByMid);
     this.offerAnswered = true;
     await this.flushLocalCandidates();
     this.requestServerCandidates({ report: false });
     this.candidatePoll = window.setInterval(() => {
       this.requestServerCandidates();
     }, this.input.pollIntervalMs ?? DEFAULT_CANDIDATE_POLL_INTERVAL_MS);
+  }
+
+  updateSubscriptions(sourceIds: string[], userAudio: Record<string, UserAudioSettings>): Promise<void> {
+    const run = this.renegotiation.then(() => this.renegotiate(sourceIds, userAudio));
+    // The caller receives `run`'s failure; the chain only orders the next renegotiation.
+    this.renegotiation = run.catch(() => undefined);
+    return run;
   }
 
   setMuted(muted: boolean): void {
@@ -122,8 +133,8 @@ export class ServerMediaAudioSession {
 
   async resumePlayback(): Promise<void> {
     const attempts = [
-      ...(this.audioContext?.state === "suspended" ? [this.audioContext.resume()] : []),
-      ...(this.audioContext ? [this.applyOutputDevice(this.audioContext)] : []),
+      ...(this.audioContext && this.audioContext.state !== "running" ? [this.audioContext.resume()] : []),
+      ...(this.audioContext ? [applyOutputDevice(this.audioContext, this.input.outputDeviceId)] : []),
       ...[...this.remotePlayback.values()].map((playback) => playback.element.play())
     ];
     try {
@@ -158,7 +169,7 @@ export class ServerMediaAudioSession {
         lastLocalCandidateAt: this.lastLocalCandidateAt,
         lastServerCandidateError: this.lastServerCandidateError
       },
-      remoteSources: this.remoteSourceDiagnostics(),
+      remoteSources: remoteSourceDiagnostics(this.remotePlayback),
       lastPlaybackError: this.lastPlaybackError,
       stats
     };
@@ -189,6 +200,7 @@ export class ServerMediaAudioSession {
       window.clearInterval(this.candidatePoll);
       this.candidatePoll = undefined;
     }
+    this.clearIceDisconnectedTimer();
     this.runCleanupStep(() => { this.peer.close(); });
     this.sourceTrackIdsByMid.clear();
     for (const track of this.input.stream.getAudioTracks()) {
@@ -222,6 +234,23 @@ export class ServerMediaAudioSession {
     } catch (error) {
       this.lastServerCandidateError = error instanceof Error ? error.message : "Failed to add server ICE candidate";
       this.reportError(error);
+    }
+  }
+
+  private async renegotiate(sourceIds: string[], userAudio: Record<string, UserAudioSettings>): Promise<void> {
+    this.input.userAudio = userAudio;
+    ensureRecvonlyAudioTransceivers(this.peer, Math.max(sourceIds.length, 1));
+    await negotiateServerMediaOffer(this.peer, this.input, this.audioTrackId, this.sourceTrackIdsByMid);
+    // Reused transceivers do not fire ontrack, so playback follows the answered mids.
+    for (const transceiver of this.peer.getTransceivers()) {
+      const trackId = transceiver.mid ? this.sourceTrackIdsByMid.get(transceiver.mid) : undefined;
+      if (trackId) {
+        this.addRemoteTrack(transceiver.receiver.track, trackId, transceiver.mid);
+      }
+    }
+    const mappedUserIds = new Set([...this.sourceTrackIdsByMid.values()].map(parseServerMediaSourceTrackId));
+    for (const userId of [...this.remotePlayback.keys()].filter((id) => !mappedUserIds.has(id))) {
+      this.removeUserAudio(userId);
     }
   }
 
@@ -260,10 +289,12 @@ export class ServerMediaAudioSession {
       this.reportPlaybackError(`Ignored server media track with invalid id: ${track.id}`);
       return;
     }
+    if (this.remotePlayback.get(sourceUserId)?.stream.getAudioTracks()[0] === track) {
+      return;
+    }
     this.removeUserAudio(sourceUserId);
-    const audioContext = this.audioContext ?? new AudioContext();
-    this.audioContext = audioContext;
-    void this.applyOutputDevice(audioContext).catch((error: unknown) => {
+    const audioContext = this.audioContext ?? this.createPlaybackContext();
+    void applyOutputDevice(audioContext, this.input.outputDeviceId).catch((error: unknown) => {
       this.reportPlaybackError(error);
     });
     this.remotePlayback.set(
@@ -283,13 +314,30 @@ export class ServerMediaAudioSession {
     this.input.onRemoteTrack?.();
   }
 
-  private applyOutputDevice(audioContext: AudioContext): Promise<void> {
-    const outputDeviceId = this.input.outputDeviceId;
-    const setSinkId = (audioContext as AudioContextWithSinkId).setSinkId;
-    if (!outputDeviceId || !setSinkId) {
-      return Promise.resolve();
+  private createPlaybackContext(): AudioContext {
+    const audioContext = new AudioContext();
+    this.audioContext = audioContext;
+    const reportState = () => {
+      if (this.closed || this.audioContext !== audioContext) {
+        return;
+      }
+      this.input.onPlaybackBlocked?.(audioContext.state !== "running");
+    };
+    audioContext.onstatechange = reportState;
+    // Chrome leaves resume() pending without rejecting under autoplay policy.
+    window.setTimeout(() => {
+      if (audioContext.state !== "running") {
+        reportState();
+      }
+    }, PLAYBACK_RESUME_CHECK_MS);
+    return audioContext;
+  }
+
+  private clearIceDisconnectedTimer(): void {
+    if (this.iceDisconnectedTimer !== undefined) {
+      window.clearTimeout(this.iceDisconnectedTimer);
+      this.iceDisconnectedTimer = undefined;
     }
-    return setSinkId.call(audioContext, outputDeviceId);
   }
 
   private requestServerCandidates({ report = true }: { report?: boolean } = {}): void {
@@ -302,22 +350,6 @@ export class ServerMediaAudioSession {
       }
       throw error;
     }
-  }
-
-  private async enableOpusDtx(): Promise<void> {
-    const senders = this.peer.getSenders().filter((sender) => sender.track?.kind === "audio");
-    await Promise.all(senders.map(async (sender) => {
-      try {
-        const parameters = sender.getParameters() as DtxRtpSendParameters;
-        const encodings = parameters.encodings.length > 0 ? parameters.encodings : [{}];
-        await sender.setParameters({
-          ...parameters,
-          encodings: encodings.map((encoding) => ({ ...encoding, dtx: "enabled" }))
-        });
-      } catch {
-        return;
-      }
-    }));
   }
 
   private sendSignal(signal: SignalMessage): void {
@@ -334,20 +366,11 @@ export class ServerMediaAudioSession {
     }
     this.seenCandidates.add(key);
     this.serverCandidateCount += 1;
-    await this.peer.addIceCandidate({
-      candidate: candidate.candidate,
-      sdpMid: candidate.sdp_mid ?? undefined,
-      sdpMLineIndex: candidate.sdp_mline_index ?? undefined,
-      usernameFragment: candidate.username_fragment ?? undefined
-    });
+    await this.peer.addIceCandidate(serverIceCandidateInit(candidate));
   }
 
   private reportError(error: unknown): void {
-    if (error instanceof Error) {
-      this.input.onError?.(error.message);
-      return;
-    }
-    this.input.onError?.(typeof error === "string" ? error : "Audio connection failed");
+    this.input.onError?.(errorMessage(error, "Audio connection failed"));
   }
 
   private runCleanupStep(step: () => void): void {
@@ -367,32 +390,11 @@ export class ServerMediaAudioSession {
   }
 
   private reportPlaybackError(error: unknown): void {
-    const message = error instanceof Error
-      ? error.message
-      : typeof error === "string"
-        ? error
-        : "Audio playback failed";
+    const message = errorMessage(error, "Audio playback failed");
     this.lastPlaybackError = message;
     if (error instanceof Error && error.name === "NotAllowedError") {
-      this.input.onPlaybackBlocked?.();
+      this.input.onPlaybackBlocked?.(true);
     }
     this.input.onError?.(message);
-  }
-
-  private remoteSourceDiagnostics(): ServerMediaRemoteSourceDiagnostics[] {
-    return [...this.remotePlayback.entries()]
-      .map(([userId, playback]) => {
-        const tracks = playback.stream.getAudioTracks();
-        return {
-          userId,
-          trackIds: tracks.map((track) => track.id),
-          gain: playback.gain.gain.value,
-          muted: playback.settings.muted,
-          volumePercent: playback.settings.volumePercent,
-          readyStates: tracks.map((track) => track.readyState),
-          enabled: tracks.map((track) => track.enabled)
-        };
-      })
-      .sort((left, right) => left.userId.localeCompare(right.userId));
   }
 }

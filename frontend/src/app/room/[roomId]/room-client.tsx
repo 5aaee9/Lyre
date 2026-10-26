@@ -523,7 +523,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             outputDeviceId: audioDevices.outputDeviceId,
             userAudio: audioSettings,
             onError: handleAudioError,
-            onPlaybackBlocked: () => setPlaybackBlocked(true),
+            onPlaybackBlocked: setPlaybackBlocked,
             onConnectionInterrupted: () => reconnectServerRelayAudioRef.current(),
             onRemoteTrack: () => setAudioDiagnosticsRefreshKey((key) => key + 1),
             onRemoteSpeakingChange: setUserSpeaking
@@ -626,6 +626,47 @@ export function RoomClient({ roomId }: { roomId: string }) {
     userAudio
   ]);
 
+  const connectServerRelayAudioWithRetry = useCallback(async (options: ServerRelayAudioConnectionOptions) => {
+    try {
+      await connectServerRelayAudio(options);
+    } finally {
+      if (audioStartedRef.current && !serverAudioSessionRef.current && socketRef.current?.readyState === WebSocket.OPEN) {
+        clearReconnectRetry();
+        reconnectRetryRef.current = window.setTimeout(() => {
+          reconnectRetryRef.current = null;
+          reconnectServerRelayAudioRef.current();
+        }, AUDIO_RECONNECT_RETRY_MS);
+      }
+    }
+  }, [clearReconnectRetry, connectServerRelayAudio]);
+
+  const renegotiateServerRelayAudio = useCallback(async (
+    sourceIds: string[],
+    audioSettings: Record<string, UserAudioSettings>
+  ) => {
+    const options = { updateRelay: true, sourceIds, audioSettings };
+    if (audioConnectionInFlightRef.current) {
+      pendingAudioConnectionRef.current = options;
+      return;
+    }
+    const session = serverAudioSessionRef.current;
+    if (session) {
+      try {
+        await session.updateSubscriptions(sourceIds, audioSettings);
+        return;
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Audio renegotiation failed");
+        if (serverAudioSessionRef.current !== session) {
+          // The session was closed or replaced while renegotiating; its owner handles audio state.
+          return;
+        }
+        // A full reconnect also runs the expired-session recovery on 401.
+      }
+    }
+    closeAudioSessions();
+    await connectServerRelayAudioWithRetry(options);
+  }, [closeAudioSessions, connectServerRelayAudioWithRetry]);
+
   useEffect(() => {
     reconnectServerRelayAudioRef.current = () => {
       if (reconnectingAudioRef.current || !audioStartedRef.current) {
@@ -638,17 +679,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
       reconnectingAudioRef.current = true;
       setStatus("Reconnecting audio");
       closeAudioSessions();
-      void connectServerRelayAudio({ updateRelay: true }).finally(() => {
+      void connectServerRelayAudioWithRetry({ updateRelay: true }).finally(() => {
         reconnectingAudioRef.current = false;
-        if (audioStartedRef.current && !serverAudioSessionRef.current && socketRef.current?.readyState === WebSocket.OPEN) {
-          reconnectRetryRef.current = window.setTimeout(() => {
-            reconnectRetryRef.current = null;
-            reconnectServerRelayAudioRef.current();
-          }, AUDIO_RECONNECT_RETRY_MS);
-        }
       });
     };
-  }, [closeAudioSessions, connectServerRelayAudio]);
+  }, [closeAudioSessions, connectServerRelayAudioWithRetry]);
 
   useEffect(() => {
     if (!currentUser || !accessToken || !socketOpen || audioStartedRef.current) {
@@ -702,7 +737,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       return;
     }
     closeAudioSessions();
-    await connectServerRelayAudio({ updateRelay: true });
+    await connectServerRelayAudioWithRetry({ updateRelay: true });
   }
 
   async function applyUserAudioSettings(userId: string, settings: Partial<UserAudioSettings>) {
@@ -735,17 +770,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setUserAudioSettings(userId, settings);
       serverAudioSessionRef.current?.setUserAudioSettings(userId, next);
       if (audioStartedRef.current) {
-        const reconnectOptions = {
-          updateRelay: true,
-          sourceIds: nextSourceIds,
-          audioSettings: nextUserAudio
-        };
-        if (audioConnectionInFlightRef.current) {
-          pendingAudioConnectionRef.current = reconnectOptions;
-          return;
-        }
-        closeAudioSessions();
-        await connectServerRelayAudio(reconnectOptions);
+        await renegotiateServerRelayAudio(nextSourceIds, nextUserAudio);
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to update audio subscription");
@@ -771,30 +796,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
         }
         await updateMediaRelaySubscriptions(roomId, currentUser.id, nextSourceIds, accessToken);
         lastSubscribedSourceIdsRef.current = nextSourceIds;
-        if (audioConnectionInFlightRef.current) {
-          pendingAudioConnectionRef.current = { updateRelay: true, sourceIds: nextSourceIds };
-          return;
-        }
-        closeAudioSessions();
-        await connectServerRelayAudio({ updateRelay: true, sourceIds: nextSourceIds });
+        await renegotiateServerRelayAudio(nextSourceIds, userAudio);
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Failed to update audio subscription");
       }
     })();
   }, [
     accessToken,
-    closeAudioSessions,
     clearRelaySourceRefreshRetry,
-    connectServerRelayAudio,
     currentUser,
     refreshRelaySourceIds,
     remoteUsers,
     relaySourceRefreshTick,
+    renegotiateServerRelayAudio,
     roomId,
     scheduleRelaySourceRefreshRetry,
     socketOpen,
     subscribedSourceIds,
-    subscribedSourceIdsFromRelaySources
+    subscribedSourceIdsFromRelaySources,
+    userAudio
   ]);
 
   async function leave() {

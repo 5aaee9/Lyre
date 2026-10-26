@@ -36,6 +36,17 @@ export async function processLocalAudioStream(
   let processor: AudioWorkletNode | undefined;
   let onnxRuntime: OnnxRuntime | null = null;
   const onRuntimeError = options.onError ?? reportRuntimeError;
+  const resumeContext = () => {
+    void context.resume().catch((resumeError: unknown) => {
+      notifyCleanupError(onRuntimeError, resumeError);
+    });
+  };
+  context.onstatechange = () => {
+    if (context.state !== "running" && context.state !== "closed") {
+      resumeContext();
+    }
+  };
+  resumeContext();
   try {
     const wasm = await loadLyreNoiseWasm();
     if (context.sampleRate !== wasm.sampleRateHz) {
@@ -82,6 +93,7 @@ export async function processLocalAudioStream(
       }
       graphStopped = true;
       runCleanupSteps([
+        () => { context.onstatechange = null; },
         () => { activeProcessor.onprocessorerror = null; },
         () => { activeProcessor.port.onmessage = null; },
         () => { activeProcessor.port.onmessageerror = null; },
@@ -114,6 +126,7 @@ export async function processLocalAudioStream(
     return output;
   } catch (startupError) {
     runCleanupSteps([
+      () => { context.onstatechange = null; },
       () => { if (processor) processor.onprocessorerror = null; },
       () => { if (processor) processor.port.onmessage = null; },
       () => { if (processor) processor.port.onmessageerror = null; },

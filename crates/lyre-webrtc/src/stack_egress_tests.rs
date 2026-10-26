@@ -69,6 +69,7 @@ async fn two_negotiated_sources_reach_remote_peer_with_distinct_ssrcs() {
                 .collect(),
         )
         .await;
+    crate::test_support::wait_for_server_connected(&server).await;
 
     for (source, sequence_number, timestamp) in
         [(&first_source, 10, 9_600), (&second_source, 11, 10_560)]
@@ -98,7 +99,8 @@ async fn two_negotiated_sources_reach_remote_peer_with_distinct_ssrcs() {
                 .iter()
                 .map(|packet| packet.header.ssrc)
                 .collect::<std::collections::BTreeSet<_>>();
-            assert_eq!(sequence_numbers, [10, 11].into_iter().collect());
+            // Each source egress stream owns its sequence space, starting at 0.
+            assert_eq!(sequence_numbers, [0].into_iter().collect());
             assert_eq!(ssrcs.len(), 2);
             return;
         }
@@ -148,6 +150,7 @@ async fn processed_audio_frame_reaches_remote_peer_without_retaining_packet_hist
                 .collect(),
         )
         .await;
+    crate::test_support::wait_for_server_connected(&server).await;
 
     let sent = server
         .send_processed_audio_frame(

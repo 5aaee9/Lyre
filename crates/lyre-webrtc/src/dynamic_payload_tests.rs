@@ -138,11 +138,89 @@ async fn server_egress_uses_the_negotiated_dynamic_opus_payload_type() {
             .unwrap();
         if let Some(packet) = connected.received_remote_rtp_packets().first() {
             assert_eq!(packet.header.payload_type, 109);
-            assert_eq!(packet.header.sequence_number, 7);
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
     panic!("remote peer did not receive server RTP with negotiated payload type 109");
+}
+
+#[tokio::test]
+async fn raw_egress_keeps_recipient_sequence_contiguous_when_source_restarts() {
+    let source_user_id = UserId::from_external("source");
+    let server = WebRtcStack::new()
+        .create_peer_connection_for_sources(std::slice::from_ref(&source_user_id))
+        .await
+        .unwrap();
+    let offer = server_media_offer_with_opus_payload_type(111).await;
+    let answer_sdp = server
+        .answer_remote_offer(offer.offer_sdp.clone())
+        .await
+        .unwrap();
+    let room_id = RoomId::default_room();
+    let user_id = UserId::from_external("listener");
+    let answer = ServerMediaAnswer {
+        room_id: room_id.clone(),
+        user_id: user_id.clone(),
+        audio_track_id: "audio-main".to_owned(),
+        sdp: answer_sdp,
+        state: ServerMediaSessionState::Negotiating,
+    };
+    for candidate in offer.remote_candidates().await {
+        server.add_remote_ice_candidate(candidate).await.unwrap();
+    }
+    let connected = offer
+        .accept_answer(
+            &answer,
+            wait_for_local_candidates(&server, &room_id, &user_id).await,
+        )
+        .await;
+    crate::test_support::wait_for_server_connected(&server).await;
+
+    // The source reconnects between the two halves: its sequence numbers and
+    // timestamps restart far below the previous ones.
+    let source_packets = (0..5)
+        .map(|index| (40_000 + index, 3_000_000 + u32::from(index) * 960))
+        .chain((0..5).map(|index| (100 + index, 50 + u32::from(index) * 960)));
+    for (sequence_number, timestamp) in source_packets {
+        server
+            .send_opus_rtp_packet(
+                &source_user_id,
+                ServerMediaEgressRtpPacket {
+                    sequence_number,
+                    timestamp,
+                    payload_type: 111,
+                    payload: vec![0x01, 0x02, 0x03],
+                },
+            )
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    for _ in 0..100 {
+        let packets = connected.received_remote_rtp_packets();
+        if packets.len() == 10 {
+            let sequences = packets
+                .iter()
+                .map(|packet| packet.header.sequence_number)
+                .collect::<Vec<_>>();
+            assert_eq!(sequences, (0..10).collect::<Vec<_>>());
+            assert!(packets.windows(2).all(|pair| {
+                pair[1]
+                    .header
+                    .timestamp
+                    .wrapping_sub(pair[0].header.timestamp)
+                    < 48_000
+            }));
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    panic!(
+        "listener received {} of 10 packets across a source restart",
+        connected.received_remote_rtp_packets().len()
+    );
 }

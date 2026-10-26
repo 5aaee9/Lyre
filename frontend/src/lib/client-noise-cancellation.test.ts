@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { processLocalAudioStream } from "./client-noise-cancellation";
 import {
   addModule,
+  audioContexts,
   contextClose,
+  contextResume,
   destinationStream,
   dpdfnetModelBundle,
   inputStream,
@@ -64,6 +66,23 @@ describe("client noise cancellation runtime", () => {
     expect(wasmLoader.loadCachedNoiseModelBundle).toHaveBeenCalledWith(defaultNoiseConfig);
     expect(sourceConnect).toHaveBeenCalledWith(workletNodes[0]);
     expect(processorConnect).toHaveBeenCalledOnce();
+  });
+
+  it("resumes the processing context on creation and when it is suspended later", async () => {
+    const output = await processLocalAudioStream(inputStream, { noise: defaultNoiseConfig });
+    expect(contextResume).toHaveBeenCalledOnce();
+
+    const context = audioContexts[0];
+    context.state = "suspended";
+    context.onstatechange?.();
+    expect(contextResume).toHaveBeenCalledTimes(2);
+
+    context.state = "running";
+    context.onstatechange?.();
+    expect(contextResume).toHaveBeenCalledTimes(2);
+
+    output.getAudioTracks()[0].stop();
+    expect(context.onstatechange).toBeNull();
   });
 
   it("stops the raw track and closes the graph when the processed track stops", async () => {

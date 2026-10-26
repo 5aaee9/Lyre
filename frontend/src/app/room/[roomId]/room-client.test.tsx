@@ -689,7 +689,7 @@ describe("RoomClient", () => {
     ), { timeout: 2_000 });
   });
 
-  it("muting a remote user updates subscriptions and recreates server media without toggling microphone mute", async () => {
+  it("muting a remote user updates subscriptions and renegotiates the existing server media without toggling microphone mute", async () => {
     render(<RoomClient roomId="DEFAULT" />);
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
@@ -702,8 +702,72 @@ describe("RoomClient", () => {
       "token_a"
     ));
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+    expect(peerConnections).toHaveLength(1);
+    expect(peerConnections[0].createOffer).toHaveBeenCalledTimes(2);
+    expect(getUserMedia).toHaveBeenCalledOnce();
     expect(localAudioTrack.enabled).toBe(true);
+    expect(peerConnections[0].close).not.toHaveBeenCalled();
+    expect(stopTrack).not.toHaveBeenCalled();
+  });
+
+  it("renegotiates the existing server media when a remote user joins", async () => {
+    apiMocks.joinRoom.mockResolvedValueOnce({
+      access_token: "token_a",
+      user: makeUser("user_a", "Ada"),
+      room: { room_id: "DEFAULT", users: [makeUser("user_a", "Ada"), makeUser("user_b", "Bob")] }
+    });
+    const relayWith = (userIds: string[]) => ({
+      room_id: "DEFAULT",
+      status: "active",
+      mode: "media_relay",
+      server_side_audio_processing: true,
+      server_side_noise_cancelling: true,
+      noise: defaultNoiseConfig,
+      participants: userIds.map((userId) => ({ user_id: userId, tracks: [{ track_id: "audio-main", kind: "audio" }] }))
+    });
+    apiMocks.getMediaRelay.mockResolvedValue(relayWith(["user_a", "user_b"]));
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    apiMocks.getMediaRelay.mockResolvedValue(relayWith(["user_a", "user_b", "user_c"]));
+
+    act(() => {
+      sockets[0].onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "user-joined",
+            room_id: "DEFAULT",
+            sender_id: "user_c",
+            payload: { type: "user-joined", user: makeUser("user_c", "Cam") }
+          })
+        })
+      );
+    });
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+    expect(apiMocks.updateMediaRelaySubscriptions).toHaveBeenLastCalledWith(
+      "DEFAULT",
+      "user_a",
+      ["user_b", "user_c"],
+      "token_a"
+    );
+    expect(peerConnections).toHaveLength(1);
+    expect(peerConnections[0].addTransceiver).toHaveBeenCalledWith("audio", { direction: "recvonly" });
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    expect(peerConnections[0].close).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a full reconnect when renegotiation fails", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    apiMocks.answerServerMediaOffer.mockRejectedValueOnce(new Error("failed to answer server media offer: 500"));
+
+    fireEvent.click(screen.getByText("Mute Bob"));
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(3));
     expect(peerConnections[0].close).toHaveBeenCalledOnce();
+    expect(peerConnections).toHaveLength(2);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
   });
 
   it("keeps the existing server media session when subscription update fails", async () => {
@@ -728,7 +792,7 @@ describe("RoomClient", () => {
     await waitFor(() => expect(useSettingsStore.getState().userAudio.user_b.volumePercent).toBe(125));
   });
 
-  it("unmuting recreates server media with the restored user volume snapshot", async () => {
+  it("unmuting renegotiates server media with the restored user volume snapshot", async () => {
     useSettingsStore.getState().setUserAudioSettings("user_b", {
       muted: true,
       volumePercent: 125
@@ -739,8 +803,9 @@ describe("RoomClient", () => {
     fireEvent.click(screen.getByText("Unmute Bob"));
 
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
+    expect(peerConnections).toHaveLength(1);
     act(() => {
-      peerConnections[1].ontrack?.({
+      peerConnections[0].ontrack?.({
         track: { id: "lyre-user:user_b:audio" },
         streams: []
       } as unknown as RTCTrackEvent);
@@ -857,7 +922,7 @@ describe("RoomClient", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     act(() => {
-      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].iceConnectionState = "failed";
       peerConnections[0].oniceconnectionstatechange?.();
     });
 
@@ -902,7 +967,7 @@ describe("RoomClient", () => {
     apiMocks.registerMediaTrack.mockClear();
 
     act(() => {
-      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].iceConnectionState = "failed";
       peerConnections[0].oniceconnectionstatechange?.();
     });
 
@@ -957,7 +1022,7 @@ describe("RoomClient", () => {
     apiMocks.registerMediaParticipant.mockClear();
 
     act(() => {
-      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].iceConnectionState = "failed";
       peerConnections[0].oniceconnectionstatechange?.();
     });
 
@@ -976,7 +1041,7 @@ describe("RoomClient", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
 
     act(() => {
-      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].iceConnectionState = "failed";
       peerConnections[0].oniceconnectionstatechange?.();
     });
 
@@ -995,7 +1060,7 @@ describe("RoomClient", () => {
     getUserMedia.mockRejectedValueOnce(Object.assign(new Error("Requested device not found"), { name: "NotFoundError" }));
 
     act(() => {
-      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].iceConnectionState = "failed";
       peerConnections[0].oniceconnectionstatechange?.();
     });
 
@@ -1026,7 +1091,7 @@ describe("RoomClient", () => {
     }));
 
     act(() => {
-      peerConnections[0].iceConnectionState = "disconnected";
+      peerConnections[0].iceConnectionState = "failed";
       peerConnections[0].oniceconnectionstatechange?.();
     });
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2));
@@ -1074,6 +1139,20 @@ describe("RoomClient", () => {
     await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(2), { timeout: 2_000 });
     expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
     expect(apiMocks.registerMediaTrack).toHaveBeenCalledOnce();
+  });
+
+  it("retries audio when a subscription change reconnect fails", async () => {
+    render(<RoomClient roomId="DEFAULT" />);
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledOnce());
+    apiMocks.answerServerMediaOffer.mockRejectedValueOnce(new Error("renegotiation failed"));
+    apiMocks.getIceServers.mockRejectedValueOnce(new Error("temporary ice failure"));
+
+    fireEvent.click(screen.getByText("Mute Bob"));
+    await waitFor(() => expect(screen.getByText("temporary ice failure")).toBeInTheDocument());
+
+    await waitFor(() => expect(apiMocks.answerServerMediaOffer).toHaveBeenCalledTimes(3), { timeout: 2_000 });
+    await waitFor(() => expect(screen.getByText("Server relay audio connected")).toBeInTheDocument());
+    expect(apiMocks.startMediaRelay).toHaveBeenCalledOnce();
   });
 
   it("cleans server relay startup failures after relay start without stopping the room relay", async () => {

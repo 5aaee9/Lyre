@@ -109,6 +109,12 @@ impl ServerMediaNegotiator {
         offer: ServerMediaOffer,
         subscribed_source_user_ids: Vec<UserId>,
     ) -> Result<ServerMediaAnswer, ServerMediaNegotiationError> {
+        if let Some(answer) = self
+            .renegotiate(&offer, &subscribed_source_user_ids)
+            .await?
+        {
+            return Ok(answer);
+        }
         let peer_connection = self
             .stack
             .create_peer_connection_for_sources(&subscribed_source_user_ids)
@@ -155,6 +161,47 @@ impl ServerMediaNegotiator {
             sdp: answer_sdp,
             state: status.state,
         })
+    }
+
+    /// Applies an offer from the browser's existing peer connection to the matching server
+    /// peer, so subscription changes do not tear down media for the whole session.
+    async fn renegotiate(
+        &self,
+        offer: &ServerMediaOffer,
+        subscribed_source_user_ids: &[UserId],
+    ) -> Result<Option<ServerMediaAnswer>, ServerMediaNegotiationError> {
+        let key = ServerMediaSessionKey {
+            room_id: offer.room_id.clone(),
+            user_id: offer.user_id.clone(),
+        };
+        let Some(peer_connection) = self
+            .peer_connections
+            .get(&key)
+            .map(|entry| entry.value().clone())
+        else {
+            return Ok(None);
+        };
+        let Some(status) = self
+            .sessions
+            .status(&key)
+            .filter(|status| status.audio_track_id == offer.audio_track_id)
+        else {
+            return Ok(None);
+        };
+        let Some(answer_sdp) = peer_connection
+            .renegotiate(&offer.sdp, subscribed_source_user_ids)
+            .await
+            .map_err(|source| ServerMediaNegotiationError::WebRtc { source })?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(ServerMediaAnswer {
+            room_id: status.room_id,
+            user_id: status.user_id,
+            audio_track_id: status.audio_track_id,
+            sdp: answer_sdp,
+            state: status.state,
+        }))
     }
 
     pub async fn add_remote_ice_candidate(

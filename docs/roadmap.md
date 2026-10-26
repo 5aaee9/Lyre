@@ -142,9 +142,16 @@
 - Client ONNX noise processing now keeps at most one inference in flight, uses startup deadlines and a sticky live-raw fallback after late or failed inference, and explicitly frees Worklet WASM buffers, workers, ports, tracks, media nodes, peer sessions, and audio contexts even when individual cleanup steps fail.
 - Browser playback-block recovery now retries both Web Audio and remote media elements from an explicit localized room action, clearing playback diagnostics after recovery.
 - Dependencies upgraded to latest: Rust workspace (`webrtc`/`rtc` 0.21, `ort` 2.0.0-rc.15 with a shared process-wide ONNX Runtime environment, `rubato` 5, `rand` 0.10, `ulid` 3, `hmac` 0.13, `sha1` 0.11, `base64` 0.23, `tower-http` 0.7) and frontend (Next 16.4, React 19.3, ESLint 10, Vitest 5, jsdom 30, TypeScript 6). Server egress now stamps the Opus payload type negotiated on each sender leg, since `rtc` 0.21 rejects unnegotiated payload types instead of rewriting them.
+- Server egress streams now own their RTP sequence numbers and timestamps per (source, recipient) leg, so a speaker reconnect or pause no longer makes listeners drop audio as replayed or late packets; timestamps jump to wall clock after pauses and the negotiated payload type is cached per sender.
+- Processed-audio per-recipient egress queues now hold 16 frames instead of 1, the server jitter buffer flushes held packets after 60 ms of track silence so utterance tails are not delayed, and closing a session mid-batch no longer panics the runtime pump.
+- Frontend relay reconnects triggered by subscription, user-audio, and settings changes now retry like interruption reconnects; ICE `disconnected` gets a 4 s grace period before reconnecting; suspended playback and client noise AudioContexts are surfaced or resumed.
+- Participant joins/leaves and remote-user mute changes now renegotiate the existing server-media peer connection in place: the browser re-offers on the same `RTCPeerConnection` and the server adds/removes per-source egress tracks on its existing peer, keeping the microphone, ICE, and DTLS up instead of rebuilding every client's session.
+- DPDFNet inference no longer runs behind a process-wide mutex; each source's canceller has its own ONNX session, so multi-speaker rooms no longer fall behind together.
 
 ## Next
 
+- Verify against `chrome://webrtc-internals` that listeners no longer discard packets after speaker pauses and reconnects, and that joins/leaves no longer interrupt audio.
+- Measure DPDFNet CPU usage with several concurrent speakers now that inference runs in parallel, and cap concurrency if it exceeds the server budget.
 - Add Nix packaging for the Next.js frontend if Nix becomes a deployment target.
 - Localize the remaining room, diagnostics, and error surfaces beyond the entry and settings flows.
 - Track browser support for Web Audio speaker output selection, since selected speakers depend on `AudioContext.setSinkId`.

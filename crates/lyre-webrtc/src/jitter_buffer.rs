@@ -52,10 +52,16 @@ impl ServerMediaJitterBuffer {
         }
 
         self.pending.entry(packet.sequence_number).or_insert(packet);
-        self.drain_ready()
+        self.drain_ready(self.max_depth)
     }
 
-    fn drain_ready(&mut self) -> Vec<ServerMediaJitterBufferOutput> {
+    /// Releases every held packet, concealing holes in front of them. Called when the
+    /// source goes quiet so the end of a talk spurt is not held until the next one.
+    pub fn flush(&mut self) -> Vec<ServerMediaJitterBufferOutput> {
+        self.drain_ready(0)
+    }
+
+    fn drain_ready(&mut self, max_depth: usize) -> Vec<ServerMediaJitterBufferOutput> {
         let mut outputs = Vec::new();
 
         while let Some(sequence) = self.next_sequence {
@@ -70,7 +76,7 @@ impl ServerMediaJitterBuffer {
                 continue;
             }
 
-            if self.pending.len() <= self.max_depth {
+            if self.pending.len() <= max_depth {
                 break;
             }
 
@@ -211,6 +217,25 @@ mod tests {
             ServerMediaJitterBufferOutput::ConcealmentRequired(_)
         )));
         assert_eq!(emitted_sequences(&outputs), vec![22, 23, 24, 25]);
+    }
+
+    #[test]
+    fn flush_releases_packets_held_behind_a_hole() {
+        let mut buffer = ServerMediaJitterBuffer::default();
+
+        assert_eq!(emitted_sequences(&buffer.push(packet(1, 960))), vec![1]);
+        assert!(buffer.push(packet(3, 2_880)).is_empty());
+        assert!(buffer.push(packet(4, 3_840)).is_empty());
+        let outputs = buffer.flush();
+
+        assert!(matches!(
+            &outputs[0],
+            ServerMediaJitterBufferOutput::ConcealmentRequired(event)
+                if event.sequence_number == 2 && event.rtp_timestamp == 1_920
+        ));
+        assert_eq!(emitted_sequences(&outputs), vec![3, 4]);
+        assert!(buffer.flush().is_empty());
+        assert_eq!(emitted_sequences(&buffer.push(packet(5, 4_800))), vec![5]);
     }
 
     #[test]
